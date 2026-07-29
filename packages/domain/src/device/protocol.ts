@@ -65,3 +65,44 @@ export const NOTABLE_CLOCK_SKEW_SECONDS = 120;
 export function isNotableClockSkew(skewSeconds: number): boolean {
   return Math.abs(skewSeconds) > NOTABLE_CLOCK_SKEW_SECONDS;
 }
+
+export interface CardRegistrationPayload {
+  deviceId: string;
+  registrationToken: string;
+  cardFingerprint: string;
+}
+
+/** カード登録の署名対象。 */
+export function canonicalCardRegistration(payload: CardRegistrationPayload): string {
+  return [
+    'staffweave-card-registration/1',
+    payload.deviceId,
+    payload.registrationToken,
+    payload.cardFingerprint,
+  ].join('\n');
+}
+
+export interface CardEventPayload {
+  deviceId: string;
+  sequence: number;
+  requestId: string;
+  cardFingerprint: string;
+  /** 種別を端末が決めない場合は空文字。 */
+  eventType: AttendanceEventType | '';
+  occurredAt: string;
+  deviceTime: string;
+}
+
+/** カード読み取りから作る打刻イベントの署名対象。 */
+export function canonicalCardEvent(payload: CardEventPayload): string {
+  return [
+    'staffweave-card-event/1',
+    payload.deviceId,
+    String(payload.sequence),
+    payload.requestId,
+    payload.cardFingerprint,
+    payload.eventType,
+    payload.occurredAt,
+    payload.deviceTime,
+  ].join('\n');
+}

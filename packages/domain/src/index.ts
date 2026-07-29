@@ -83,6 +83,7 @@ export {
   decidePunch,
   isAttendanceEventType,
   isOpenWorkDay,
+  nextCardPunch,
   summarizeWorkDay,
 } from './attendance/events.js';
 export { instantFromLocal, localMinutesOfDay, MINUTES_PER_DAY } from './attendance/local-time.js';
@@ -108,8 +109,15 @@ export {
   INITIAL_DEVICE,
   isDeviceState,
 } from './device/enrollment.js';
-export type { SequenceVerdict, SignedEventPayload } from './device/protocol.js';
+export type {
+  CardEventPayload,
+  CardRegistrationPayload,
+  SequenceVerdict,
+  SignedEventPayload,
+} from './device/protocol.js';
 export {
+  canonicalCardEvent,
+  canonicalCardRegistration,
   canonicalPayload,
   clockSkewSeconds,
   evaluateSequence,
