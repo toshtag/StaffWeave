@@ -111,6 +111,22 @@ export {
   toActivePeriods,
 } from './attendance/session-observations.js';
 export type {
+  AnomalyKind,
+  AnomalyRules,
+  AnomalySeverity,
+  DuplicatePair,
+  TimedEvent,
+} from './audit/anomaly.js';
+export {
+  ANOMALY_KINDS,
+  ANOMALY_LABELS,
+  ANOMALY_SEVERITY,
+  DEFAULT_ANOMALY_RULES,
+  findDuplicateEvents,
+  isExcessiveCorrections,
+  isNotableSkew,
+} from './audit/anomaly.js';
+export type {
   DeviceContext,
   DeviceEvent,
   DeviceEventType,
