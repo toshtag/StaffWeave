@@ -92,6 +92,30 @@ export {
   PAST_TOLERANCE_MINUTES,
   validateOccurredAt,
 } from './attendance/occurred-at.js';
+export type {
+  DeviceContext,
+  DeviceEvent,
+  DeviceEventType,
+  DeviceState,
+  DeviceTransition,
+} from './device/enrollment.js';
+export {
+  acceptsSignedEvents,
+  applyDeviceEvent,
+  canApplyDeviceEvent,
+  DEVICE_EVENTS,
+  DEVICE_STATES,
+  INITIAL_DEVICE,
+  isDeviceState,
+} from './device/enrollment.js';
+export type { SequenceVerdict, SignedEventPayload } from './device/protocol.js';
+export {
+  canonicalPayload,
+  clockSkewSeconds,
+  evaluateSequence,
+  isNotableClockSkew,
+  NOTABLE_CLOCK_SKEW_SECONDS,
+} from './device/protocol.js';
 export type { Locale } from './i18n/locale.js';
 export {
   DEFAULT_LOCALE,
