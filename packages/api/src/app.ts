@@ -8,7 +8,10 @@ import { createCalculationRepository } from './attendance/calculation-repository
 import { createAttendanceRepository } from './attendance/repository.js';
 import { createAttendanceRoutes } from './attendance/routes.js';
 import { createAttendanceService } from './attendance/service.js';
+import { createAnomalyRepository } from './audit/anomaly-repository.js';
+import { createAnomalyService } from './audit/anomaly-service.js';
 import { createAuditRepository } from './audit/repository.js';
+import { createAuditRoutes } from './audit/routes.js';
 import { createCardRepository } from './card/repository.js';
 import { createCardRoutes } from './card/routes.js';
 import { createCardService } from './card/service.js';
@@ -64,6 +67,12 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   });
 
   const assignmentService = createAssignmentService({ repository: assignmentRepository });
+
+  const anomalyService = createAnomalyService({
+    repository: createAnomalyRepository(deps.db),
+    assignments: assignmentRepository,
+    now,
+  });
 
   const dayRepositories = {
     attendance: createAttendanceRepository(deps.db),
@@ -157,6 +166,10 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   );
   api.route('/', createOrganizationRoutes({ service: organizationService }));
   api.route('/', createAssignmentRoutes({ service: assignmentService }));
+  api.route(
+    '/',
+    createAuditRoutes({ anomalies: anomalyService, logs: createAuditRepository(deps.db) }),
+  );
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));

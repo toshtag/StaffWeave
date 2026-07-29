@@ -51,6 +51,7 @@ export interface DeviceRepository {
       deviceId: string;
       sequence: number;
       requestId: string;
+      receivedAt: Date;
       deviceTime: Date;
       clockSkewSeconds: number;
       sequenceStep: number;
@@ -261,15 +262,16 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
     async insertReceipt(workspaceId, input) {
       const rows = await db.query<ReceiptRow>(
         `INSERT INTO device_event_receipts
-           (workspace_id, device_id, sequence, request_id, device_time, clock_skew_seconds,
-            sequence_step, attendance_event_id, business_date, outcome, detail)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+           (workspace_id, device_id, sequence, request_id, received_at, device_time,
+            clock_skew_seconds, sequence_step, attendance_event_id, business_date, outcome, detail)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
          RETURNING ${RECEIPT_COLUMNS}`,
         [
           workspaceId,
           input.deviceId,
           input.sequence,
           input.requestId,
+          input.receivedAt,
           input.deviceTime,
           input.clockSkewSeconds,
           input.sequenceStep,

@@ -1,4 +1,5 @@
 import type {
+  AnomalyList,
   CloseMonthRequest,
   CorrectAttendanceRequest,
   CorrectAttendanceResponse,
@@ -73,6 +74,8 @@ export const api = {
       body: JSON.stringify(input),
     }),
   listOrganizations: () => request<OrganizationList>('/organizations'),
+  listAnomalies: (query: { from: string; to: string }) =>
+    request<AnomalyList>(`/audit/anomalies?${new URLSearchParams(query).toString()}`),
   getTodayAttendance: () => request<WorkDay>('/attendance/today'),
   getDiscrepancyReport: (businessDate: string) =>
     request<DiscrepancyReport>(`/attendance/days/${businessDate}/discrepancies`),

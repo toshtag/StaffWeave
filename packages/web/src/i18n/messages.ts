@@ -95,6 +95,12 @@ export interface Messages {
   noDiscrepancies: string;
   discrepancyNotice: string;
   discrepancyMinutes: (minutes: number) => string;
+  anomalies: string;
+  noAnomalies: string;
+  anomalyNotice: string;
+  downloadCsv: string;
+  severityWarning: string;
+  severityInfo: string;
 }
 
 const ja: Messages = {
@@ -189,6 +195,12 @@ const ja: Messages = {
   noDiscrepancies: '打刻と PC の利用記録に食い違いはありません',
   discrepancyNotice: 'これは確認のための材料です。打刻や集計が自動で書き換わることはありません。',
   discrepancyMinutes: (minutes) => `${minutes} 分`,
+  anomalies: '確認が必要な記録',
+  noAnomalies: '確認が必要な記録はありません',
+  anomalyNotice: '検出したものが不正であるとは限りません。根拠を確かめたうえで判断してください。',
+  downloadCsv: 'CSV で取り出す',
+  severityWarning: '要確認',
+  severityInfo: '参考',
 };
 
 const en: Messages = {
@@ -284,6 +296,12 @@ const en: Messages = {
   discrepancyNotice:
     'These are for review only. Punches and totals are never changed automatically.',
   discrepancyMinutes: (minutes) => `${minutes} min`,
+  anomalies: 'Records that need review',
+  noAnomalies: 'Nothing needs review',
+  anomalyNotice: 'A detection does not mean wrongdoing. Check the evidence before deciding.',
+  downloadCsv: 'Download as CSV',
+  severityWarning: 'Needs review',
+  severityInfo: 'For reference',
 };
 
 export const MESSAGES: Record<Locale, Messages> = { 'ja-JP': ja, en };
