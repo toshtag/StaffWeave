@@ -67,6 +67,13 @@ import {
   workScheduleListSchema,
   workScheduleSchema,
 } from './schemas/schedule.js';
+import {
+  discrepancyReportSchema,
+  listSessionObservationsQuerySchema,
+  recordSessionObservationsRequestSchema,
+  recordSessionObservationsResponseSchema,
+  sessionObservationListSchema,
+} from './schemas/session.js';
 
 export type HttpMethod = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
@@ -771,6 +778,61 @@ export const operations = {
         description: '現在の状態では受け付けられない打刻',
         schema: errorResponseSchema,
       },
+    ],
+  },
+  recordSessionObservations: {
+    operationId: 'recordSessionObservations',
+    method: 'post',
+    path: '/device-agent/session-observations',
+    summary: '端末がまとめて送る PC セッションの観測を受け取る',
+    tags: ['session'],
+    security: 'deviceSignature',
+    requestBody: recordSessionObservationsRequestSchema,
+    responses: [
+      {
+        status: 201,
+        description: '記録した観測',
+        schema: recordSessionObservationsResponseSchema,
+      },
+      {
+        status: 200,
+        description: '同じ冪等キーの再送',
+        schema: recordSessionObservationsResponseSchema,
+      },
+      invalidRequest,
+      { status: 401, description: '端末を認証できません', schema: errorResponseSchema },
+    ],
+  },
+  listSessionObservations: {
+    operationId: 'listSessionObservations',
+    method: 'get',
+    path: '/session-observations',
+    summary: 'PC セッションの観測を一覧する',
+    tags: ['session'],
+    security: 'session',
+    query: listSessionObservationsQuerySchema,
+    responses: [
+      { status: 200, description: '観測の一覧', schema: sessionObservationListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
+  },
+  getDiscrepancyReport: {
+    operationId: 'getDiscrepancyReport',
+    method: 'get',
+    path: '/attendance/days/{businessDate}/discrepancies',
+    summary: '指定した業務日の、打刻と PC 観測の食い違いを取得する',
+    tags: ['session'],
+    security: 'session',
+    pathParameters: [
+      { name: 'businessDate', description: '業務日（YYYY-MM-DD）', schema: businessDateSchema },
+    ],
+    responses: [
+      { status: 200, description: '食い違いと根拠', schema: discrepancyReportSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
     ],
   },
 } as const satisfies Record<string, OperationContract>;
