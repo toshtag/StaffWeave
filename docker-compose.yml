@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: staffweave-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: staffweave
+      POSTGRES_PASSWORD: staffweave
+      POSTGRES_DB: staffweave
+      # 日跨ぎ勤務の判定は業務日として明示的に計算するため、DB のタイムゾーンは UTC で固定する。
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # 他プロジェクトの PostgreSQL と衝突しないよう、既定のホスト側ポートを 5433 にする。
+      # 変更する場合は .env の DATABASE_URL / TEST_DATABASE_URL も合わせること。
+      - '${DB_HOST_PORT:-5433}:5432'
+    volumes:
+      - staffweave-db-data:/var/lib/postgresql/data
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U staffweave -d staffweave']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  staffweave-db-data:
