@@ -72,6 +72,11 @@ export const enrollDeviceResponseSchema = objectSchema({
     deviceId: uuidSchema,
     workspaceSlug: { type: 'string' },
     device: deviceSchema,
+    /**
+     * IC カードの指紋を計算するための鍵。
+     * サーバーの設定に鍵が無い場合は返らず、カード機能は使えない。
+     */
+    cardFingerprintKey: { type: 'string' },
   },
   required: ['deviceId', 'workspaceSlug', 'device'],
 });
