@@ -25,6 +25,17 @@ import {
 } from './schemas/auth.js';
 import { businessDateSchema, errorResponseSchema, uuidSchema } from './schemas/common.js';
 import {
+  deviceEventRequestSchema,
+  deviceEventResponseSchema,
+  deviceListSchema,
+  deviceReceiptListSchema,
+  deviceSchema,
+  enrollDeviceRequestSchema,
+  enrollDeviceResponseSchema,
+  registerDeviceRequestSchema,
+  registerDeviceResponseSchema,
+} from './schemas/device.js';
+import {
   createDepartmentRequestSchema,
   createEmployeeRequestSchema,
   createOrganizationRequestSchema,
@@ -50,8 +61,8 @@ import {
 
 export type HttpMethod = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
-/** 認証方式。フェーズが進むにつれて端末資格情報や API キーが加わる。 */
-export type SecurityRequirement = 'public' | 'session';
+/** 認証方式。フェーズが進むにつれて API キーが加わる。 */
+export type SecurityRequirement = 'public' | 'session' | 'deviceSignature';
 
 export interface ResponseContract {
   status: number;
@@ -550,6 +561,110 @@ export const operations = {
       {
         status: 409,
         description: '締められていない期間は解除できない',
+        schema: errorResponseSchema,
+      },
+    ],
+  },
+  listDevices: {
+    operationId: 'listDevices',
+    method: 'get',
+    path: '/devices',
+    summary: '打刻端末の一覧を取得する',
+    tags: ['device'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '端末の一覧', schema: deviceListSchema },
+      unauthorized,
+      forbidden,
+    ],
+  },
+  registerDevice: {
+    operationId: 'registerDevice',
+    method: 'post',
+    path: '/devices',
+    summary: '端末の枠を作り、一度きりの登録トークンを発行する',
+    tags: ['device'],
+    security: 'session',
+    requestBody: registerDeviceRequestSchema,
+    responses: [
+      { status: 201, description: '登録トークンつきの端末', schema: registerDeviceResponseSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '拠点が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  revokeDevice: {
+    operationId: 'revokeDevice',
+    method: 'post',
+    path: '/devices/{deviceId}/revoke',
+    summary: '端末を失効させ、以後の署名イベントを受け付けないようにする',
+    tags: ['device'],
+    security: 'session',
+    pathParameters: [{ name: 'deviceId', description: '端末の識別子', schema: uuidSchema }],
+    responses: [
+      { status: 200, description: '失効した端末', schema: deviceSchema },
+      unauthorized,
+      forbidden,
+      { status: 404, description: '端末が見つからない', schema: errorResponseSchema },
+      { status: 409, description: 'すでに失効している', schema: errorResponseSchema },
+    ],
+  },
+  listDeviceReceipts: {
+    operationId: 'listDeviceReceipts',
+    method: 'get',
+    path: '/devices/{deviceId}/receipts',
+    summary: '端末から届いたイベントの受信記録を取得する',
+    tags: ['device'],
+    security: 'session',
+    pathParameters: [{ name: 'deviceId', description: '端末の識別子', schema: uuidSchema }],
+    responses: [
+      { status: 200, description: '受信記録', schema: deviceReceiptListSchema },
+      unauthorized,
+      forbidden,
+      { status: 404, description: '端末が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  enrollDevice: {
+    operationId: 'enrollDevice',
+    method: 'post',
+    path: '/device-agent/enroll',
+    summary: 'Agent が登録トークンと引き換えに公開鍵を登録する',
+    tags: ['device'],
+    security: 'public',
+    requestBody: enrollDeviceRequestSchema,
+    responses: [
+      { status: 200, description: '登録した端末', schema: enrollDeviceResponseSchema },
+      invalidRequest,
+      { status: 401, description: '登録トークンが一致しない', schema: errorResponseSchema },
+      {
+        status: 409,
+        description: 'すでに登録済み、または失効している',
+        schema: errorResponseSchema,
+      },
+    ],
+  },
+  recordDeviceEvent: {
+    operationId: 'recordDeviceEvent',
+    method: 'post',
+    path: '/device-agent/events',
+    summary: '端末が署名した打刻イベントを受け取る',
+    tags: ['device'],
+    security: 'deviceSignature',
+    requestBody: deviceEventRequestSchema,
+    responses: [
+      { status: 201, description: '受理した打刻', schema: deviceEventResponseSchema },
+      { status: 200, description: '同じ冪等キーの再送', schema: deviceEventResponseSchema },
+      invalidRequest,
+      {
+        status: 401,
+        description: '署名が一致しない、または端末が有効でない',
+        schema: errorResponseSchema,
+      },
+      { status: 404, description: '従業員が見つからない', schema: errorResponseSchema },
+      {
+        status: 409,
+        description: '現在の状態では受け付けられない打刻',
         schema: errorResponseSchema,
       },
     ],

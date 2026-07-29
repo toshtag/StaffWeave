@@ -27,6 +27,12 @@ export interface AttendanceRepository {
    */
   findTimeZoneForEmployee(workspaceId: string, employeeId: string): Promise<string | null>;
 
+  /** 従業員番号から従業員を引く。端末は番号で従業員を指す。 */
+  findEmployeeByNumber(
+    workspaceId: string,
+    employeeNumber: string,
+  ): Promise<{ id: string; displayName: string } | null>;
+
   /**
    * 同一従業員の打刻を直列化するための行ロック。
    * 同時に届いた出勤・退勤が、互いの結果を見ないまま二重登録されるのを防ぐ。
@@ -103,6 +109,17 @@ export function createAttendanceRepository(db: Queryable): AttendanceRepository 
         [workspaceId, employeeId],
       );
       return rows[0]?.time_zone ?? null;
+    },
+
+    async findEmployeeByNumber(workspaceId, employeeNumber) {
+      const rows = await db.query<{ id: string; display_name: string }>(
+        `SELECT id, display_name FROM employees
+          WHERE workspace_id = $1 AND employee_number = $2 AND status = 'active'
+          LIMIT 1`,
+        [workspaceId, employeeNumber],
+      );
+      const row = rows[0];
+      return row ? { id: row.id, displayName: row.display_name } : null;
     },
 
     async lockEmployee(workspaceId, employeeId) {

@@ -9,6 +9,9 @@ import { createAttendanceRepository } from './attendance/repository.js';
 import { createAttendanceRoutes } from './attendance/routes.js';
 import { createAttendanceService } from './attendance/service.js';
 import { createAuditRepository } from './audit/repository.js';
+import { createDeviceRepository } from './device/repository.js';
+import { createDeviceRoutes } from './device/routes.js';
+import { createDeviceService } from './device/service.js';
 import { createIdentityRepository } from './identity/repository.js';
 import { createIdentityRoutes, SESSION_COOKIE_NAME } from './identity/routes.js';
 import { createIdentityService } from './identity/service.js';
@@ -58,6 +61,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       schedule: ReturnType<typeof createScheduleRepository>;
       calculations: ReturnType<typeof createCalculationRepository>;
       approval: ReturnType<typeof createApprovalRepository>;
+      devices: ReturnType<typeof createDeviceRepository>;
       audit: ReturnType<typeof createAuditRepository>;
     }) => Promise<T>,
   ): Promise<T> =>
@@ -67,6 +71,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         schedule: createScheduleRepository(tx),
         calculations: createCalculationRepository(tx),
         approval: createApprovalRepository(tx),
+        devices: createDeviceRepository(tx),
         audit: createAuditRepository(tx),
       }),
     );
@@ -79,6 +84,13 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const scheduleService = createScheduleService({
     repositories: dayRepositories,
+    transaction: withTransaction,
+  });
+
+  const deviceService = createDeviceService({
+    repository: createDeviceRepository(deps.db),
+    attendance: dayRepositories.attendance,
+    now,
     transaction: withTransaction,
   });
 
@@ -108,6 +120,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));
+  api.route('/', createDeviceRoutes({ service: deviceService }));
 
   const app = new Hono<AppEnv>();
   app.route('/api', api);

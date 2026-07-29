@@ -12,6 +12,7 @@ import type {
   DailyRequestEventType,
   DailyRequestState,
   DayType,
+  DeviceState,
   Locale,
   MonthlyClosingState,
   Role,
@@ -349,4 +350,77 @@ export interface CreateEmployeeRequest {
     locale?: Locale;
     roles?: Role[];
   };
+}
+
+export interface DeviceRecord {
+  id: string;
+  siteId: string | null;
+  name: string;
+  state: DeviceState;
+  enrollments: number;
+  lastSequence: number;
+  enrolledAt: string | null;
+  revokedAt: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
+export interface DeviceList {
+  devices: DeviceRecord[];
+}
+
+export interface RegisterDeviceRequest {
+  name: string;
+  siteId?: string;
+}
+
+export interface RegisterDeviceResponse {
+  device: DeviceRecord;
+  /** 登録トークンはこの応答でしか返らない。 */
+  enrollmentToken: string;
+}
+
+export interface EnrollDeviceRequest {
+  enrollmentToken: string;
+  publicKey: string;
+}
+
+export interface EnrollDeviceResponse {
+  deviceId: string;
+  workspaceSlug: string;
+  device: DeviceRecord;
+}
+
+export interface DeviceEventRequest {
+  sequence: number;
+  requestId: string;
+  employeeNumber: string;
+  eventType: AttendanceEventType;
+  occurredAt: string;
+  deviceTime: string;
+}
+
+export interface DeviceEventResponse {
+  outcome: 'accepted' | 'duplicate';
+  attendanceEventId: string | null;
+  businessDate: string;
+  sequenceStep: number;
+  clockSkewSeconds: number;
+}
+
+export interface DeviceReceiptRecord {
+  deviceId: string;
+  sequence: number;
+  requestId: string;
+  receivedAt: string;
+  deviceTime: string;
+  clockSkewSeconds: number;
+  sequenceStep: number;
+  attendanceEventId: string | null;
+  businessDate: string | null;
+  outcome: 'accepted' | 'duplicate' | 'rejected';
+}
+
+export interface DeviceReceiptList {
+  receipts: DeviceReceiptRecord[];
 }
