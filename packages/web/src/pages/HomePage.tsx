@@ -79,6 +79,9 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
 
   return (
     <>
+      <a className="skip-link" href="#main">
+        {messages.skipToMain}
+      </a>
       <header className="page-header">
         <div>
           <h1>{messages.appName}</h1>
@@ -92,7 +95,7 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         </div>
       </header>
 
-      <main>
+      <main id="main">
         <TodayAttendance session={session} />
 
         <PendingApprovals session={session} />

@@ -5,10 +5,13 @@ import type {
   DailyRequestState,
   WorkDayState,
 } from '@staffweave/domain';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { summarizeWorkDay } from '@staffweave/domain';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
+import type { PendingPunch } from '../offline/punch-queue.ts';
+import { createPunchQueue } from '../offline/punch-queue.ts';
 
 type LoadState =
   | { status: 'loading' }
@@ -89,8 +92,10 @@ interface CorrectionDraft {
 
 /**
  * 本日の勤怠。
- * 従業員が迷わないよう、現在の状態と「次に押すべきボタン」を大きく出し、
- * 修正はそのあとに置く。
+ *
+ * 携帯電話で片手で使えることを最優先にする。
+ * 現在の状態と「次に押すべきボタン」を画面の上へ大きく出し、修正や履歴はその下に置く。
+ * 通信できないときも打刻は受け付け、送信待ちとして見せてから後で送る。
  */
 export function TodayAttendance({ session }: { session: SessionResponse }): React.JSX.Element {
   const { locale, messages } = useLocale();
@@ -98,10 +103,20 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<CorrectionDraft | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [pending, setPending] = useState<PendingPunch[]>([]);
+  const [online, setOnline] = useState(() => window.navigator.onLine);
   const reasonId = useId();
   const timeId = useId();
   const typeId = useId();
+
+  const queue = useMemo(
+    () =>
+      createPunchQueue({
+        onAccepted: (result) => setState({ status: 'ready', day: result.day }),
+        onRejected: (_entry, message) => setError(message),
+      }),
+    [],
+  );
 
   const load = useCallback(() => {
     api
@@ -112,6 +127,18 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
   }, []);
 
   useEffect(load, [load]);
+
+  useEffect(() => queue.subscribe(setPending), [queue]);
+
+  useEffect(() => {
+    const update = (): void => setOnline(window.navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
 
   if (state.status === 'unavailable') {
     return (
@@ -133,6 +160,18 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
 
   const { day } = state;
 
+  // 送信待ちの打刻も含めて、利用者から見た「今の状態」を組み立てる。
+  const displayState = summarizeWorkDay(day.businessDate, [
+    ...day.events.map((event) => ({
+      eventType: event.eventType,
+      occurredAt: new Date(event.occurredAt),
+    })),
+    ...pending.map((entry) => ({
+      eventType: entry.eventType,
+      occurredAt: new Date(entry.occurredAt),
+    })),
+  ]).state;
+
   function handle(promise: Promise<{ day: WorkDay }>): void {
     setSubmitting(true);
     setError(null);
@@ -149,7 +188,8 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
   }
 
   function punch(eventType: AttendanceEventType): void {
-    handle(api.recordAttendanceEvent({ eventType, requestId: crypto.randomUUID() }));
+    setError(null);
+    void queue.enqueue(eventType, new Date());
   }
 
   function reload(): void {
@@ -209,35 +249,49 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
   }
 
   const primary: AttendanceEventType | null =
-    day.state === 'not_started' ? 'clock_in' : day.state === 'working' ? 'clock_out' : null;
+    displayState === 'not_started' ? 'clock_in' : displayState === 'working' ? 'clock_out' : null;
   const secondary: AttendanceEventType | null =
-    day.state === 'working' ? 'break_start' : day.state === 'on_break' ? 'break_end' : null;
+    displayState === 'working' ? 'break_start' : displayState === 'on_break' ? 'break_end' : null;
+  const punchDisabled = !day.editable;
 
   return (
-    <section className="card">
+    <section className="card punch-card">
       <h2>{messages.today}</h2>
-      <p className="work-state" data-state={day.state}>
-        {stateLabel(day.state, messages)}
+
+      <p className="work-state" data-state={displayState} aria-live="polite">
+        {stateLabel(displayState, messages)}
       </p>
 
-      {primary !== null && (
+      {!online && (
+        <p className="offline-banner" role="status">
+          {messages.offlineNotice}
+        </p>
+      )}
+
+      {pending.length > 0 && (
+        <p className="pending-banner" role="status">
+          {messages.pendingPunches(pending.length)}
+        </p>
+      )}
+
+      {punchDisabled && <p className="notice">{messages.editingLocked}</p>}
+
+      {!punchDisabled && primary !== null && (
         <button
           type="button"
           className="punch-button"
           data-event-type={primary}
-          disabled={submitting}
           onClick={() => punch(primary)}
         >
           {eventLabel(primary, messages)}
         </button>
       )}
 
-      {secondary !== null && (
+      {!punchDisabled && secondary !== null && (
         <button
           type="button"
           className="break-button"
           data-event-type={secondary}
-          disabled={submitting}
           onClick={() => punch(secondary)}
         >
           {eventLabel(secondary, messages)}
@@ -309,7 +363,6 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
           ? messages.notRequestedYet
           : requestStateLabel(day.request.state, messages)}
       </p>
-      {!day.editable && <p className="notice">{messages.editingLocked}</p>}
       {(day.request === null ||
         day.request.state === 'returned' ||
         day.request.state === 'cancelled') && (
@@ -353,59 +406,63 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
             <li key={event.id}>
               <span>{eventLabel(event.eventType, messages)}</span>
               <time dateTime={event.occurredAt}>{formatTime(event.occurredAt, locale)}</time>
-              <span className="punch-actions">
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() =>
-                    setDraft({
-                      action: 'adjust',
-                      target: event,
-                      eventType: event.eventType,
-                      occurredAt: toLocalInputValue(event.occurredAt),
-                      reason: '',
-                    })
-                  }
-                >
-                  {messages.correct}
-                </button>
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() =>
-                    setDraft({
-                      action: 'void',
-                      target: event,
-                      eventType: event.eventType,
-                      occurredAt: toLocalInputValue(event.occurredAt),
-                      reason: '',
-                    })
-                  }
-                >
-                  {messages.voidPunch}
-                </button>
-              </span>
+              {day.editable && (
+                <span className="punch-actions">
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() =>
+                      setDraft({
+                        action: 'adjust',
+                        target: event,
+                        eventType: event.eventType,
+                        occurredAt: toLocalInputValue(event.occurredAt),
+                        reason: '',
+                      })
+                    }
+                  >
+                    {messages.correct}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() =>
+                      setDraft({
+                        action: 'void',
+                        target: event,
+                        eventType: event.eventType,
+                        occurredAt: toLocalInputValue(event.occurredAt),
+                        reason: '',
+                      })
+                    }
+                  >
+                    {messages.voidPunch}
+                  </button>
+                </span>
+              )}
             </li>
           ))}
         </ul>
       )}
 
-      <button
-        type="button"
-        className="add-punch-button"
-        disabled={submitting}
-        onClick={() =>
-          setDraft({
-            action: 'add',
-            target: null,
-            eventType: 'clock_in',
-            occurredAt: toLocalInputValue(new Date().toISOString()),
-            reason: '',
-          })
-        }
-      >
-        {messages.addPunch}
-      </button>
+      {day.editable && (
+        <button
+          type="button"
+          className="add-punch-button"
+          disabled={submitting}
+          onClick={() =>
+            setDraft({
+              action: 'add',
+              target: null,
+              eventType: 'clock_in',
+              occurredAt: toLocalInputValue(new Date().toISOString()),
+              reason: '',
+            })
+          }
+        >
+          {messages.addPunch}
+        </button>
+      )}
 
       {draft !== null && (
         <form
@@ -432,10 +489,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
                   id={typeId}
                   value={draft.eventType}
                   onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      eventType: event.target.value as AttendanceEventType,
-                    })
+                    setDraft({ ...draft, eventType: event.target.value as AttendanceEventType })
                   }
                 >
                   <option value="clock_in">{messages.clockIn}</option>
@@ -482,11 +536,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
         </form>
       )}
 
-      <details
-        className="record-history"
-        open={historyOpen}
-        onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
-      >
+      <details className="record-history">
         <summary>{messages.recordHistory}</summary>
         <ul className="history-list">
           {day.history.map((record) => (
