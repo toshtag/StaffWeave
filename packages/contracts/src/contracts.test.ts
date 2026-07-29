@@ -140,6 +140,7 @@ describe('応答の型とスキーマの一致', () => {
         locale: 'ja-JP',
         roles: ['workspace_admin'],
         permissions: ['organization.manage'],
+        organizationScopes: [],
       },
       employee: null,
       expiresAt: '2026-04-01T12:00:00.000Z',
@@ -163,6 +164,7 @@ describe('応答の型とスキーマの一致', () => {
         locale: 'en',
         roles: ['employee'],
         permissions: [],
+        organizationScopes: ['00000000-0000-4000-8000-000000000005'],
       },
       employee: {
         id: '00000000-0000-4000-8000-000000000003',
