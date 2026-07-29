@@ -7,6 +7,7 @@
 import type {
   AnomalyKind,
   AnomalySeverity,
+  ApiScope,
   AttendanceEventType,
   AttendanceSource,
   CalculationBasis,
@@ -20,6 +21,7 @@ import type {
   MonthlyClosingState,
   Role,
   SessionObservationType,
+  WebhookEventType,
   WorkDayState,
 } from '@staffweave/domain';
 
@@ -690,4 +692,59 @@ export interface AuditLogRecord {
 
 export interface AuditLogList {
   logs: AuditLogRecord[];
+}
+
+export interface ApiKeyRecord {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: ApiScope[];
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface ApiKeyList {
+  apiKeys: ApiKeyRecord[];
+}
+
+export interface CreateApiKeyRequest {
+  name: string;
+  scopes: ApiScope[];
+}
+
+export interface CreateApiKeyResponse {
+  apiKey: ApiKeyRecord;
+  /** この応答でしか返らない。 */
+  secret: string;
+}
+
+export interface WebhookEndpointRecord {
+  id: string;
+  name: string;
+  url: string;
+  eventTypes: WebhookEventType[];
+  active: boolean;
+  createdAt: string;
+}
+
+export interface WebhookEndpointList {
+  endpoints: WebhookEndpointRecord[];
+}
+
+export interface CreateWebhookEndpointRequest {
+  name: string;
+  url: string;
+  eventTypes: WebhookEventType[];
+}
+
+export interface CreateWebhookEndpointResponse {
+  endpoint: WebhookEndpointRecord;
+  /** 署名の検証に使う秘密。この応答でしか返らない。 */
+  secret: string;
+}
+
+export interface ImportResult {
+  created: number;
+  problems: { line: number; message: string }[];
 }
