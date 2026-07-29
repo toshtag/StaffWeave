@@ -81,10 +81,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: 検証用データベースを用意
-        run: |
-          psql "$DATABASE_URL" -c 'CREATE DATABASE staffweave_test'
-          psql "$DATABASE_URL" -c 'CREATE DATABASE staffweave_e2e'
+      - name: 統合テスト用データベースを用意
+        run: psql "$DATABASE_URL" -c 'CREATE DATABASE staffweave_test'
 
       - name: マイグレーションを適用
         run: pnpm db:migrate
@@ -130,7 +128,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: 検証用データベースを用意
+      - name: 画面テスト用データベースを用意
         run: psql "$DATABASE_URL" -c 'CREATE DATABASE staffweave_e2e'
 
       - name: ブラウザを取得
