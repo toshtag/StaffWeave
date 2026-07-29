@@ -10,6 +10,7 @@ import type { DailyRequestEventType, DailyRequestState } from '@staffweave/domai
 import {
   applyDailyRequestEvent,
   applyMonthlyClosingEvent,
+  canAccessEmployee,
   closingPeriodOf,
   hasPermission,
   INITIAL_DAILY_REQUEST,
@@ -19,6 +20,7 @@ import {
 } from '@staffweave/domain';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
+import type { AssignmentRepository } from '../organization/assignment-repository.js';
 import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.js';
 import type { ApprovalRepository } from './repository.js';
 
@@ -29,6 +31,7 @@ export interface ApprovalRepositories {
 
 export interface ApprovalServiceDependencies {
   repository: ApprovalRepository;
+  assignments: AssignmentRepository;
   now: () => Date;
   transaction<T>(fn: (repositories: ApprovalRepositories) => Promise<T>): Promise<T>;
 }
@@ -86,6 +89,22 @@ function resolveTargetEmployeeId(
 }
 
 export function createApprovalService(deps: ApprovalServiceDependencies): ApprovalService {
+  /**
+   * 承認できる相手かどうかを、勤務先別の閲覧権限で判断する。
+   * 閲覧範囲を持たない利用者はワークスペース全体を承認できる（管理者を想定）。
+   * 範囲を持つ利用者は、雇用元か受入組織が範囲に含まれる従業員だけを承認できる。
+   * 受入組織側の承認者（外部承認者）もこの仕組みで表す。
+   */
+  async function requireEmployeeInScope(
+    context: AuthenticatedContext,
+    employeeId: string,
+  ): Promise<void> {
+    if (context.organizationScopes.length === 0) return;
+    const organizations = await deps.assignments.listEmployeeOrganizations(context.workspace.id);
+    const view = organizations.get(employeeId);
+    if (!view || !canAccessEmployee(context.organizationScopes, view)) throw forbidden();
+  }
+
   return {
     async submit(context, input) {
       const employeeId = requireEmployee(context);
@@ -171,6 +190,8 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
           throw forbidden();
         } else if (existing.employeeId === context.employee?.id) {
           throw new ApiError('forbidden', '自分の申請は自分で承認・差し戻しできません');
+        } else {
+          await requireEmployeeInScope(context, existing.employeeId);
         }
 
         const next = applyDailyRequestEvent(
@@ -234,11 +255,22 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
       if (query.state !== undefined && !isDailyRequestState(query.state)) {
         throw invalidRequest([{ field: 'state', message: '未知の状態です' }]);
       }
-      return deps.repository.listRequests(context.workspace.id, {
+      if (employeeId !== undefined) await requireEmployeeInScope(context, employeeId);
+
+      const requests = await deps.repository.listRequests(context.workspace.id, {
         ...(employeeId === undefined ? {} : { employeeId }),
         from: query.from,
         to: query.to,
         ...(query.state === undefined ? {} : { state: query.state as DailyRequestState }),
+      });
+
+      if (context.organizationScopes.length === 0) return requests;
+
+      const organizations = await deps.assignments.listEmployeeOrganizations(context.workspace.id);
+      return requests.filter((request) => {
+        if (request.employeeId === context.employee?.id) return true;
+        const view = organizations.get(request.employeeId);
+        return view !== undefined && canAccessEmployee(context.organizationScopes, view);
       });
     },
 
@@ -253,6 +285,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
 
     async close(context, input) {
       if (!hasPermission(context.roles, 'attendance.close')) throw forbidden();
+      await requireEmployeeInScope(context, input.employeeId);
       const workspaceId = context.workspace.id;
 
       return deps.transaction(async ({ approval, audit }) => {
@@ -305,6 +338,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
 
     async reopen(context, input) {
       if (!hasPermission(context.roles, 'attendance.close')) throw forbidden();
+      await requireEmployeeInScope(context, input.employeeId);
       const workspaceId = context.workspace.id;
 
       if (input.reason.trim().length < 2) {

@@ -10,6 +10,7 @@ import type {
 } from '@staffweave/contracts';
 import type { Role } from '@staffweave/domain';
 import {
+  canAccessEmployee,
   DEFAULT_LOCALE,
   isValidEmail,
   normalizeCode,
@@ -17,13 +18,16 @@ import {
   validateCode,
   validatePassword,
 } from '@staffweave/domain';
+import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
 import { conflict, invalidRequest, notFound } from '../shared/errors.js';
 import { hashPassword } from '../shared/security/password.js';
+import type { AssignmentRepository } from './assignment-repository.js';
 import type { OrganizationRepository } from './repository.js';
 
 export interface OrganizationServiceDependencies {
   repository: OrganizationRepository;
+  assignments: AssignmentRepository;
   /** 複数テーブルへまたがる登録をまとめるためのトランザクション境界。 */
   transaction<T>(fn: (repository: OrganizationRepository) => Promise<T>): Promise<T>;
 }
@@ -35,7 +39,7 @@ export interface OrganizationService {
   createSite(workspaceId: string, input: CreateSiteRequest): Promise<Site>;
   listDepartments(workspaceId: string): Promise<Department[]>;
   createDepartment(workspaceId: string, input: CreateDepartmentRequest): Promise<Department>;
-  listEmployees(workspaceId: string): Promise<Employee[]>;
+  listEmployees(context: AuthenticatedContext): Promise<Employee[]>;
   createEmployee(workspaceId: string, input: CreateEmployeeRequest): Promise<Employee>;
 }
 
@@ -113,7 +117,23 @@ export function createOrganizationService(
       }
     },
 
-    listEmployees: (workspaceId) => repository.listEmployees(workspaceId),
+    /**
+     * 従業員の一覧は閲覧範囲で絞る。
+     * 範囲を持たない利用者はワークスペース全体を見られる（管理者を想定）。
+     * 範囲を持つ利用者は、雇用元か受入組織が範囲に含まれる従業員だけを見られる。
+     */
+    async listEmployees(context) {
+      const workspaceId = context.workspace.id;
+      const employees = await repository.listEmployees(workspaceId);
+      if (context.organizationScopes.length === 0) return employees;
+
+      const organizations = await deps.assignments.listEmployeeOrganizations(workspaceId);
+      return employees.filter((employee) => {
+        const view = organizations.get(employee.id);
+        if (!view) return false;
+        return canAccessEmployee(context.organizationScopes, view);
+      });
+    },
 
     async createEmployee(workspaceId, input) {
       const employeeNumber = requireValidCode('employeeNumber', input.employeeNumber);

@@ -30,8 +30,10 @@ export const sessionUserSchema = objectSchema({
     locale: localeSchema,
     roles: arraySchema(roleSchema),
     permissions: arraySchema({ type: 'string' }),
+    /** 勤怠を見られる組織。空なら制限なし（ワークスペース全体）。 */
+    organizationScopes: arraySchema(uuidSchema),
   },
-  required: ['id', 'email', 'displayName', 'locale', 'roles', 'permissions'],
+  required: ['id', 'email', 'displayName', 'locale', 'roles', 'permissions', 'organizationScopes'],
 });
 
 export const sessionResponseSchema = objectSchema({

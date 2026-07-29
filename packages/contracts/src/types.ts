@@ -55,6 +55,8 @@ export interface SessionUser {
   locale: Locale;
   roles: Role[];
   permissions: string[];
+  /** 勤怠を見られる組織。空なら制限なし。 */
+  organizationScopes: string[];
 }
 
 export interface SessionResponse {
@@ -595,4 +597,64 @@ export interface DiscrepancyReport {
   employeeId: string;
   discrepancies: Discrepancy[];
   observations: SessionObservationRecord[];
+}
+
+export interface AssignmentContractRecord {
+  id: string;
+  code: string;
+  name: string;
+  employerOrganizationId: string;
+  hostOrganizationId: string;
+  startsOn: string;
+  endsOn: string | null;
+  createdAt: string;
+}
+
+export interface AssignmentContractList {
+  contracts: AssignmentContractRecord[];
+}
+
+export interface CreateAssignmentContractRequest {
+  code: string;
+  name: string;
+  employerOrganizationId: string;
+  hostOrganizationId: string;
+  startsOn: string;
+  endsOn?: string;
+}
+
+export interface EmployeeAssignmentRecord {
+  id: string;
+  employeeId: string;
+  assignmentContractId: string;
+  workplaceSiteId: string | null;
+  startsOn: string;
+  endsOn: string | null;
+}
+
+export interface EmployeeAssignmentList {
+  assignments: EmployeeAssignmentRecord[];
+}
+
+export interface CreateEmployeeAssignmentRequest {
+  employeeId: string;
+  assignmentContractId: string;
+  workplaceSiteId?: string;
+  startsOn: string;
+  endsOn?: string;
+}
+
+export interface UserScopeRecord {
+  userId: string;
+  organizationId: string;
+  grantedAt: string;
+}
+
+export interface UserScopeList {
+  scopes: UserScopeRecord[];
+}
+
+export interface GrantUserScopeRequest {
+  userId: string;
+  organizationId: string;
 }

@@ -18,6 +18,9 @@ import { createDeviceService } from './device/service.js';
 import { createIdentityRepository } from './identity/repository.js';
 import { createIdentityRoutes, SESSION_COOKIE_NAME } from './identity/routes.js';
 import { createIdentityService } from './identity/service.js';
+import { createAssignmentRepository } from './organization/assignment-repository.js';
+import { createAssignmentRoutes } from './organization/assignment-routes.js';
+import { createAssignmentService } from './organization/assignment-service.js';
 import { createOrganizationRepository } from './organization/repository.js';
 import { createOrganizationRoutes } from './organization/routes.js';
 import { createOrganizationService } from './organization/service.js';
@@ -52,10 +55,15 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     defaultWorkspaceSlug: deps.defaultWorkspaceSlug ?? 'default',
   });
 
+  const assignmentRepository = createAssignmentRepository(deps.db);
+
   const organizationService = createOrganizationService({
     repository: createOrganizationRepository(deps.db),
+    assignments: assignmentRepository,
     transaction: (fn) => deps.db.transaction((tx) => fn(createOrganizationRepository(tx))),
   });
+
+  const assignmentService = createAssignmentService({ repository: assignmentRepository });
 
   const dayRepositories = {
     attendance: createAttendanceRepository(deps.db),
@@ -126,6 +134,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const approvalService = createApprovalService({
     repository: dayRepositories.approval,
+    assignments: assignmentRepository,
     now,
     transaction: withTransaction,
   });
@@ -147,6 +156,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     }),
   );
   api.route('/', createOrganizationRoutes({ service: organizationService }));
+  api.route('/', createAssignmentRoutes({ service: assignmentService }));
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));

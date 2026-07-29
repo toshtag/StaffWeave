@@ -169,6 +169,18 @@ export {
   sessionStateAt,
   shouldRenew,
 } from './identity/session.js';
+export type {
+  AssignmentContract,
+  ContractProblem,
+  EmployeeAssignment,
+  EmployeeOrganizationView,
+} from './organization/assignment.js';
+export {
+  activeAssignmentAt,
+  canAccessEmployee,
+  contractCoversDate,
+  validateContractPeriod,
+} from './organization/assignment.js';
 export type { CodeProblem } from './organization/codes.js';
 export { CODE_PATTERN, normalizeCode, validateCode } from './organization/codes.js';
 export type {
