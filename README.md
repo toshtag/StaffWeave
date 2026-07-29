@@ -194,7 +194,12 @@ pnpm verify            # lint + typecheck + 全テスト + E2E
 pnpm test:unit         # 単体テストのみ（DB 不要）
 pnpm test:integration  # 統合テストのみ（DB 必要）
 pnpm test:e2e          # ブラウザによる E2E（DB 必要）
+pnpm db:verify         # マイグレーションの適用漏れと内容の変更を検査
+pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・依存方向）を検査
 ```
+
+これらは GitHub Actions でも同じコマンドで実行されます。
+CI でしか通らない状態を作らないため、検証の内容はローカルと揃えています。
 
 統合テストは `TEST_DATABASE_URL` のデータベースを使い、実行のたびにデータを消去します。
 開発用データベースを誤って指さないよう、名前が `_test` で終わることを実行時に検査します。

@@ -3,6 +3,7 @@
  *
  *   pnpm db:migrate   未適用のマイグレーションを適用する
  *   pnpm db:status    適用状況を表示する
+ *   pnpm db:verify    適用が完了し、内容が変更されていないことを確かめる
  */
 import { createDatabase } from './database.js';
 import { getMigrationStatus, migrate } from './migrator.js';
@@ -47,7 +48,32 @@ async function main(): Promise<void> {
       return;
     }
 
-    throw new Error(`不明なコマンドです: ${command}（up または status を指定してください）`);
+    if (command === 'verify') {
+      // 適用漏れと、適用済みファイルの変更をまとめて検査する。
+      // 検証の場では「動くかどうか」より「意図せず変わっていないか」を先に見る。
+      const status = await getMigrationStatus(db);
+      const problems: string[] = [];
+
+      if (status.pending.length > 0) {
+        problems.push(`未適用が ${status.pending.length} 件あります`);
+      }
+      if (status.changed.length > 0) {
+        problems.push(
+          `適用済みの内容が変更されています: ${status.changed.map((file) => file.fileName).join(', ')}`,
+        );
+      }
+
+      if (problems.length > 0) {
+        for (const problem of problems) console.error(problem);
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log(`適用済み ${status.applied.length} 件。未適用と変更はありません。`);
+      return;
+    }
+
+    throw new Error(`不明なコマンドです: ${command}（up / status / verify を指定してください）`);
   } finally {
     await db.close();
   }
