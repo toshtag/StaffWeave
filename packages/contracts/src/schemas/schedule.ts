@@ -56,6 +56,7 @@ export const workScheduleSchema = objectSchema({
     startMinutes: { oneOf: [startMinutesSchema, { type: 'null' }] },
     endMinutes: { oneOf: [endMinutesSchema, { type: 'null' }] },
     breakMinutes: breakMinutesSchema,
+    leaveTypeId: { oneOf: [uuidSchema, { type: 'null' }] },
   },
   required: [
     'employeeId',
@@ -65,6 +66,7 @@ export const workScheduleSchema = objectSchema({
     'startMinutes',
     'endMinutes',
     'breakMinutes',
+    'leaveTypeId',
   ],
 });
 
@@ -83,8 +85,126 @@ export const upsertWorkScheduleRequestSchema = objectSchema({
     startMinutes: startMinutesSchema,
     endMinutes: endMinutesSchema,
     breakMinutes: breakMinutesSchema,
+    leaveTypeId: uuidSchema,
   },
   required: ['employeeId', 'businessDate'],
+});
+
+export const leaveTypeSchema = objectSchema({
+  properties: {
+    id: uuidSchema,
+    code: codeSchema,
+    name: nameSchema,
+    paid: { type: 'boolean', description: '賃金の扱い。判断材料として持つだけで計算はしない' },
+    createdAt: timestampSchema,
+  },
+  required: ['id', 'code', 'name', 'paid', 'createdAt'],
+});
+
+export const leaveTypeListSchema = objectSchema({
+  properties: { leaveTypes: arraySchema(leaveTypeSchema) },
+  required: ['leaveTypes'],
+});
+
+export const createLeaveTypeRequestSchema = objectSchema({
+  properties: { code: codeSchema, name: nameSchema, paid: { type: 'boolean' } },
+  required: ['code', 'name'],
+});
+
+export const workCycleDaySchema = objectSchema({
+  properties: {
+    position: { type: 'integer', minimum: 0 },
+    dayType: { type: 'string', enum: ['working_day', 'non_working_day', 'public_holiday'] },
+    workPatternId: { oneOf: [uuidSchema, { type: 'null' }] },
+  },
+  required: ['position', 'dayType', 'workPatternId'],
+});
+
+export const workCycleSchema = objectSchema({
+  description: '勤務周期。長さの決まった並びを繰り返す。曜日を前提にしない',
+  properties: {
+    id: uuidSchema,
+    code: codeSchema,
+    name: nameSchema,
+    cycleLength: { type: 'integer', minimum: 1, maximum: 366 },
+    days: arraySchema(workCycleDaySchema),
+    createdAt: timestampSchema,
+  },
+  required: ['id', 'code', 'name', 'cycleLength', 'days', 'createdAt'],
+});
+
+export const workCycleListSchema = objectSchema({
+  properties: { workCycles: arraySchema(workCycleSchema) },
+  required: ['workCycles'],
+});
+
+export const createWorkCycleRequestSchema = objectSchema({
+  properties: {
+    code: codeSchema,
+    name: nameSchema,
+    cycleLength: { type: 'integer', minimum: 1, maximum: 366 },
+    days: arraySchema(
+      objectSchema({
+        properties: {
+          position: { type: 'integer', minimum: 0 },
+          dayType: { type: 'string', enum: ['working_day', 'non_working_day', 'public_holiday'] },
+          workPatternId: uuidSchema,
+        },
+        required: ['position', 'dayType'],
+      }),
+    ),
+  },
+  required: ['code', 'name', 'cycleLength', 'days'],
+});
+
+export const employeeWorkCycleSchema = objectSchema({
+  properties: {
+    id: uuidSchema,
+    employeeId: uuidSchema,
+    workCycleId: uuidSchema,
+    anchorDate: businessDateSchema,
+    effectiveFrom: businessDateSchema,
+    effectiveTo: { oneOf: [businessDateSchema, { type: 'null' }] },
+  },
+  required: ['id', 'employeeId', 'workCycleId', 'anchorDate', 'effectiveFrom', 'effectiveTo'],
+});
+
+export const employeeWorkCycleListSchema = objectSchema({
+  properties: { assignments: arraySchema(employeeWorkCycleSchema) },
+  required: ['assignments'],
+});
+
+export const assignWorkCycleRequestSchema = objectSchema({
+  description: '従業員へ勤務周期を割り当てる。有効期間を持たせ、制度の変更を過去へ波及させない',
+  properties: {
+    employeeId: uuidSchema,
+    workCycleId: uuidSchema,
+    anchorDate: businessDateSchema,
+    effectiveFrom: businessDateSchema,
+    effectiveTo: businessDateSchema,
+  },
+  required: ['employeeId', 'workCycleId', 'anchorDate', 'effectiveFrom'],
+});
+
+export const generateWorkSchedulesRequestSchema = objectSchema({
+  description: '割り当てた勤務周期から、期間分の勤務予定を作る',
+  properties: {
+    employeeId: uuidSchema,
+    from: businessDateSchema,
+    to: businessDateSchema,
+    /** すでにある予定を置き換えるかどうか。既定では手で直した予定を残す。 */
+    overwrite: { type: 'boolean' },
+  },
+  required: ['employeeId', 'from', 'to'],
+});
+
+export const generateWorkSchedulesResponseSchema = objectSchema({
+  properties: {
+    created: { type: 'integer' },
+    skipped: { type: 'integer', description: 'すでに予定があったため作らなかった日数' },
+    uncovered: { type: 'integer', description: '割り当てが無く決められなかった日数' },
+  },
+  required: ['created', 'skipped', 'uncovered'],
 });
 
 export const listWorkSchedulesQuerySchema = objectSchema({
@@ -126,6 +246,8 @@ export const attendanceCalculationSchema = objectSchema({
     outsideScheduleMinutes: { type: 'integer' },
     nightMinutes: { type: 'integer' },
     nonWorkingDayMinutes: { type: 'integer' },
+    leaveMinutes: { type: 'integer' },
+    absenceMinutes: { type: 'integer' },
     basis: objectSchema({
       properties: {
         ruleVersion: { type: 'string' },
@@ -151,6 +273,8 @@ export const attendanceCalculationSchema = objectSchema({
     'outsideScheduleMinutes',
     'nightMinutes',
     'nonWorkingDayMinutes',
+    'leaveMinutes',
+    'absenceMinutes',
     'basis',
   ],
 });
