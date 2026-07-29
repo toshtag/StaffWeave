@@ -1,6 +1,10 @@
 import type { Database } from '@staffweave/db';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
+import { createAttendanceRepository } from './attendance/repository.js';
+import { createAttendanceRoutes } from './attendance/routes.js';
+import { createAttendanceService } from './attendance/service.js';
+import { createAuditRepository } from './audit/repository.js';
 import { createIdentityRepository } from './identity/repository.js';
 import { createIdentityRoutes, SESSION_COOKIE_NAME } from './identity/routes.js';
 import { createIdentityService } from './identity/service.js';
@@ -34,6 +38,16 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     transaction: (fn) => deps.db.transaction((tx) => fn(createOrganizationRepository(tx))),
   });
 
+  const attendanceService = createAttendanceService({
+    repository: createAttendanceRepository(deps.db),
+    audit: createAuditRepository(deps.db),
+    now,
+    transaction: (fn) =>
+      deps.db.transaction((tx) =>
+        fn({ attendance: createAttendanceRepository(tx), audit: createAuditRepository(tx) }),
+      ),
+  });
+
   const api = new Hono<AppEnv>();
 
   // 認証は一箇所で行い、各ルートは c.get('auth') を通じてのみ利用者を知る。
@@ -51,6 +65,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     }),
   );
   api.route('/', createOrganizationRoutes({ service: organizationService }));
+  api.route('/', createAttendanceRoutes({ service: attendanceService }));
 
   const app = new Hono<AppEnv>();
   app.route('/api', api);

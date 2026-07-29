@@ -73,6 +73,45 @@ export async function createOrganization(
   return id;
 }
 
+/** ログインできる従業員（利用者付き）を作る。 */
+export async function createEmployeeWithAccount(
+  db: Database,
+  workspaceId: string,
+  input: {
+    organizationId: string;
+    employeeNumber: string;
+    displayName: string;
+    email: string;
+    password?: string;
+    roles?: readonly Role[];
+    primarySiteId?: string | null;
+  },
+): Promise<{ employeeId: string; userId: string }> {
+  const userId = await createUser(db, workspaceId, {
+    email: input.email,
+    ...(input.password === undefined ? {} : { password: input.password }),
+    displayName: input.displayName,
+    roles: input.roles ?? ['employee'],
+  });
+
+  const rows = await db.query<{ id: string }>(
+    `INSERT INTO employees
+       (workspace_id, organization_id, user_id, employee_number, display_name, primary_site_id)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [
+      workspaceId,
+      input.organizationId,
+      userId,
+      input.employeeNumber,
+      input.displayName,
+      input.primarySiteId ?? null,
+    ],
+  );
+  const employeeId = rows[0]?.id;
+  if (!employeeId) throw new Error('従業員を作成できませんでした');
+  return { employeeId, userId };
+}
+
 /** Set-Cookie ヘッダーからセッション Cookie を取り出す。 */
 export function sessionCookieOf(response: Response): string {
   const header = response.headers.get('set-cookie');

@@ -1,5 +1,10 @@
 import type { JsonSchema } from './json-schema.js';
 import {
+  recordAttendanceEventRequestSchema,
+  recordAttendanceEventResponseSchema,
+  workDaySchema,
+} from './schemas/attendance.js';
+import {
   loginRequestSchema,
   sessionResponseSchema,
   updatePreferencesRequestSchema,
@@ -229,6 +234,48 @@ export const operations = {
       unauthorized,
       forbidden,
       conflict,
+    ],
+  },
+  recordAttendanceEvent: {
+    operationId: 'recordAttendanceEvent',
+    method: 'post',
+    path: '/attendance/events',
+    summary: '自分の打刻を記録する（同じ冪等キーの再送は 1 件だけ記録される）',
+    tags: ['attendance'],
+    security: 'session',
+    requestBody: recordAttendanceEventRequestSchema,
+    responses: [
+      {
+        status: 201,
+        description: '記録した打刻とその日の状態',
+        schema: recordAttendanceEventResponseSchema,
+      },
+      {
+        status: 200,
+        description: '同じ冪等キーの再送。既存の記録をそのまま返す',
+        schema: recordAttendanceEventResponseSchema,
+      },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      {
+        status: 409,
+        description: '現在の状態では受け付けられない打刻',
+        schema: errorResponseSchema,
+      },
+    ],
+  },
+  getTodayAttendance: {
+    operationId: 'getTodayAttendance',
+    method: 'get',
+    path: '/attendance/today',
+    summary: '自分の当日の勤務状態と打刻を取得する',
+    tags: ['attendance'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '当日の勤務状態', schema: workDaySchema },
+      unauthorized,
+      forbidden,
     ],
   },
 } as const satisfies Record<string, OperationContract>;
