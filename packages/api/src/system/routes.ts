@@ -1,6 +1,11 @@
+import { buildOpenApiDocument } from '@staffweave/contracts';
 import type { Database } from '@staffweave/db';
 import { getMigrationStatus } from '@staffweave/db';
 import { Hono } from 'hono';
+import type { AppEnv } from '../shared/context.js';
+
+/** 契約文書へ載せる版。実装と契約の対応が追えるよう、リリース時に更新する。 */
+export const API_VERSION = '0.2.0';
 
 export interface SystemRouteDependencies {
   db: Database;
@@ -19,9 +24,12 @@ interface ReadinessCheck {
  *
  * - `/health` はプロセスが応答できるかどうかだけを返す（外部依存を見ない）。
  * - `/ready` はデータベース接続とマイグレーション適用状況を確認する。
+ * - `/openapi.json` は API 契約そのものを配布する。
  */
-export function createSystemRoutes(deps: SystemRouteDependencies): Hono {
-  const app = new Hono();
+export function createSystemRoutes(deps: SystemRouteDependencies): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.get('/openapi.json', (c) => c.json(buildOpenApiDocument(API_VERSION)));
 
   app.get('/health', (c) =>
     c.json({

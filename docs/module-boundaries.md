@@ -39,14 +39,15 @@ Web・Agent・外部連携の共通契約。
 
 ### `@staffweave/db`
 
-PostgreSQL アクセス層。
+PostgreSQL 接続層。
 
 - SQL マイグレーション（連番付き `.sql`）
 - 接続管理とトランザクション
-- Repository 実装（明示的な SQL）
+- 明示的な SQL を実行する最小のインターフェース（`Database` / `Queryable`）
 
-Repository のインターフェースは、それを使う側（`api`）が定義します。
-すべての Repository メソッドは `workspaceId` を必須引数として受け取ります。
+PostgreSQL ドライバの型はこのパッケージの外へ出しません。
+Repository の定義と実装は、それを使うユースケースと同じ場所（`api` の機能ディレクトリ）に置きます。
+SQL を離れた場所に置くと、どのクエリがどのユースケースのものか追えなくなるためです。
 
 ### `@staffweave/api`
 
@@ -54,9 +55,12 @@ Hono による HTTP サーバー。
 
 - ユースケース（アプリケーションサービス）
 - ルーティング、認証、認可、入力検証
-- Repository インターフェースの定義
+- Repository の定義と SQL 実装
 
 ここが唯一、`domain` と `db` を組み合わせる場所です。
+機能ディレクトリは `identity` / `organization` のように業務の単位で分け、
+それぞれが `repository.ts`（永続化）、`service.ts`（ユースケース）、`routes.ts`（HTTP）を持ちます。
+すべての Repository メソッドは `workspaceId` を必須引数として受け取り、SQL の `WHERE` 句へ必ず含めます。
 
 ### `@staffweave/web`
 

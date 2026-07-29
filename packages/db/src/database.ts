@@ -1,15 +1,16 @@
 import pg from 'pg';
 import type { Database, Queryable, QueryParameter } from './types.js';
 
-// timestamptz を JavaScript の Date へ変換せず、ISO 文字列のまま受け取る。
-// 勤怠は業務日とタイムゾーンを明示的に扱うため、ドライバによる暗黙変換を避ける。
-const TIMESTAMPTZ_OID = 1184;
+// 型変換の方針:
+// - timestamptz は絶対時刻なので Date のまま扱う（ドライバの既定）。
+// - date と timestamp（タイムゾーンなし）は、実行環境のタイムゾーンで解釈されると
+//   業務日がずれるため、文字列のまま受け取り、必要な場所で明示的に解釈する。
+// - numeric は浮動小数へ丸めず文字列で受け取る。
 const TIMESTAMP_OID = 1114;
 const DATE_OID = 1082;
 const NUMERIC_OID = 1700;
 const INT8_OID = 20;
 
-pg.types.setTypeParser(TIMESTAMPTZ_OID, (value) => value);
 pg.types.setTypeParser(TIMESTAMP_OID, (value) => value);
 pg.types.setTypeParser(DATE_OID, (value) => value);
 pg.types.setTypeParser(NUMERIC_OID, (value) => value);

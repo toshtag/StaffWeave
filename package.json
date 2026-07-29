@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
+    "bootstrap": "pnpm --filter \"@staffweave/api\" bootstrap",
     "db:migrate": "pnpm --filter \"@staffweave/db\" migrate",
     "db:status": "pnpm --filter \"@staffweave/db\" status",
     "verify": "pnpm lint && pnpm typecheck && pnpm test"
