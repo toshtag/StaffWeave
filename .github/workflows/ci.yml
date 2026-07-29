@@ -1,0 +1,160 @@
+name: CI
+
+# 目的は「main へ入る前に、ローカルで必須としている検証をすべて機械的に通すこと」。
+# 検証の内容はローカルと同じコマンドを使い、CI でしか通らない状態を作らない。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # CI では既定のポートをそのまま使う（開発機のような衝突が起きないため）。
+  DATABASE_URL: postgres://staffweave:staffweave@localhost:5432/staffweave
+  TEST_DATABASE_URL: postgres://staffweave:staffweave@localhost:5432/staffweave_test
+  CARD_FINGERPRINT_KEY: ci-card-fingerprint-key
+
+jobs:
+  static:
+    name: 静的検証
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          # 依存のキャッシュはこれだけに絞る。取得のやり直しが最も重いため。
+          cache: pnpm
+
+      - name: 依存の再現性を確認
+        # ロックファイルと package.json が食い違っていればここで落ちる。
+        run: pnpm install --frozen-lockfile
+
+      - name: lint と format
+        run: pnpm lint
+
+      - name: 型検査
+        run: pnpm typecheck
+
+      - name: 単体テスト
+        run: pnpm test:unit
+
+      - name: リポジトリの決めごと
+        run: pnpm check:policy
+
+  database:
+    name: マイグレーションと統合テスト
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: staffweave
+          POSTGRES_PASSWORD: staffweave
+          POSTGRES_DB: staffweave
+          TZ: UTC
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U staffweave -d staffweave"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 検証用データベースを用意
+        run: |
+          psql "$DATABASE_URL" -c 'CREATE DATABASE staffweave_test'
+          psql "$DATABASE_URL" -c 'CREATE DATABASE staffweave_e2e'
+
+      - name: マイグレーションを適用
+        run: pnpm db:migrate
+
+      - name: 二度目の適用で何も起きないことを確認
+        run: pnpm db:migrate
+
+      - name: 適用漏れと内容の変更が無いことを確認
+        run: pnpm db:verify
+
+      - name: 統合テスト
+        run: pnpm test:integration
+
+  e2e:
+    name: 画面テスト
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: staffweave
+          POSTGRES_PASSWORD: staffweave
+          POSTGRES_DB: staffweave
+          TZ: UTC
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U staffweave -d staffweave"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 検証用データベースを用意
+        run: psql "$DATABASE_URL" -c 'CREATE DATABASE staffweave_e2e'
+
+      - name: ブラウザを取得
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: 画面テスト
+        run: pnpm test:e2e
+
+      - name: 失敗したときの記録を残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+
+  container:
+    name: コンテナのビルド
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: イメージをビルド
+        # 公開する成果物ではないため、ここではビルドが通ることだけを確かめる。
+        run: docker build -f docker/api.Dockerfile -t staffweave-app:ci .
