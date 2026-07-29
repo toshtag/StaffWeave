@@ -171,3 +171,16 @@ export {
 } from './identity/session.js';
 export type { CodeProblem } from './organization/codes.js';
 export { CODE_PATTERN, normalizeCode, validateCode } from './organization/codes.js';
+export type {
+  CycleProblem,
+  ResolvedCycleDay,
+  WorkCycle,
+  WorkCycleAssignment,
+  WorkCycleDay,
+} from './schedule/work-cycle.js';
+export {
+  cyclePositionOf,
+  resolveCycleDay,
+  selectAssignment,
+  validateWorkCycle,
+} from './schedule/work-cycle.js';
