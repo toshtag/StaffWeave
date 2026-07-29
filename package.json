@@ -25,7 +25,10 @@
     "db:status": "pnpm --filter \"@staffweave/db\" status",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e",
     "test:e2e": "playwright test",
-    "agent": "pnpm --filter \"@staffweave/agent\" start"
+    "agent": "pnpm --filter \"@staffweave/agent\" start",
+    "seed:demo": "pnpm --filter \"@staffweave/api\" seed:demo",
+    "backup": "./scripts/backup.sh",
+    "restore": "./scripts/restore.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",

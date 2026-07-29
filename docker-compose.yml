@@ -23,5 +23,28 @@ services:
       timeout: 3s
       retries: 20
 
+  # アプリケーション本体。`docker compose --profile app up -d` で起動する。
+  # 開発中は pnpm dev を使い、この定義はセルフホストの確認と CI のビルド検査に使う。
+  app:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: staffweave-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://staffweave:staffweave@db:5432/staffweave
+      API_HOST: 0.0.0.0
+      API_PORT: '8787'
+      NODE_ENV: production
+      DEFAULT_WORKSPACE_SLUG: ${DEFAULT_WORKSPACE_SLUG:-default}
+      CARD_FINGERPRINT_KEY: ${CARD_FINGERPRINT_KEY:-}
+      WEB_DIST_PATH: /app/packages/web/dist
+    ports:
+      - '${APP_HOST_PORT:-8787}:8787'
+
 volumes:
   staffweave-db-data:
