@@ -21,6 +21,7 @@ import { createIdentityService } from './identity/service.js';
 import { createOrganizationRepository } from './organization/repository.js';
 import { createOrganizationRoutes } from './organization/routes.js';
 import { createOrganizationService } from './organization/service.js';
+import { createWorkCycleRepository } from './schedule/cycle-repository.js';
 import { createScheduleRepository } from './schedule/repository.js';
 import { createScheduleRoutes } from './schedule/routes.js';
 import { createScheduleService } from './schedule/service.js';
@@ -96,6 +97,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const scheduleService = createScheduleService({
     repositories: dayRepositories,
+    cycles: createWorkCycleRepository(deps.db),
     transaction: withTransaction,
   });
 

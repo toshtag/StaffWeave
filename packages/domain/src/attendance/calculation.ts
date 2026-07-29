@@ -15,8 +15,17 @@ import { localMinutesOfDay } from './local-time.js';
 
 const MINUTE = 60_000;
 
-/** 勤務日の種別。休日労働の判定に使う。 */
-export const DAY_TYPES = ['working_day', 'non_working_day', 'public_holiday'] as const;
+/**
+ * 勤務日の種別。
+ * `leave` は休暇、`absence` は欠勤。どちらも予定はあるが働かない日として扱う。
+ */
+export const DAY_TYPES = [
+  'working_day',
+  'non_working_day',
+  'public_holiday',
+  'leave',
+  'absence',
+] as const;
 
 export type DayType = (typeof DAY_TYPES)[number];
 
@@ -103,6 +112,10 @@ export interface CalculationResult {
   nightMinutes: number;
   /** 休日・祝日に働いた実労働。 */
   nonWorkingDayMinutes: number;
+  /** 休暇として扱う時間。実労働ではない。 */
+  leaveMinutes: number;
+  /** 欠勤として扱う時間。実労働ではない。 */
+  absenceMinutes: number;
   basis: CalculationBasis;
 }
 
@@ -216,8 +229,11 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
     }
   }
 
+  // 休暇と欠勤は「予定はあるが働かない日」。所定労働は残し、働いた時間とは別に数える。
+  const plannedDay = dayType === 'working_day' || dayType === 'leave' || dayType === 'absence';
+
   const scheduledMinutes =
-    dayType === 'working_day' && scheduleInterval !== null
+    plannedDay && scheduleInterval !== null
       ? Math.max(
           0,
           Math.round((scheduleInterval.end - scheduleInterval.start) / MINUTE) -
@@ -225,7 +241,9 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
         )
       : 0;
 
-  const nonWorkingDayMinutes = dayType === 'working_day' ? 0 : workedMinutes;
+  const nonWorkingDayMinutes = plannedDay ? 0 : workedMinutes;
+  const leaveMinutes = dayType === 'leave' ? scheduledMinutes : 0;
+  const absenceMinutes = dayType === 'absence' ? scheduledMinutes : 0;
 
   const rounded = {
     attendedMinutes: applyRounding(attendedMinutes, rules),
@@ -235,6 +253,8 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
     outsideScheduleMinutes: applyRounding(outsideScheduleMinutes, rules),
     nightMinutes: applyRounding(nightMinutes, rules),
     nonWorkingDayMinutes: applyRounding(nonWorkingDayMinutes, rules),
+    leaveMinutes: applyRounding(leaveMinutes, rules),
+    absenceMinutes: applyRounding(absenceMinutes, rules),
   };
 
   const segments: CalculationSegment[] = [];
@@ -254,6 +274,8 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
       { label: '所定外', minutes: rounded.outsideScheduleMinutes },
       { label: '深夜帯', minutes: rounded.nightMinutes },
       { label: '休日労働', minutes: rounded.nonWorkingDayMinutes },
+      { label: '休暇', minutes: rounded.leaveMinutes },
+      { label: '欠勤', minutes: rounded.absenceMinutes },
       { label: '所定労働', minutes: scheduledMinutes },
     ],
     incomplete: summary.state !== 'finished' && summary.state !== 'not_started',

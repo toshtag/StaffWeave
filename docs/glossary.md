@@ -106,6 +106,8 @@
 | 休暇種別 | leave type | |
 | 欠勤 | absence | |
 | 勤務周期 | work cycle | 曜日固定を前提にしない繰り返し単位 |
+| 周期の位置 | cycle position | 周期の中の何日目か |
+| 起点日 | anchor date | 周期の位置 0 に対応する業務日 |
 | 有効期間 | effective period | `effective_from` / `effective_to` |
 
 ## 複数組織と契約

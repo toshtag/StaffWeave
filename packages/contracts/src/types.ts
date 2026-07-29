@@ -197,6 +197,85 @@ export interface WorkScheduleRecord {
   startMinutes: number | null;
   endMinutes: number | null;
   breakMinutes: number;
+  leaveTypeId: string | null;
+}
+
+export interface LeaveTypeRecord {
+  id: string;
+  code: string;
+  name: string;
+  paid: boolean;
+  createdAt: string;
+}
+
+export interface LeaveTypeList {
+  leaveTypes: LeaveTypeRecord[];
+}
+
+export interface CreateLeaveTypeRequest {
+  code: string;
+  name: string;
+  paid?: boolean;
+}
+
+export interface WorkCycleDayRecord {
+  position: number;
+  dayType: 'working_day' | 'non_working_day' | 'public_holiday';
+  workPatternId: string | null;
+}
+
+export interface WorkCycleRecord {
+  id: string;
+  code: string;
+  name: string;
+  cycleLength: number;
+  days: WorkCycleDayRecord[];
+  createdAt: string;
+}
+
+export interface WorkCycleList {
+  workCycles: WorkCycleRecord[];
+}
+
+export interface CreateWorkCycleRequest {
+  code: string;
+  name: string;
+  cycleLength: number;
+  days: { position: number; dayType: WorkCycleDayRecord['dayType']; workPatternId?: string }[];
+}
+
+export interface EmployeeWorkCycleRecord {
+  id: string;
+  employeeId: string;
+  workCycleId: string;
+  anchorDate: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+}
+
+export interface EmployeeWorkCycleList {
+  assignments: EmployeeWorkCycleRecord[];
+}
+
+export interface AssignWorkCycleRequest {
+  employeeId: string;
+  workCycleId: string;
+  anchorDate: string;
+  effectiveFrom: string;
+  effectiveTo?: string;
+}
+
+export interface GenerateWorkSchedulesRequest {
+  employeeId: string;
+  from: string;
+  to: string;
+  overwrite?: boolean;
+}
+
+export interface GenerateWorkSchedulesResponse {
+  created: number;
+  skipped: number;
+  uncovered: number;
 }
 
 export interface WorkScheduleList {
@@ -211,6 +290,7 @@ export interface UpsertWorkScheduleRequest {
   startMinutes?: number;
   endMinutes?: number;
   breakMinutes?: number;
+  leaveTypeId?: string;
 }
 
 export interface AttendanceCalculationRecord {
@@ -226,6 +306,8 @@ export interface AttendanceCalculationRecord {
   outsideScheduleMinutes: number;
   nightMinutes: number;
   nonWorkingDayMinutes: number;
+  leaveMinutes: number;
+  absenceMinutes: number;
   basis: CalculationBasis;
 }
 

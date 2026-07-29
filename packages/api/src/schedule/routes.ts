@@ -1,6 +1,17 @@
-import type { CreateWorkPatternRequest, UpsertWorkScheduleRequest } from '@staffweave/contracts';
+import type {
+  AssignWorkCycleRequest,
+  CreateLeaveTypeRequest,
+  CreateWorkCycleRequest,
+  CreateWorkPatternRequest,
+  GenerateWorkSchedulesRequest,
+  UpsertWorkScheduleRequest,
+} from '@staffweave/contracts';
 import {
+  assignWorkCycleRequestSchema,
+  createLeaveTypeRequestSchema,
+  createWorkCycleRequestSchema,
   createWorkPatternRequestSchema,
+  generateWorkSchedulesRequestSchema,
   listWorkSchedulesQuerySchema,
   operations,
   upsertWorkScheduleRequestSchema,
@@ -49,6 +60,55 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
     const auth = requirePermission(c, 'employee.manage');
     const body = await readBody<UpsertWorkScheduleRequest>(c, upsertWorkScheduleRequestSchema);
     return c.json(await service.upsertWorkSchedule(auth, body), 200);
+  });
+
+  app.get(operations.listLeaveTypes.path, async (c) => {
+    const auth = requirePermission(c, 'organization.read');
+    return c.json({ leaveTypes: await service.listLeaveTypes(auth.workspace.id) }, 200);
+  });
+
+  app.post(operations.createLeaveType.path, async (c) => {
+    const auth = requirePermission(c, 'organization.manage');
+    const body = await readBody<CreateLeaveTypeRequest>(c, createLeaveTypeRequestSchema);
+    return c.json(await service.createLeaveType(auth.workspace.id, body), 201);
+  });
+
+  app.get(operations.listWorkCycles.path, async (c) => {
+    const auth = requirePermission(c, 'organization.read');
+    return c.json({ workCycles: await service.listWorkCycles(auth.workspace.id) }, 200);
+  });
+
+  app.post(operations.createWorkCycle.path, async (c) => {
+    const auth = requirePermission(c, 'organization.manage');
+    const body = await readBody<CreateWorkCycleRequest>(c, createWorkCycleRequestSchema);
+    return c.json(await service.createWorkCycle(auth.workspace.id, body), 201);
+  });
+
+  app.get(operations.listEmployeeWorkCycles.path, async (c) => {
+    const auth = requirePermission(c, 'employee.read');
+    const employeeId = new URL(c.req.url).searchParams.get('employeeId');
+    if (employeeId === null) {
+      throw invalidRequest([{ field: 'employeeId', message: '従業員を指定してください' }]);
+    }
+    return c.json(
+      { assignments: await service.listAssignments(auth.workspace.id, employeeId) },
+      200,
+    );
+  });
+
+  app.post(operations.assignWorkCycle.path, async (c) => {
+    const auth = requirePermission(c, 'employee.manage');
+    const body = await readBody<AssignWorkCycleRequest>(c, assignWorkCycleRequestSchema);
+    return c.json(await service.assignWorkCycle(auth.workspace.id, body), 201);
+  });
+
+  app.post(operations.generateWorkSchedules.path, async (c) => {
+    const auth = requirePermission(c, 'employee.manage');
+    const body = await readBody<GenerateWorkSchedulesRequest>(
+      c,
+      generateWorkSchedulesRequestSchema,
+    );
+    return c.json(await service.generateWorkSchedules(auth, body), 200);
   });
 
   return app;
