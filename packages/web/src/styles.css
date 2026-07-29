@@ -381,3 +381,17 @@ h3 {
     flex: 1;
   }
 }
+
+.anomaly-severity {
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.anomaly-severity[data-severity="warning"] {
+  color: #b3261e;
+  font-weight: 600;
+}
+
+.anomaly-severity[data-severity="info"] {
+  color: var(--muted);
+}

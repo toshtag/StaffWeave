@@ -4,6 +4,7 @@ import { ApiRequestError, api } from '../api/client.ts';
 import { LocaleSwitcher } from '../components/LocaleSwitcher.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import { useSession } from '../session/SessionProvider.tsx';
+import { AnomalyPanel } from './AnomalyPanel.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
 import { PendingApprovals } from './PendingApprovals.tsx';
 import { TodayAttendance } from './TodayAttendance.tsx';
@@ -104,6 +105,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         )}
 
         <PendingApprovals session={session} />
+
+        <AnomalyPanel session={session} />
 
         <section className="card">
           <h2>{messages.signedInAs}</h2>
