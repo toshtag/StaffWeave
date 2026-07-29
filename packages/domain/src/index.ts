@@ -7,6 +7,24 @@ export {
   isBusinessDate,
 } from './attendance/business-date.js';
 export type {
+  CalculationBasis,
+  CalculationInput,
+  CalculationResult,
+  CalculationRules,
+  CalculationSegment,
+  CalculationStep,
+  DayType,
+  RoundingMode,
+  WorkSchedule,
+} from './attendance/calculation.js';
+export {
+  calculateWorkDay,
+  DAY_TYPES,
+  DEFAULT_CALCULATION_RULES,
+  fingerprintSource,
+  isDayType,
+} from './attendance/calculation.js';
+export type {
   CorrectableEvent,
   CorrectionAction,
   EffectiveEvent,
@@ -34,6 +52,7 @@ export {
   isOpenWorkDay,
   summarizeWorkDay,
 } from './attendance/events.js';
+export { instantFromLocal, localMinutesOfDay, MINUTES_PER_DAY } from './attendance/local-time.js';
 export type { OccurredAtProblem } from './attendance/occurred-at.js';
 export {
   FUTURE_TOLERANCE_MINUTES,
