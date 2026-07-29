@@ -1,11 +1,27 @@
 import type {
+  AssignWorkCycleRequest,
+  CreateLeaveTypeRequest,
+  CreateWorkCycleRequest,
   CreateWorkPatternRequest,
+  EmployeeWorkCycleRecord,
+  GenerateWorkSchedulesRequest,
+  GenerateWorkSchedulesResponse,
+  LeaveTypeRecord,
   UpsertWorkScheduleRequest,
+  WorkCycleRecord,
   WorkPattern,
   WorkScheduleRecord,
 } from '@staffweave/contracts';
 import type { BusinessDate } from '@staffweave/domain';
-import { isBusinessDate, normalizeCode, validateCode } from '@staffweave/domain';
+import {
+  addDaysToBusinessDate,
+  isBusinessDate,
+  normalizeCode,
+  resolveCycleDay,
+  selectAssignment,
+  validateCode,
+  validateWorkCycle,
+} from '@staffweave/domain';
 import type { DayRepositories } from '../attendance/day.js';
 import { recalculateWorkDay } from '../attendance/day.js';
 import type { AttendanceRepository } from '../attendance/repository.js';
@@ -13,6 +29,7 @@ import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
 import { conflict, invalidRequest, notFound } from '../shared/errors.js';
+import type { WorkCycleRepository } from './cycle-repository.js';
 
 export interface ScheduleRepositories extends DayRepositories {
   audit: AuditRepository;
@@ -20,6 +37,7 @@ export interface ScheduleRepositories extends DayRepositories {
 
 export interface ScheduleServiceDependencies {
   repositories: DayRepositories;
+  cycles: WorkCycleRepository;
   transaction<T>(fn: (repositories: ScheduleRepositories) => Promise<T>): Promise<T>;
 }
 
@@ -34,6 +52,20 @@ export interface ScheduleService {
     context: AuthenticatedContext,
     input: UpsertWorkScheduleRequest,
   ): Promise<WorkScheduleRecord>;
+
+  listLeaveTypes(workspaceId: string): Promise<LeaveTypeRecord[]>;
+  createLeaveType(workspaceId: string, input: CreateLeaveTypeRequest): Promise<LeaveTypeRecord>;
+  listWorkCycles(workspaceId: string): Promise<WorkCycleRecord[]>;
+  createWorkCycle(workspaceId: string, input: CreateWorkCycleRequest): Promise<WorkCycleRecord>;
+  listAssignments(workspaceId: string, employeeId: string): Promise<EmployeeWorkCycleRecord[]>;
+  assignWorkCycle(
+    workspaceId: string,
+    input: AssignWorkCycleRequest,
+  ): Promise<EmployeeWorkCycleRecord>;
+  generateWorkSchedules(
+    context: AuthenticatedContext,
+    input: GenerateWorkSchedulesRequest,
+  ): Promise<GenerateWorkSchedulesResponse>;
 }
 
 function requireBusinessDate(value: string, field: string): BusinessDate {
@@ -101,6 +133,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
       const workspaceId = context.workspace.id;
       const businessDate = requireBusinessDate(input.businessDate, 'businessDate');
 
+      let leaveTypeId = input.leaveTypeId ?? null;
       let startMinutes = input.startMinutes ?? null;
       let endMinutes = input.endMinutes ?? null;
       let breakMinutes = input.breakMinutes ?? 0;
@@ -117,7 +150,12 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
 
       const dayType = input.dayType ?? (startMinutes === null ? 'non_working_day' : 'working_day');
 
-      if (dayType !== 'working_day') {
+      // 休暇と欠勤は「予定はあるが働かない日」。所定の時刻はそのまま残す。
+      const plannedDay = dayType === 'working_day' || dayType === 'leave' || dayType === 'absence';
+
+      if (dayType !== 'leave') leaveTypeId = null;
+
+      if (!plannedDay) {
         // 休日には予定時刻を持たせない。
         startMinutes = null;
         endMinutes = null;
@@ -144,6 +182,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
             startMinutes,
             endMinutes,
             breakMinutes,
+            leaveTypeId,
           });
         } catch (error) {
           if (isForeignKeyViolation(error)) throw notFound('従業員または勤務パターン');
@@ -175,6 +214,217 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
         );
 
         return saved;
+      });
+    },
+
+    listLeaveTypes: (workspaceId) => deps.cycles.listLeaveTypes(workspaceId),
+
+    async createLeaveType(workspaceId, input) {
+      if (validateCode(input.code).length > 0) {
+        throw invalidRequest([
+          { field: 'code', message: 'コードは英数字と - _ のみ、32 文字以内で指定してください' },
+        ]);
+      }
+      try {
+        return await deps.cycles.createLeaveType(workspaceId, {
+          code: normalizeCode(input.code),
+          name: input.name,
+          paid: input.paid ?? true,
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) throw conflict('この休暇種別はすでに登録されています');
+        throw error;
+      }
+    },
+
+    listWorkCycles: (workspaceId) => deps.cycles.listWorkCycles(workspaceId),
+
+    async createWorkCycle(workspaceId, input) {
+      if (validateCode(input.code).length > 0) {
+        throw invalidRequest([
+          { field: 'code', message: 'コードは英数字と - _ のみ、32 文字以内で指定してください' },
+        ]);
+      }
+
+      const days = input.days.map((day) => ({
+        position: day.position,
+        dayType: day.dayType,
+        workPatternId: day.workPatternId ?? null,
+      }));
+
+      const problems = validateWorkCycle({ cycleLength: input.cycleLength, days });
+      if (problems.length > 0) {
+        throw invalidRequest([
+          {
+            field: 'days',
+            message: `周期の定義が正しくありません（${problems.join(', ')}）`,
+          },
+        ]);
+      }
+
+      try {
+        return await deps.cycles.createWorkCycle(workspaceId, {
+          code: normalizeCode(input.code),
+          name: input.name,
+          cycleLength: input.cycleLength,
+          days,
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) throw conflict('この勤務周期はすでに登録されています');
+        if (isForeignKeyViolation(error)) throw notFound('勤務パターン');
+        throw error;
+      }
+    },
+
+    listAssignments: (workspaceId, employeeId) =>
+      deps.cycles.listAssignments(workspaceId, employeeId),
+
+    async assignWorkCycle(workspaceId, input) {
+      const anchorDate = requireBusinessDate(input.anchorDate, 'anchorDate');
+      const effectiveFrom = requireBusinessDate(input.effectiveFrom, 'effectiveFrom');
+      const effectiveTo =
+        input.effectiveTo === undefined
+          ? null
+          : requireBusinessDate(input.effectiveTo, 'effectiveTo');
+
+      if (effectiveTo !== null && effectiveTo < effectiveFrom) {
+        throw invalidRequest([
+          { field: 'effectiveTo', message: '終了日は開始日以降にしてください' },
+        ]);
+      }
+
+      try {
+        return await deps.cycles.createAssignment(workspaceId, {
+          employeeId: input.employeeId,
+          workCycleId: input.workCycleId,
+          anchorDate,
+          effectiveFrom,
+          effectiveTo,
+        });
+      } catch (error) {
+        if (isForeignKeyViolation(error)) throw notFound('従業員または勤務周期');
+        throw error;
+      }
+    },
+
+    async generateWorkSchedules(context, input) {
+      const workspaceId = context.workspace.id;
+      const from = requireBusinessDate(input.from, 'from');
+      const to = requireBusinessDate(input.to, 'to');
+      if (from > to) {
+        throw invalidRequest([{ field: 'to', message: '終了日は開始日以降にしてください' }]);
+      }
+
+      const assignments = await deps.cycles.listAssignments(workspaceId, input.employeeId);
+      const cycles = new Map<string, WorkCycleRecord>();
+      const patterns = new Map<string, WorkPattern>();
+
+      let created = 0;
+      let skipped = 0;
+      let uncovered = 0;
+
+      return deps.transaction(async (repositories) => {
+        const timeZone = await resolveTimeZone(
+          repositories.attendance,
+          workspaceId,
+          input.employeeId,
+        );
+
+        for (
+          let businessDate = from;
+          businessDate <= to;
+          businessDate = addDaysToBusinessDate(businessDate, 1)
+        ) {
+          const assignment = selectAssignment(assignments, businessDate);
+          if (assignment === null) {
+            uncovered += 1;
+            continue;
+          }
+
+          if (!input.overwrite) {
+            const existing = await repositories.schedule.findWorkSchedule(
+              workspaceId,
+              input.employeeId,
+              businessDate,
+            );
+            // 手で直した予定を黙って上書きしない。
+            if (existing !== null) {
+              skipped += 1;
+              continue;
+            }
+          }
+
+          const cached = cycles.get(assignment.workCycleId);
+          let cycle: WorkCycleRecord;
+          if (cached === undefined) {
+            const found = await deps.cycles.findWorkCycle(workspaceId, assignment.workCycleId);
+            if (!found) throw notFound('勤務周期');
+            cycle = found;
+            cycles.set(assignment.workCycleId, found);
+          } else {
+            cycle = cached;
+          }
+
+          const resolved = resolveCycleDay(cycle, assignment, businessDate);
+          if (resolved === null) {
+            uncovered += 1;
+            continue;
+          }
+
+          let startMinutes: number | null = null;
+          let endMinutes: number | null = null;
+          let breakMinutes = 0;
+
+          if (resolved.workPatternId !== null) {
+            const cachedPattern = patterns.get(resolved.workPatternId);
+            let pattern: WorkPattern;
+            if (cachedPattern === undefined) {
+              const found = await repositories.schedule.findWorkPattern(
+                workspaceId,
+                resolved.workPatternId,
+              );
+              if (!found) throw notFound('勤務パターン');
+              pattern = found;
+              patterns.set(resolved.workPatternId, found);
+            } else {
+              pattern = cachedPattern;
+            }
+            startMinutes = pattern.startMinutes;
+            endMinutes = pattern.endMinutes;
+            breakMinutes = pattern.breakMinutes;
+          }
+
+          await repositories.schedule.upsertWorkSchedule(workspaceId, {
+            employeeId: input.employeeId,
+            businessDate,
+            workPatternId: resolved.workPatternId,
+            dayType: resolved.dayType,
+            startMinutes,
+            endMinutes,
+            breakMinutes,
+            leaveTypeId: null,
+          });
+          await recalculateWorkDay(
+            repositories,
+            workspaceId,
+            input.employeeId,
+            businessDate,
+            timeZone,
+          );
+          created += 1;
+        }
+
+        await repositories.audit.record(workspaceId, {
+          actorKind: 'user',
+          actorUserId: context.user.id,
+          action: 'work_schedule.generated',
+          targetType: 'work_schedule',
+          targetId: null,
+          summary: `${from} から ${to} の勤務予定を ${created} 日分作成しました`,
+          detail: { employeeId: input.employeeId, from, to, created, skipped, uncovered },
+        });
+
+        return { created, skipped, uncovered };
       });
     },
   };

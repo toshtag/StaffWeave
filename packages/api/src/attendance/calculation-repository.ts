@@ -38,13 +38,15 @@ interface CalculationRow {
   outside_schedule_minutes: number;
   night_minutes: number;
   non_working_day_minutes: number;
+  leave_minutes: number;
+  absence_minutes: number;
   basis: CalculationBasis;
 }
 
 const COLUMNS = `version, calculated_at, input_fingerprint, rule_version,
   attended_minutes, worked_minutes, break_minutes, scheduled_minutes,
   within_schedule_minutes, outside_schedule_minutes, night_minutes,
-  non_working_day_minutes, basis`;
+  non_working_day_minutes, leave_minutes, absence_minutes, basis`;
 
 function toRecord(row: CalculationRow): AttendanceCalculationRecord {
   return {
@@ -60,6 +62,8 @@ function toRecord(row: CalculationRow): AttendanceCalculationRecord {
     outsideScheduleMinutes: row.outside_schedule_minutes,
     nightMinutes: row.night_minutes,
     nonWorkingDayMinutes: row.non_working_day_minutes,
+    leaveMinutes: row.leave_minutes,
+    absenceMinutes: row.absence_minutes,
     basis: row.basis,
   };
 }
@@ -83,8 +87,8 @@ export function createCalculationRepository(db: Queryable): CalculationRepositor
            (workspace_id, employee_id, business_date, version, input_fingerprint, rule_version,
             attended_minutes, worked_minutes, break_minutes, scheduled_minutes,
             within_schedule_minutes, outside_schedule_minutes, night_minutes,
-            non_working_day_minutes, basis)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
+            non_working_day_minutes, leave_minutes, absence_minutes, basis)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)
          RETURNING ${COLUMNS}`,
         [
           workspaceId,
@@ -101,6 +105,8 @@ export function createCalculationRepository(db: Queryable): CalculationRepositor
           result.outsideScheduleMinutes,
           result.nightMinutes,
           result.nonWorkingDayMinutes,
+          result.leaveMinutes,
+          result.absenceMinutes,
           JSON.stringify(result.basis),
         ],
       );

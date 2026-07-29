@@ -11,6 +11,7 @@ export interface UpsertWorkScheduleInput {
   startMinutes: number | null;
   endMinutes: number | null;
   breakMinutes: number;
+  leaveTypeId: string | null;
 }
 
 export interface ScheduleRepository {
@@ -65,6 +66,7 @@ interface WorkScheduleRow {
   start_minutes: number | null;
   end_minutes: number | null;
   break_minutes: number;
+  leave_type_id: string | null;
 }
 
 function toWorkPattern(row: WorkPatternRow): WorkPattern {
@@ -88,12 +90,13 @@ function toWorkSchedule(row: WorkScheduleRow): WorkScheduleRecord {
     startMinutes: row.start_minutes,
     endMinutes: row.end_minutes,
     breakMinutes: row.break_minutes,
+    leaveTypeId: row.leave_type_id,
   };
 }
 
 const PATTERN_COLUMNS = 'id, code, name, start_minutes, end_minutes, break_minutes, created_at';
-const SCHEDULE_COLUMNS =
-  'employee_id, business_date, work_pattern_id, day_type, start_minutes, end_minutes, break_minutes';
+const SCHEDULE_COLUMNS = `employee_id, business_date, work_pattern_id, day_type,
+  start_minutes, end_minutes, break_minutes, leave_type_id`;
 
 export function createScheduleRepository(db: Queryable): ScheduleRepository {
   return {
@@ -155,14 +158,15 @@ export function createScheduleRepository(db: Queryable): ScheduleRepository {
       const rows = await db.query<WorkScheduleRow>(
         `INSERT INTO work_schedules
            (workspace_id, employee_id, business_date, work_pattern_id, day_type,
-            start_minutes, end_minutes, break_minutes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            start_minutes, end_minutes, break_minutes, leave_type_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (workspace_id, employee_id, business_date) DO UPDATE
            SET work_pattern_id = EXCLUDED.work_pattern_id,
                day_type        = EXCLUDED.day_type,
                start_minutes   = EXCLUDED.start_minutes,
                end_minutes     = EXCLUDED.end_minutes,
                break_minutes   = EXCLUDED.break_minutes,
+               leave_type_id   = EXCLUDED.leave_type_id,
                updated_at      = now()
          RETURNING ${SCHEDULE_COLUMNS}`,
         [
@@ -174,6 +178,7 @@ export function createScheduleRepository(db: Queryable): ScheduleRepository {
           input.startMinutes,
           input.endMinutes,
           input.breakMinutes,
+          input.leaveTypeId,
         ],
       );
       const row = rows[0];
