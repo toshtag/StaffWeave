@@ -5,6 +5,7 @@ export type {
   HttpMethod,
   OperationContract,
   OperationId,
+  PathParameterContract,
   ResponseContract,
   SecurityRequirement,
 } from './operations.js';

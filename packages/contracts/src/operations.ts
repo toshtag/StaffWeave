@@ -1,5 +1,8 @@
 import type { JsonSchema } from './json-schema.js';
 import {
+  businessDateSchema,
+  correctAttendanceRequestSchema,
+  correctAttendanceResponseSchema,
   recordAttendanceEventRequestSchema,
   recordAttendanceEventResponseSchema,
   workDaySchema,
@@ -36,6 +39,12 @@ export interface ResponseContract {
   schema?: JsonSchema;
 }
 
+export interface PathParameterContract {
+  name: string;
+  description: string;
+  schema: JsonSchema;
+}
+
 export interface OperationContract {
   operationId: string;
   method: HttpMethod;
@@ -44,6 +53,7 @@ export interface OperationContract {
   summary: string;
   tags: readonly string[];
   security: SecurityRequirement;
+  pathParameters?: readonly PathParameterContract[];
   requestBody?: JsonSchema;
   query?: JsonSchema;
   responses: readonly ResponseContract[];
@@ -276,6 +286,48 @@ export const operations = {
       { status: 200, description: '当日の勤務状態', schema: workDaySchema },
       unauthorized,
       forbidden,
+    ],
+  },
+  getAttendanceDay: {
+    operationId: 'getAttendanceDay',
+    method: 'get',
+    path: '/attendance/days/{businessDate}',
+    summary: '自分の指定した業務日の勤務状態と、修正を含むすべての記録を取得する',
+    tags: ['attendance'],
+    security: 'session',
+    pathParameters: [
+      { name: 'businessDate', description: '業務日（YYYY-MM-DD）', schema: businessDateSchema },
+    ],
+    responses: [
+      { status: 200, description: '指定した業務日の勤務状態', schema: workDaySchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
+  },
+  correctAttendance: {
+    operationId: 'correctAttendance',
+    method: 'post',
+    path: '/attendance/corrections',
+    summary: '自分の打刻を修正する（元の打刻は書き換えず、修正イベントを追加する）',
+    tags: ['attendance'],
+    security: 'session',
+    requestBody: correctAttendanceRequestSchema,
+    responses: [
+      {
+        status: 201,
+        description: '記録した修正とその日の状態',
+        schema: correctAttendanceResponseSchema,
+      },
+      {
+        status: 200,
+        description: '同じ冪等キーの再送。既存の記録をそのまま返す',
+        schema: correctAttendanceResponseSchema,
+      },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '対象の打刻が見つからない', schema: errorResponseSchema },
     ],
   },
 } as const satisfies Record<string, OperationContract>;
