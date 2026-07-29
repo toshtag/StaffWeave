@@ -185,6 +185,18 @@ export {
   sessionStateAt,
   shouldRenew,
 } from './identity/session.js';
+export type { CsvParseProblem, CsvParseResult } from './integration/csv.js';
+export { parseCsv, toCsv, toCsvValue } from './integration/csv.js';
+export type { ApiScope, WebhookEventType } from './integration/scopes.js';
+export {
+  API_SCOPE_LABELS,
+  API_SCOPES,
+  canonicalWebhookMessage,
+  hasScope,
+  isApiScope,
+  isWebhookEventType,
+  WEBHOOK_EVENT_TYPES,
+} from './integration/scopes.js';
 export type {
   AssignmentContract,
   ContractProblem,
