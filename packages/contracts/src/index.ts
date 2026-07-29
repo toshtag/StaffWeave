@@ -10,6 +10,7 @@ export type {
   SecurityRequirement,
 } from './operations.js';
 export { operationList, operations } from './operations.js';
+export * from './schemas/approval.js';
 export * from './schemas/attendance.js';
 export * from './schemas/auth.js';
 export * from './schemas/common.js';

@@ -71,6 +71,23 @@ export interface Messages {
   calculationIncomplete: string;
   calculationVersion: string;
   formatDuration: (minutes: number) => string;
+  request: string;
+  submitRequest: string;
+  cancelRequest: string;
+  requestDraft: string;
+  requestSubmitted: string;
+  requestApproved: string;
+  requestReturned: string;
+  requestCancelled: string;
+  notRequestedYet: string;
+  editingLocked: string;
+  requestComment: string;
+  approvals: string;
+  approve: string;
+  returnRequest: string;
+  returnReason: string;
+  noPendingRequests: string;
+  requestHistory: string;
 }
 
 const ja: Messages = {
@@ -141,6 +158,23 @@ const ja: Messages = {
   calculationVersion: '計算版',
   formatDuration: (minutes) =>
     minutes === 0 ? '0分' : `${Math.floor(minutes / 60)}時間${minutes % 60}分`,
+  request: '申請',
+  submitRequest: 'この日の勤怠を申請する',
+  cancelRequest: '申請を取り消す',
+  requestDraft: '未申請',
+  requestSubmitted: '申請中',
+  requestApproved: '承認済み',
+  requestReturned: '差し戻し',
+  requestCancelled: '取消済み',
+  notRequestedYet: 'まだ申請していません',
+  editingLocked: 'この日は打刻の追加や修正ができません',
+  requestComment: '申請コメント',
+  approvals: '承認待ちの申請',
+  approve: '承認',
+  returnRequest: '差し戻し',
+  returnReason: '差し戻しの理由',
+  noPendingRequests: '承認待ちの申請はありません',
+  requestHistory: '申請の履歴',
 };
 
 const en: Messages = {
@@ -211,6 +245,23 @@ const en: Messages = {
   calculationVersion: 'Calculation version',
   formatDuration: (minutes) =>
     minutes === 0 ? '0m' : `${Math.floor(minutes / 60)}h ${minutes % 60}m`,
+  request: 'Request',
+  submitRequest: 'Submit this day for approval',
+  cancelRequest: 'Cancel the request',
+  requestDraft: 'Not submitted',
+  requestSubmitted: 'Awaiting approval',
+  requestApproved: 'Approved',
+  requestReturned: 'Returned',
+  requestCancelled: 'Cancelled',
+  notRequestedYet: 'Not submitted yet',
+  editingLocked: 'Punches for this day can no longer be added or corrected',
+  requestComment: 'Comment',
+  approvals: 'Requests awaiting approval',
+  approve: 'Approve',
+  returnRequest: 'Return',
+  returnReason: 'Reason for returning',
+  noPendingRequests: 'No requests are awaiting approval',
+  requestHistory: 'Request history',
 };
 
 export const MESSAGES: Record<Locale, Messages> = { 'ja-JP': ja, en };

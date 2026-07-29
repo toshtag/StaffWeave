@@ -1,5 +1,10 @@
 import type { AttendanceEventRecord, SessionResponse, WorkDay } from '@staffweave/contracts';
-import type { AttendanceEventType, CorrectionAction, WorkDayState } from '@staffweave/domain';
+import type {
+  AttendanceEventType,
+  CorrectionAction,
+  DailyRequestState,
+  WorkDayState,
+} from '@staffweave/domain';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
@@ -44,6 +49,21 @@ function actionLabel(action: CorrectionAction, messages: Messages): string {
       return messages.actionVoid;
     case 'add':
       return messages.actionAdd;
+  }
+}
+
+function requestStateLabel(state: DailyRequestState, messages: Messages): string {
+  switch (state) {
+    case 'draft':
+      return messages.requestDraft;
+    case 'submitted':
+      return messages.requestSubmitted;
+    case 'approved':
+      return messages.requestApproved;
+    case 'returned':
+      return messages.requestReturned;
+    case 'cancelled':
+      return messages.requestCancelled;
   }
 }
 
@@ -130,6 +150,44 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
 
   function punch(eventType: AttendanceEventType): void {
     handle(api.recordAttendanceEvent({ eventType, requestId: crypto.randomUUID() }));
+  }
+
+  function reload(): void {
+    setSubmitting(true);
+    setError(null);
+    api
+      .getTodayAttendance()
+      .then((next) => setState({ status: 'ready', day: next }))
+      .catch((cause: unknown) => {
+        setError(cause instanceof ApiRequestError ? cause.message : messages.networkError);
+      })
+      .finally(() => setSubmitting(false));
+  }
+
+  function submitRequest(): void {
+    setSubmitting(true);
+    setError(null);
+    api
+      .submitDailyRequest({ businessDate: day.businessDate })
+      .then(reload)
+      .catch((cause: unknown) => {
+        setError(cause instanceof ApiRequestError ? cause.message : messages.networkError);
+        setSubmitting(false);
+      });
+  }
+
+  function cancelRequest(): void {
+    const requestId = day.request?.id;
+    if (requestId === undefined) return;
+    setSubmitting(true);
+    setError(null);
+    api
+      .decideDailyRequest(requestId, 'cancel', {})
+      .then(reload)
+      .catch((cause: unknown) => {
+        setError(cause instanceof ApiRequestError ? cause.message : messages.networkError);
+        setSubmitting(false);
+      });
   }
 
   function submitCorrection(current: CorrectionDraft): void {
@@ -243,6 +301,47 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
             ))}
           </ul>
         </>
+      )}
+
+      <h3>{messages.request}</h3>
+      <p className="request-state" data-state={day.request?.state ?? 'draft'}>
+        {day.request === null
+          ? messages.notRequestedYet
+          : requestStateLabel(day.request.state, messages)}
+      </p>
+      {!day.editable && <p className="notice">{messages.editingLocked}</p>}
+      {(day.request === null ||
+        day.request.state === 'returned' ||
+        day.request.state === 'cancelled') && (
+        <button type="button" disabled={submitting} onClick={submitRequest}>
+          {messages.submitRequest}
+        </button>
+      )}
+      {day.request?.state === 'submitted' && (
+        <button type="button" disabled={submitting} onClick={cancelRequest}>
+          {messages.cancelRequest}
+        </button>
+      )}
+      {day.request !== null && day.request.transitions.length > 0 && (
+        <details className="record-history">
+          <summary>{messages.requestHistory}</summary>
+          <ul className="history-list">
+            {day.request.transitions.map((transition) => (
+              <li key={transition.occurredAt}>
+                <span>
+                  {requestStateLabel(transition.fromState, messages)} →{' '}
+                  {requestStateLabel(transition.toState, messages)}
+                </span>
+                <time dateTime={transition.occurredAt}>
+                  {new Date(transition.occurredAt).toLocaleString(locale)}
+                </time>
+                {transition.comment !== null && (
+                  <span className="history-reason">{transition.comment}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <h3>{messages.punchHistory}</h3>

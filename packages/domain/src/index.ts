@@ -1,3 +1,36 @@
+export type {
+  DailyRequestContext,
+  DailyRequestEvent,
+  DailyRequestEventType,
+  DailyRequestState,
+  DailyRequestTransition,
+} from './approval/daily-request.js';
+export {
+  allowsAttendanceEditing as dailyRequestAllowsEditing,
+  applyDailyRequestEvent,
+  canApplyDailyRequestEvent,
+  DAILY_REQUEST_EVENTS,
+  DAILY_REQUEST_STATES,
+  INITIAL_DAILY_REQUEST,
+  isDailyRequestState,
+} from './approval/daily-request.js';
+export type {
+  MonthlyClosingContext,
+  MonthlyClosingEvent,
+  MonthlyClosingEventType,
+  MonthlyClosingState,
+  MonthlyClosingTransition,
+} from './approval/monthly-closing.js';
+export {
+  allowsAttendanceEditing as monthlyClosingAllowsEditing,
+  applyMonthlyClosingEvent,
+  canApplyMonthlyClosingEvent,
+  closingPeriodOf,
+  INITIAL_MONTHLY_CLOSING,
+  isMonthlyClosingState,
+  MONTHLY_CLOSING_EVENTS,
+  MONTHLY_CLOSING_STATES,
+} from './approval/monthly-closing.js';
 export type { BusinessDate } from './attendance/business-date.js';
 export {
   addDaysToBusinessDate,

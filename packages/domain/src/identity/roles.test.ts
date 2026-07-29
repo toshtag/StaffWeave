@@ -7,10 +7,12 @@ describe('hasPermission', () => {
     expect(hasPermission(['workspace_admin'], 'user.manage')).toBe(true);
   });
 
-  it('組織管理者は閲覧できるが変更はできない', () => {
+  it('組織管理者は閲覧と承認ができるが、組織の変更と締めはできない', () => {
     expect(hasPermission(['organization_manager'], 'organization.read')).toBe(true);
+    expect(hasPermission(['organization_manager'], 'attendance.approve')).toBe(true);
     expect(hasPermission(['organization_manager'], 'organization.manage')).toBe(false);
     expect(hasPermission(['organization_manager'], 'user.manage')).toBe(false);
+    expect(hasPermission(['organization_manager'], 'attendance.close')).toBe(false);
   });
 
   it('従業員は他人の情報を閲覧できない', () => {
@@ -30,7 +32,7 @@ describe('hasPermission', () => {
 describe('permissionsOf', () => {
   it('重複を排除して一覧を返す', () => {
     const permissions = permissionsOf(['organization_manager', 'organization_manager']);
-    expect(permissions).toEqual(['organization.read', 'employee.read']);
+    expect(permissions).toEqual(['organization.read', 'employee.read', 'attendance.approve']);
   });
 });
 
