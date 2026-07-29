@@ -19,7 +19,7 @@ export interface AppliedMigration {
   version: number;
   name: string;
   checksum: string;
-  applied_at: string;
+  applied_at: Date;
 }
 
 export interface MigrationStatus {
