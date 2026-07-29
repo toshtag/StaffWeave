@@ -23,8 +23,8 @@ export function createAttendanceRoutes(deps: AttendanceRouteDependencies): Hono<
       c,
       recordAttendanceEventRequestSchema,
     );
-    // 画面からの打刻はすべて web として記録する。端末や携帯からの経路は後続フェーズで追加する。
-    const { result, created } = await deps.service.recordEvent(auth, body, 'web');
+    // 画面からの打刻は web か mobile のみ。端末や修正の経路はここから指定できない。
+    const { result, created } = await deps.service.recordEvent(auth, body, body.source ?? 'web');
     return c.json(result, created ? 201 : 200);
   });
 

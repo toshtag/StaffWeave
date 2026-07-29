@@ -88,6 +88,9 @@ export interface Messages {
   returnReason: string;
   noPendingRequests: string;
   requestHistory: string;
+  offlineNotice: string;
+  pendingPunches: (count: number) => string;
+  skipToMain: string;
 }
 
 const ja: Messages = {
@@ -175,6 +178,9 @@ const ja: Messages = {
   returnReason: '差し戻しの理由',
   noPendingRequests: '承認待ちの申請はありません',
   requestHistory: '申請の履歴',
+  offlineNotice: 'オフラインです。打刻は端末に残し、接続が戻ったら送ります。',
+  pendingPunches: (count) => `送信待ちの打刻が ${count} 件あります`,
+  skipToMain: '本文へ移動',
 };
 
 const en: Messages = {
@@ -262,6 +268,9 @@ const en: Messages = {
   returnReason: 'Reason for returning',
   noPendingRequests: 'No requests are awaiting approval',
   requestHistory: 'Request history',
+  offlineNotice: 'You are offline. Punches stay on this device and are sent once you reconnect.',
+  pendingPunches: (count) => `${count} punch(es) waiting to be sent`,
+  skipToMain: 'Skip to main content',
 };
 
 export const MESSAGES: Record<Locale, Messages> = { 'ja-JP': ja, en };

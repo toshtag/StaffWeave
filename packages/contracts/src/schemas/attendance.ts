@@ -98,6 +98,11 @@ export const recordAttendanceEventRequestSchema = objectSchema({
       maxLength: 128,
       description: '二重送信を防ぐ冪等キー。同じ値の再送は最初の 1 件だけを記録する',
     },
+    source: {
+      type: 'string',
+      enum: ['web', 'mobile'],
+      description: '打刻の入力元。省略時は web',
+    },
   },
   required: ['eventType', 'requestId'],
 });

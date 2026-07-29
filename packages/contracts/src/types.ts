@@ -326,6 +326,8 @@ export interface RecordAttendanceEventRequest {
   eventType: AttendanceEventType;
   occurredAt?: string;
   requestId: string;
+  /** 画面からの打刻の入力元。端末や修正はこの経路では指定できない。 */
+  source?: 'web' | 'mobile';
 }
 
 export interface RecordAttendanceEventResponse {

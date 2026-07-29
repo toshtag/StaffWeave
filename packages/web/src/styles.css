@@ -20,6 +20,10 @@ main {
   max-width: 48rem;
   margin: 0 auto;
   padding: 1rem;
+  /* 端末の切り欠きを避ける。 */
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
 main.centered {
@@ -319,4 +323,61 @@ h3 {
   gap: 0.5rem;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* 打刻は片手で押せることを優先し、画面幅いっぱいの大きなボタンにする。 */
+.punch-card .punch-button {
+  min-height: 5rem;
+  font-size: 1.5rem;
+}
+
+.punch-card .break-button {
+  min-height: 3.5rem;
+  font-size: 1.125rem;
+}
+
+.offline-banner,
+.pending-banner {
+  margin: 0 0 1rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, CanvasText 6%, Canvas);
+  font-size: 0.9375rem;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  padding: 0.5rem 1rem;
+  background: Canvas;
+  color: CanvasText;
+  border: 1px solid var(--border);
+  border-radius: 0 0 0.5rem 0;
+}
+
+.skip-link:focus {
+  left: 0;
+  z-index: 10;
+}
+
+@media (max-width: 40rem) {
+  .page-header {
+    align-items: flex-start;
+  }
+
+  .punch-list li,
+  .approval-list li {
+    flex-wrap: wrap;
+  }
+
+  .punch-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .punch-actions button {
+    flex: 1;
+  }
 }
