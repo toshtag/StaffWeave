@@ -58,7 +58,7 @@ importers:
   packages/api:
     dependencies:
       '@hono/node-server':
-        specifier: ^1.19.5
+        specifier: ^1.19.17
         version: 1.19.17(hono@4.12.32)
       '@staffweave/contracts':
         specifier: workspace:*
@@ -76,12 +76,34 @@ importers:
       '@staffweave/agent':
         specifier: workspace:*
         version: link:../agent
+      '@staffweave/connector':
+        specifier: workspace:*
+        version: link:../connector
       '@types/node':
         specifier: ^24.7.0
         version: 24.13.3
       tsx:
         specifier: ^4.20.6
         version: 4.23.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(tsx@4.23.1))
+
+  packages/connector:
+    dependencies:
+      '@staffweave/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@staffweave/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      '@types/node':
+        specifier: ^24.7.0
+        version: 24.13.3
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

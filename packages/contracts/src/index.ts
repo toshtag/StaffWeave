@@ -18,6 +18,7 @@ export * from './schemas/auth.js';
 export * from './schemas/card.js';
 export * from './schemas/common.js';
 export * from './schemas/device.js';
+export * from './schemas/integration.js';
 export * from './schemas/organization.js';
 export * from './schemas/schedule.js';
 export * from './schemas/session.js';

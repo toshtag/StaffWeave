@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { createDatabase } from '@staffweave/db';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
@@ -11,6 +12,14 @@ const app = createApp({
   useSecureCookie: config.environment === 'production',
   cardFingerprintKey: config.cardFingerprintKey,
 });
+
+// セルフホストでは、ビルド済みの Web を同じプロセスから配信できるようにする。
+// 別の配信先へ置きたい場合は WEB_DIST_PATH を設定しなければよい。
+if (config.webDistPath !== null) {
+  const root = config.webDistPath;
+  app.use('/assets/*', serveStatic({ root }));
+  app.get('*', serveStatic({ root, path: 'index.html' }));
+}
 
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
   console.log(`staffweave API: http://${config.host}:${info.port}`);
