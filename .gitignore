@@ -9,6 +9,10 @@ coverage/
 .env.*
 !.env.example
 
+# 端末シミュレーターの資格情報（秘密鍵を含む）
+.staffweave-agent.json
+*.staffweave-agent.json
+
 .DS_Store
 *.log
 npm-debug.log*
