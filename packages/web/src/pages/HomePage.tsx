@@ -4,6 +4,7 @@ import { ApiRequestError, api } from '../api/client.ts';
 import { LocaleSwitcher } from '../components/LocaleSwitcher.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import { useSession } from '../session/SessionProvider.tsx';
+import { TodayAttendance } from './TodayAttendance.tsx';
 
 type OrganizationsState =
   | { status: 'loading' }
@@ -91,6 +92,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
       </header>
 
       <main>
+        <TodayAttendance session={session} />
+
         <section className="card">
           <h2>{messages.signedInAs}</h2>
           <dl className="details">

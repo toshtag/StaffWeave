@@ -28,6 +28,18 @@ export interface Messages {
   notPermitted: string;
   unimplementedNotice: string;
   sessionExpiresAt: string;
+  today: string;
+  clockIn: string;
+  clockOut: string;
+  stateNotStarted: string;
+  stateWorking: string;
+  stateFinished: string;
+  firstClockInAt: string;
+  lastClockOutAt: string;
+  punchHistory: string;
+  noPunchYet: string;
+  punchFailed: string;
+  employeeRequiredForPunch: string;
 }
 
 const ja: Messages = {
@@ -52,8 +64,20 @@ const ja: Messages = {
   organizationName: '名称',
   noOrganizations: '組織はまだ登録されていません',
   notPermitted: 'この情報を表示する権限がありません',
-  unimplementedNotice: '打刻などの勤怠機能はまだ実装されていません。',
+  unimplementedNotice: '休憩、勤務時間の計算、申請・承認はまだ実装されていません。',
   sessionExpiresAt: 'セッション有効期限',
+  today: '本日の勤怠',
+  clockIn: '出勤',
+  clockOut: '退勤',
+  stateNotStarted: '出勤前',
+  stateWorking: '勤務中',
+  stateFinished: '退勤済み',
+  firstClockInAt: '出勤時刻',
+  lastClockOutAt: '退勤時刻',
+  punchHistory: '本日の打刻',
+  noPunchYet: 'まだ打刻はありません',
+  punchFailed: '打刻を記録できませんでした',
+  employeeRequiredForPunch: 'この利用者には従業員が紐づいていないため、打刻できません',
 };
 
 const en: Messages = {
@@ -78,8 +102,20 @@ const en: Messages = {
   organizationName: 'Name',
   noOrganizations: 'No organizations have been registered yet',
   notPermitted: 'You do not have permission to view this',
-  unimplementedNotice: 'Time tracking features are not implemented yet.',
+  unimplementedNotice: 'Breaks, worked-time calculation, and approvals are not implemented yet.',
   sessionExpiresAt: 'Session expires at',
+  today: "Today's attendance",
+  clockIn: 'Clock in',
+  clockOut: 'Clock out',
+  stateNotStarted: 'Not started',
+  stateWorking: 'Working',
+  stateFinished: 'Finished',
+  firstClockInAt: 'Clocked in at',
+  lastClockOutAt: 'Clocked out at',
+  punchHistory: "Today's punches",
+  noPunchYet: 'No punches recorded yet',
+  punchFailed: 'Could not record the punch',
+  employeeRequiredForPunch: 'No employee record is linked to this user, so punching is unavailable',
 };
 
 export const MESSAGES: Record<Locale, Messages> = { 'ja-JP': ja, en };

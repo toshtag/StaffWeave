@@ -2,8 +2,11 @@ import type {
   ErrorResponse,
   LoginRequest,
   OrganizationList,
+  RecordAttendanceEventRequest,
+  RecordAttendanceEventResponse,
   SessionResponse,
   UpdatePreferencesRequest,
+  WorkDay,
 } from '@staffweave/contracts';
 
 /**
@@ -60,4 +63,10 @@ export const api = {
       body: JSON.stringify(input),
     }),
   listOrganizations: () => request<OrganizationList>('/organizations'),
+  getTodayAttendance: () => request<WorkDay>('/attendance/today'),
+  recordAttendanceEvent: (input: RecordAttendanceEventRequest) =>
+    request<RecordAttendanceEventResponse>('/attendance/events', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 };

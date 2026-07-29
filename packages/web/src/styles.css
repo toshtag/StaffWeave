@@ -160,6 +160,45 @@ td {
   font-size: 0.9375rem;
 }
 
+h3 {
+  font-size: 1rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.work-state {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0 0 1rem;
+}
+
+.work-state[data-state="working"] {
+  color: #0a7d3c;
+}
+
+.punch-button {
+  width: 100%;
+  min-height: 4rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: CanvasText;
+  color: Canvas;
+  border-color: CanvasText;
+  margin-bottom: 1rem;
+}
+
+.punch-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.punch-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
 .locale-switcher select {
   min-height: 2.75rem;
 }
