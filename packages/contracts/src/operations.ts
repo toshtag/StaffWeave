@@ -1,6 +1,5 @@
 import type { JsonSchema } from './json-schema.js';
 import {
-  businessDateSchema,
   correctAttendanceRequestSchema,
   correctAttendanceResponseSchema,
   recordAttendanceEventRequestSchema,
@@ -12,7 +11,7 @@ import {
   sessionResponseSchema,
   updatePreferencesRequestSchema,
 } from './schemas/auth.js';
-import { errorResponseSchema } from './schemas/common.js';
+import { businessDateSchema, errorResponseSchema } from './schemas/common.js';
 import {
   createDepartmentRequestSchema,
   createEmployeeRequestSchema,
@@ -27,6 +26,15 @@ import {
   siteListSchema,
   siteSchema,
 } from './schemas/organization.js';
+import {
+  createWorkPatternRequestSchema,
+  listWorkSchedulesQuerySchema,
+  upsertWorkScheduleRequestSchema,
+  workPatternListSchema,
+  workPatternSchema,
+  workScheduleListSchema,
+  workScheduleSchema,
+} from './schemas/schedule.js';
 
 export type HttpMethod = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
@@ -328,6 +336,70 @@ export const operations = {
       unauthorized,
       forbidden,
       { status: 404, description: '対象の打刻が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  listWorkPatterns: {
+    operationId: 'listWorkPatterns',
+    method: 'get',
+    path: '/work-patterns',
+    summary: '勤務パターンの一覧を取得する',
+    tags: ['schedule'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '勤務パターンの一覧', schema: workPatternListSchema },
+      unauthorized,
+      forbidden,
+    ],
+  },
+  createWorkPattern: {
+    operationId: 'createWorkPattern',
+    method: 'post',
+    path: '/work-patterns',
+    summary: '勤務パターンを登録する',
+    tags: ['schedule'],
+    security: 'session',
+    requestBody: createWorkPatternRequestSchema,
+    responses: [
+      { status: 201, description: '登録した勤務パターン', schema: workPatternSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      conflict,
+    ],
+  },
+  listWorkSchedules: {
+    operationId: 'listWorkSchedules',
+    method: 'get',
+    path: '/work-schedules',
+    summary: '指定した従業員・期間の勤務予定を取得する',
+    tags: ['schedule'],
+    security: 'session',
+    query: listWorkSchedulesQuerySchema,
+    responses: [
+      { status: 200, description: '勤務予定の一覧', schema: workScheduleListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
+  },
+  upsertWorkSchedule: {
+    operationId: 'upsertWorkSchedule',
+    method: 'put',
+    path: '/work-schedules',
+    summary: '勤務予定を登録・更新する',
+    tags: ['schedule'],
+    security: 'session',
+    requestBody: upsertWorkScheduleRequestSchema,
+    responses: [
+      { status: 200, description: '登録した勤務予定', schema: workScheduleSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      {
+        status: 404,
+        description: '従業員または勤務パターンが見つからない',
+        schema: errorResponseSchema,
+      },
     ],
   },
 } as const satisfies Record<string, OperationContract>;

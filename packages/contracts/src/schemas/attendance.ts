@@ -1,17 +1,7 @@
-import {
-  ATTENDANCE_EVENT_TYPES,
-  ATTENDANCE_SOURCES,
-  BUSINESS_DATE_PATTERN,
-  CORRECTION_ACTIONS,
-} from '@staffweave/domain';
+import { ATTENDANCE_EVENT_TYPES, ATTENDANCE_SOURCES, CORRECTION_ACTIONS } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
-import { timestampSchema, uuidSchema } from './common.js';
-
-export const businessDateSchema = {
-  type: 'string',
-  pattern: BUSINESS_DATE_PATTERN.source,
-  description: '業務日（YYYY-MM-DD）。暦日ではなく、勤務が属する日',
-} as const;
+import { businessDateSchema, timestampSchema, uuidSchema } from './common.js';
+import { attendanceCalculationSchema, workScheduleSchema } from './schedule.js';
 
 export const attendanceEventSchema = objectSchema({
   description: '追記のみの打刻イベント。修正も新しいイベントとして記録される',
@@ -67,6 +57,8 @@ export const workDaySchema = objectSchema({
     breaks: arraySchema(breakPeriodSchema),
     events: arraySchema(attendanceEventSchema, '修正を適用した後の有効な打刻'),
     history: arraySchema(attendanceEventSchema, '記録されたすべてのイベント（修正を含む）'),
+    schedule: { oneOf: [workScheduleSchema, { type: 'null' }] },
+    calculation: { oneOf: [attendanceCalculationSchema, { type: 'null' }] },
   },
   required: [
     'businessDate',
@@ -77,6 +69,8 @@ export const workDaySchema = objectSchema({
     'breaks',
     'events',
     'history',
+    'schedule',
+    'calculation',
   ],
 });
 

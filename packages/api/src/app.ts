@@ -1,6 +1,7 @@
 import type { Database } from '@staffweave/db';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
+import { createCalculationRepository } from './attendance/calculation-repository.js';
 import { createAttendanceRepository } from './attendance/repository.js';
 import { createAttendanceRoutes } from './attendance/routes.js';
 import { createAttendanceService } from './attendance/service.js';
@@ -11,6 +12,9 @@ import { createIdentityService } from './identity/service.js';
 import { createOrganizationRepository } from './organization/repository.js';
 import { createOrganizationRoutes } from './organization/routes.js';
 import { createOrganizationService } from './organization/service.js';
+import { createScheduleRepository } from './schedule/repository.js';
+import { createScheduleRoutes } from './schedule/routes.js';
+import { createScheduleService } from './schedule/service.js';
 import type { AppEnv } from './shared/context.js';
 import { ApiError } from './shared/errors.js';
 import { createSystemRoutes } from './system/routes.js';
@@ -38,13 +42,38 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     transaction: (fn) => deps.db.transaction((tx) => fn(createOrganizationRepository(tx))),
   });
 
+  const dayRepositories = {
+    attendance: createAttendanceRepository(deps.db),
+    schedule: createScheduleRepository(deps.db),
+    calculations: createCalculationRepository(deps.db),
+  };
+
+  const withTransaction = <T>(
+    fn: (repositories: {
+      attendance: ReturnType<typeof createAttendanceRepository>;
+      schedule: ReturnType<typeof createScheduleRepository>;
+      calculations: ReturnType<typeof createCalculationRepository>;
+      audit: ReturnType<typeof createAuditRepository>;
+    }) => Promise<T>,
+  ): Promise<T> =>
+    deps.db.transaction((tx) =>
+      fn({
+        attendance: createAttendanceRepository(tx),
+        schedule: createScheduleRepository(tx),
+        calculations: createCalculationRepository(tx),
+        audit: createAuditRepository(tx),
+      }),
+    );
+
   const attendanceService = createAttendanceService({
-    repository: createAttendanceRepository(deps.db),
+    repositories: dayRepositories,
     now,
-    transaction: (fn) =>
-      deps.db.transaction((tx) =>
-        fn({ attendance: createAttendanceRepository(tx), audit: createAuditRepository(tx) }),
-      ),
+    transaction: withTransaction,
+  });
+
+  const scheduleService = createScheduleService({
+    repositories: dayRepositories,
+    transaction: withTransaction,
   });
 
   const api = new Hono<AppEnv>();
@@ -65,6 +94,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   );
   api.route('/', createOrganizationRoutes({ service: organizationService }));
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
+  api.route('/', createScheduleRoutes({ service: scheduleService }));
 
   const app = new Hono<AppEnv>();
   app.route('/api', api);

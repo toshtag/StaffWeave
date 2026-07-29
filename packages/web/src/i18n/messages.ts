@@ -60,6 +60,17 @@ export interface Messages {
   actionVoid: string;
   actionAdd: string;
   originalPunch: string;
+  calculation: string;
+  workedTime: string;
+  breakTime: string;
+  scheduledTime: string;
+  outsideScheduleTime: string;
+  nightTime: string;
+  nonWorkingDayTime: string;
+  calculationPending: string;
+  calculationIncomplete: string;
+  calculationVersion: string;
+  formatDuration: (minutes: number) => string;
 }
 
 const ja: Messages = {
@@ -118,6 +129,18 @@ const ja: Messages = {
   actionVoid: '取消',
   actionAdd: '追加',
   originalPunch: '元の打刻',
+  calculation: '集計',
+  workedTime: '実労働',
+  breakTime: '休憩',
+  scheduledTime: '所定労働',
+  outsideScheduleTime: '所定外',
+  nightTime: '深夜帯',
+  nonWorkingDayTime: '休日労働',
+  calculationPending: '打刻がないため集計はまだありません',
+  calculationIncomplete: '退勤していないため、集計は途中の値です',
+  calculationVersion: '計算版',
+  formatDuration: (minutes) =>
+    minutes === 0 ? '0分' : `${Math.floor(minutes / 60)}時間${minutes % 60}分`,
 };
 
 const en: Messages = {
@@ -176,6 +199,18 @@ const en: Messages = {
   actionVoid: 'Void',
   actionAdd: 'Add',
   originalPunch: 'Original punch',
+  calculation: 'Totals',
+  workedTime: 'Worked',
+  breakTime: 'Break',
+  scheduledTime: 'Scheduled',
+  outsideScheduleTime: 'Outside schedule',
+  nightTime: 'Night hours',
+  nonWorkingDayTime: 'Non-working day',
+  calculationPending: 'No punches yet, so there is nothing to total',
+  calculationIncomplete: 'Not clocked out yet, so these totals are provisional',
+  calculationVersion: 'Calculation version',
+  formatDuration: (minutes) =>
+    minutes === 0 ? '0m' : `${Math.floor(minutes / 60)}h ${minutes % 60}m`,
 };
 
 export const MESSAGES: Record<Locale, Messages> = { 'ja-JP': ja, en };

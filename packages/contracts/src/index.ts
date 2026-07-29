@@ -14,6 +14,7 @@ export * from './schemas/attendance.js';
 export * from './schemas/auth.js';
 export * from './schemas/common.js';
 export * from './schemas/organization.js';
+export * from './schemas/schedule.js';
 export * from './types.js';
 export type { ValidationProblem, ValidationResult } from './validation.js';
 export { validate } from './validation.js';
