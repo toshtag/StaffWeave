@@ -1,0 +1,400 @@
+import type {
+  CardCredentialRecord,
+  CardEventRequest,
+  CardEventResponse,
+  CreateCardRegistrationRequest,
+  CreateCardRegistrationResponse,
+  RegisterCardRequest,
+} from '@staffweave/contracts';
+import type { AttendanceEventType } from '@staffweave/domain';
+import {
+  acceptsSignedEvents,
+  canonicalCardEvent,
+  canonicalCardRegistration,
+  clockSkewSeconds,
+  evaluateSequence,
+  isNotableClockSkew,
+  nextCardPunch,
+  validateOccurredAt,
+} from '@staffweave/domain';
+import { loadWorkDay } from '../attendance/day.js';
+import type { AttendanceRepositories } from '../attendance/record.js';
+import { recordAttendanceEvent, resolveBusinessDate } from '../attendance/record.js';
+import { resolveTimeZoneForEmployee } from '../attendance/service.js';
+import type { AuditRepository } from '../audit/repository.js';
+import type { DeviceRepository } from '../device/repository.js';
+import { verifySignature } from '../device/signature.js';
+import type { AuthenticatedContext } from '../identity/service.js';
+import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
+import { ApiError, invalidRequest, notFound } from '../shared/errors.js';
+import { generateToken, hashToken } from '../shared/security/tokens.js';
+import type { CardRepository } from './repository.js';
+
+export interface CardRepositories extends AttendanceRepositories {
+  cards: CardRepository;
+  devices: DeviceRepository;
+  audit: AuditRepository;
+}
+
+export interface CardServiceDependencies {
+  cards: CardRepository;
+  devices: DeviceRepository;
+  now: () => Date;
+  transaction<T>(fn: (repositories: CardRepositories) => Promise<T>): Promise<T>;
+}
+
+export interface CardService {
+  listCredentials(context: AuthenticatedContext): Promise<CardCredentialRecord[]>;
+  createRegistration(
+    context: AuthenticatedContext,
+    input: CreateCardRegistrationRequest,
+  ): Promise<CreateCardRegistrationResponse>;
+  revokeCredential(
+    context: AuthenticatedContext,
+    cardCredentialId: string,
+  ): Promise<CardCredentialRecord>;
+  registerCard(
+    deviceId: string,
+    signature: string,
+    input: RegisterCardRequest,
+  ): Promise<CardCredentialRecord>;
+  recordCardEvent(
+    deviceId: string,
+    signature: string,
+    input: CardEventRequest,
+  ): Promise<{ result: CardEventResponse; created: boolean }>;
+}
+
+const DEFAULT_REGISTRATION_MINUTES = 15;
+
+export function createCardService(deps: CardServiceDependencies): CardService {
+  /** 端末を署名で認証し、ワークスペースと公開鍵を得る。 */
+  async function authenticateDevice(
+    deviceId: string,
+    signature: string,
+    message: string,
+  ): Promise<{ workspaceId: string }> {
+    const found = await deps.devices.findForSignature(deviceId);
+    if (!found || found.publicKey === null || !acceptsSignedEvents(found.device.state)) {
+      throw new ApiError('unauthenticated', '端末を認証できません');
+    }
+    if (!verifySignature(found.publicKey, message, signature)) {
+      throw new ApiError('unauthenticated', '端末を認証できません');
+    }
+    return { workspaceId: found.workspaceId };
+  }
+
+  return {
+    listCredentials: (context) => deps.cards.listCredentials(context.workspace.id),
+
+    async createRegistration(context, input) {
+      const token = generateToken();
+      const expiresAt = new Date(
+        deps.now().getTime() + (input.expiresInMinutes ?? DEFAULT_REGISTRATION_MINUTES) * 60_000,
+      );
+
+      try {
+        await deps.cards.createRegistrationToken(context.workspace.id, {
+          employeeId: input.employeeId,
+          tokenHash: hashToken(token),
+          label: input.label ?? null,
+          expiresAt,
+          createdByUserId: context.user.id,
+        });
+      } catch (error) {
+        if (isForeignKeyViolation(error)) throw notFound('従業員');
+        throw error;
+      }
+
+      return { registrationToken: token, expiresAt: expiresAt.toISOString() };
+    },
+
+    async revokeCredential(context, cardCredentialId) {
+      const workspaceId = context.workspace.id;
+      return deps.transaction(async ({ cards, audit }) => {
+        const existing = await cards.findCredentialById(workspaceId, cardCredentialId);
+        if (!existing) throw notFound('カードの資格情報');
+        if (existing.state === 'revoked') {
+          throw new ApiError('conflict', 'このカードはすでに失効しています');
+        }
+
+        const revoked = await cards.revokeCredential(workspaceId, cardCredentialId, {
+          revokedAt: deps.now(),
+          revokedByUserId: context.user.id,
+        });
+
+        await audit.record(workspaceId, {
+          actorKind: 'user',
+          actorUserId: context.user.id,
+          action: 'card_credential.revoked',
+          targetType: 'card_credential',
+          targetId: cardCredentialId,
+          summary: 'IC カードの資格情報を失効させました',
+          detail: { employeeId: existing.employeeId, label: existing.label },
+        });
+
+        return revoked;
+      });
+    },
+
+    async registerCard(deviceId, signature, input) {
+      const { workspaceId } = await authenticateDevice(
+        deviceId,
+        signature,
+        canonicalCardRegistration({
+          deviceId,
+          registrationToken: input.registrationToken,
+          cardFingerprint: input.cardFingerprint,
+        }),
+      );
+
+      const token = await deps.cards.findRegistrationTokenByHash(
+        hashToken(input.registrationToken),
+      );
+      if (!token || token.workspaceId !== workspaceId) {
+        throw new ApiError('unauthenticated', '登録トークンが一致しません');
+      }
+      if (token.usedAt !== null) {
+        throw new ApiError('unauthenticated', 'この登録トークンはすでに使われています');
+      }
+      if (token.expiresAt.getTime() <= deps.now().getTime()) {
+        throw new ApiError('unauthenticated', 'この登録トークンは有効期限が切れています');
+      }
+
+      return deps.transaction(async ({ cards, audit }) => {
+        let credential: CardCredentialRecord;
+        try {
+          credential = await cards.insertCredential(workspaceId, {
+            employeeId: token.employeeId,
+            fingerprint: input.cardFingerprint,
+            label: token.label,
+            registeredByDeviceId: deviceId,
+          });
+        } catch (error) {
+          if (isUniqueViolation(error)) {
+            throw new ApiError('conflict', 'このカードはすでに別の従業員に登録されています');
+          }
+          throw error;
+        }
+
+        await cards.markRegistrationTokenUsed(token.id, deps.now());
+
+        await audit.record(workspaceId, {
+          actorKind: 'device',
+          actorUserId: null,
+          action: 'card_credential.registered',
+          targetType: 'card_credential',
+          targetId: credential.id,
+          summary: 'IC カードの資格情報を登録しました',
+          detail: { employeeId: token.employeeId, deviceId, label: token.label },
+        });
+
+        return credential;
+      });
+    },
+
+    async recordCardEvent(deviceId, signature, input) {
+      const { workspaceId } = await authenticateDevice(
+        deviceId,
+        signature,
+        canonicalCardEvent({
+          deviceId,
+          sequence: input.sequence,
+          requestId: input.requestId,
+          cardFingerprint: input.cardFingerprint,
+          eventType: input.eventType ?? '',
+          occurredAt: input.occurredAt,
+          deviceTime: input.deviceTime,
+        }),
+      );
+
+      const now = deps.now();
+      const occurredAt = new Date(input.occurredAt);
+      const deviceTime = new Date(input.deviceTime);
+      if (Number.isNaN(occurredAt.getTime()) || Number.isNaN(deviceTime.getTime())) {
+        throw invalidRequest([{ field: 'occurredAt', message: '日時として解釈できません' }]);
+      }
+      if (validateOccurredAt(occurredAt, now).length > 0) {
+        throw invalidRequest([
+          {
+            field: 'occurredAt',
+            message: '打刻時刻が受け入れ範囲を超えています。端末の時計を確認してください',
+          },
+        ]);
+      }
+
+      const skew = clockSkewSeconds(deviceTime, now);
+
+      const outcome = await deps.transaction(async (repositories) => {
+        const { cards, devices, attendance } = repositories;
+        if (!(await devices.lock(workspaceId, deviceId))) throw notFound('端末');
+
+        const existingReceipt = await devices.findReceiptByRequestId(
+          workspaceId,
+          deviceId,
+          input.requestId,
+        );
+
+        const device = await devices.findById(workspaceId, deviceId);
+        if (!device) throw notFound('端末');
+
+        const credential = await cards.findActiveByFingerprint(workspaceId, input.cardFingerprint);
+        if (!credential) {
+          // カードが未登録であることは端末へ伝える。誰のカードかは分からないままにする。
+          await devices.insertReceipt(workspaceId, {
+            deviceId,
+            sequence: input.sequence,
+            requestId: input.requestId,
+            deviceTime,
+            clockSkewSeconds: skew,
+            sequenceStep: input.sequence - device.lastSequence,
+            attendanceEventId: null,
+            businessDate: null,
+            outcome: 'rejected',
+            detail: { reason: 'unknown_card' },
+          });
+          return { kind: 'rejected' as const, error: notFound('登録されたカード') };
+        }
+
+        const timeZone = await resolveTimeZoneForEmployee(
+          attendance,
+          workspaceId,
+          credential.employeeId,
+        );
+
+        // 種別が指定されていなければ、今の状態から一意に決める。
+        let eventType: AttendanceEventType;
+        if (input.eventType !== undefined) {
+          eventType = input.eventType;
+        } else {
+          const businessDate = await resolveBusinessDate(
+            repositories,
+            workspaceId,
+            credential.employeeId,
+            'clock_out',
+            occurredAt,
+            timeZone,
+          );
+          const day = await loadWorkDay(
+            repositories,
+            workspaceId,
+            credential.employeeId,
+            businessDate,
+            timeZone,
+          );
+          const decided = nextCardPunch(day.state);
+          if (decided === null) {
+            return {
+              kind: 'rejected' as const,
+              error: new ApiError('conflict', 'すでに退勤済みです'),
+            };
+          }
+          eventType = decided;
+        }
+
+        const sequenceStep = input.sequence - device.lastSequence;
+        if (
+          existingReceipt === null &&
+          evaluateSequence(device.lastSequence, input.sequence) === 'replay'
+        ) {
+          await devices.insertReceipt(workspaceId, {
+            deviceId,
+            sequence: input.sequence,
+            requestId: input.requestId,
+            deviceTime,
+            clockSkewSeconds: skew,
+            sequenceStep,
+            attendanceEventId: null,
+            businessDate: null,
+            outcome: 'rejected',
+            detail: { reason: 'sequence_replay', lastSequence: device.lastSequence },
+          });
+          return {
+            kind: 'rejected' as const,
+            error: new ApiError('conflict', '連番がすでに受け取った値以下です'),
+          };
+        }
+
+        let recorded: Awaited<ReturnType<typeof recordAttendanceEvent>>;
+        try {
+          recorded = await recordAttendanceEvent(
+            repositories,
+            {
+              workspaceId,
+              employeeId: credential.employeeId,
+              employeeDisplayName: credential.employeeDisplayName,
+              actorKind: 'device',
+              userId: null,
+              deviceId,
+            },
+            {
+              eventType,
+              occurredAt: input.occurredAt,
+              requestId: `card:${deviceId}:${input.requestId}`,
+            },
+            'device',
+            occurredAt,
+            timeZone,
+          );
+        } catch (error) {
+          if (error instanceof ApiError && error.code === 'conflict') {
+            await devices.insertReceipt(workspaceId, {
+              deviceId,
+              sequence: input.sequence,
+              requestId: input.requestId,
+              deviceTime,
+              clockSkewSeconds: skew,
+              sequenceStep,
+              attendanceEventId: null,
+              businessDate: null,
+              outcome: 'rejected',
+              detail: { reason: 'punch_rejected' },
+            });
+            return { kind: 'rejected' as const, error };
+          }
+          throw error;
+        }
+
+        if (existingReceipt === null) {
+          await devices.insertReceipt(workspaceId, {
+            deviceId,
+            sequence: input.sequence,
+            requestId: input.requestId,
+            deviceTime,
+            clockSkewSeconds: skew,
+            sequenceStep,
+            attendanceEventId: recorded.result.event.id,
+            businessDate: recorded.result.event.businessDate,
+            outcome: recorded.created ? 'accepted' : 'duplicate',
+            detail: {
+              cardCredentialId: credential.id,
+              ...(sequenceStep > 1 ? { sequenceGap: sequenceStep - 1 } : {}),
+              ...(isNotableClockSkew(skew) ? { notableClockSkew: true } : {}),
+            },
+          });
+          await devices.updateSequence(workspaceId, deviceId, {
+            lastSequence: input.sequence,
+            lastSeenAt: now,
+          });
+        }
+
+        return {
+          kind: 'ok' as const,
+          result: {
+            outcome: recorded.created ? ('accepted' as const) : ('duplicate' as const),
+            attendanceEventId: recorded.result.event.id,
+            eventType: recorded.result.event.eventType,
+            businessDate: recorded.result.event.businessDate,
+            employeeDisplayName: credential.employeeDisplayName,
+            sequenceStep,
+            clockSkewSeconds: skew,
+          },
+          created: recorded.created,
+        };
+      });
+
+      if (outcome.kind === 'rejected') throw outcome.error;
+      return { result: outcome.result, created: outcome.created };
+    },
+  };
+}

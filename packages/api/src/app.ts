@@ -9,6 +9,9 @@ import { createAttendanceRepository } from './attendance/repository.js';
 import { createAttendanceRoutes } from './attendance/routes.js';
 import { createAttendanceService } from './attendance/service.js';
 import { createAuditRepository } from './audit/repository.js';
+import { createCardRepository } from './card/repository.js';
+import { createCardRoutes } from './card/routes.js';
+import { createCardService } from './card/service.js';
 import { createDeviceRepository } from './device/repository.js';
 import { createDeviceRoutes } from './device/routes.js';
 import { createDeviceService } from './device/service.js';
@@ -32,6 +35,8 @@ export interface AppDependencies {
   defaultWorkspaceSlug?: string;
   /** 本番環境では Cookie に Secure を付ける。 */
   useSecureCookie?: boolean;
+  /** IC カードの指紋を計算するための鍵。未設定ならカード機能は使えない。 */
+  cardFingerprintKey?: string | null;
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -62,6 +67,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       calculations: ReturnType<typeof createCalculationRepository>;
       approval: ReturnType<typeof createApprovalRepository>;
       devices: ReturnType<typeof createDeviceRepository>;
+      cards: ReturnType<typeof createCardRepository>;
       audit: ReturnType<typeof createAuditRepository>;
     }) => Promise<T>,
   ): Promise<T> =>
@@ -72,6 +78,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         calculations: createCalculationRepository(tx),
         approval: createApprovalRepository(tx),
         devices: createDeviceRepository(tx),
+        cards: createCardRepository(tx),
         audit: createAuditRepository(tx),
       }),
     );
@@ -90,6 +97,14 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const deviceService = createDeviceService({
     repository: createDeviceRepository(deps.db),
     attendance: dayRepositories.attendance,
+    now,
+    cardFingerprintKey: deps.cardFingerprintKey ?? null,
+    transaction: withTransaction,
+  });
+
+  const cardService = createCardService({
+    cards: createCardRepository(deps.db),
+    devices: createDeviceRepository(deps.db),
     now,
     transaction: withTransaction,
   });
@@ -121,6 +136,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));
+  api.route('/', createCardRoutes({ service: cardService }));
 
   const app = new Hono<AppEnv>();
   app.route('/api', api);

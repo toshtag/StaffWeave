@@ -13,9 +13,10 @@ export function generateEnrollmentToken(): string {
   return randomBytes(24).toString('base64url');
 }
 
-export function verifySignedEvent(
+/** 任意の署名対象文字列に対する検証。 */
+export function verifySignature(
   publicKeyPem: string,
-  payload: SignedEventPayload,
+  message: string,
   signatureBase64: string,
 ): boolean {
   let signature: Buffer;
@@ -29,10 +30,18 @@ export function verifySignedEvent(
   try {
     const key = createPublicKey(publicKeyPem);
     if (key.asymmetricKeyType !== 'ed25519') return false;
-    return verify(null, Buffer.from(canonicalPayload(payload), 'utf8'), key, signature);
+    return verify(null, Buffer.from(message, 'utf8'), key, signature);
   } catch {
     return false;
   }
+}
+
+export function verifySignedEvent(
+  publicKeyPem: string,
+  payload: SignedEventPayload,
+  signatureBase64: string,
+): boolean {
+  return verifySignature(publicKeyPem, canonicalPayload(payload), signatureBase64);
 }
 
 /** 受け取った公開鍵が Ed25519 の SPKI として読めるか。 */

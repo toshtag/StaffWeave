@@ -5,7 +5,12 @@ import { loadConfig } from './config.js';
 
 const config = loadConfig();
 const db = createDatabase({ connectionString: config.databaseUrl });
-const app = createApp({ db });
+const app = createApp({
+  db,
+  defaultWorkspaceSlug: config.defaultWorkspaceSlug,
+  useSecureCookie: config.environment === 'production',
+  cardFingerprintKey: config.cardFingerprintKey,
+});
 
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
   console.log(`staffweave API: http://${config.host}:${info.port}`);
