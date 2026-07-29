@@ -24,6 +24,9 @@ import { createOrganizationService } from './organization/service.js';
 import { createScheduleRepository } from './schedule/repository.js';
 import { createScheduleRoutes } from './schedule/routes.js';
 import { createScheduleService } from './schedule/service.js';
+import { createSessionObservationRepository } from './session/repository.js';
+import { createSessionRoutes } from './session/routes.js';
+import { createSessionService } from './session/service.js';
 import type { AppEnv } from './shared/context.js';
 import { ApiError } from './shared/errors.js';
 import { createSystemRoutes } from './system/routes.js';
@@ -68,6 +71,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       approval: ReturnType<typeof createApprovalRepository>;
       devices: ReturnType<typeof createDeviceRepository>;
       cards: ReturnType<typeof createCardRepository>;
+      observations: ReturnType<typeof createSessionObservationRepository>;
       audit: ReturnType<typeof createAuditRepository>;
     }) => Promise<T>,
   ): Promise<T> =>
@@ -79,6 +83,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         approval: createApprovalRepository(tx),
         devices: createDeviceRepository(tx),
         cards: createCardRepository(tx),
+        observations: createSessionObservationRepository(tx),
         audit: createAuditRepository(tx),
       }),
     );
@@ -104,6 +109,14 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const cardService = createCardService({
     cards: createCardRepository(deps.db),
+    devices: createDeviceRepository(deps.db),
+    now,
+    transaction: withTransaction,
+  });
+
+  const sessionService = createSessionService({
+    repositories: dayRepositories,
+    observations: createSessionObservationRepository(deps.db),
     devices: createDeviceRepository(deps.db),
     now,
     transaction: withTransaction,
@@ -137,6 +150,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createApprovalRoutes({ service: approvalService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));
   api.route('/', createCardRoutes({ service: cardService }));
+  api.route('/', createSessionRoutes({ service: sessionService }));
 
   const app = new Hono<AppEnv>();
   app.route('/api', api);
