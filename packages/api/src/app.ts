@@ -40,7 +40,6 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const attendanceService = createAttendanceService({
     repository: createAttendanceRepository(deps.db),
-    audit: createAuditRepository(deps.db),
     now,
     transaction: (fn) =>
       deps.db.transaction((tx) =>
