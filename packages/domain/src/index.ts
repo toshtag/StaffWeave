@@ -1,3 +1,33 @@
+export type { BusinessDate } from './attendance/business-date.js';
+export {
+  addDaysToBusinessDate,
+  BUSINESS_DATE_PATTERN,
+  businessDateOf,
+  compareBusinessDates,
+  isBusinessDate,
+} from './attendance/business-date.js';
+export type {
+  AttendanceEvent,
+  AttendanceEventType,
+  AttendanceSource,
+  PunchDecision,
+  PunchRejection,
+  WorkDayState,
+  WorkDaySummary,
+} from './attendance/events.js';
+export {
+  ATTENDANCE_EVENT_TYPES,
+  ATTENDANCE_SOURCES,
+  decidePunch,
+  isAttendanceEventType,
+  summarizeWorkDay,
+} from './attendance/events.js';
+export type { OccurredAtProblem } from './attendance/occurred-at.js';
+export {
+  FUTURE_TOLERANCE_MINUTES,
+  PAST_TOLERANCE_MINUTES,
+  validateOccurredAt,
+} from './attendance/occurred-at.js';
 export type { Locale } from './i18n/locale.js';
 export {
   DEFAULT_LOCALE,
