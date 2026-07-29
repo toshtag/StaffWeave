@@ -8,11 +8,15 @@ import type {
 } from '@staffweave/domain';
 import {
   calculateWorkDay,
+  closingPeriodOf,
+  dailyRequestAllowsEditing,
   fingerprintSource,
   instantFromLocal,
+  monthlyClosingAllowsEditing,
   resolveEffectiveEvents,
   summarizeWorkDay,
 } from '@staffweave/domain';
+import type { ApprovalRepository } from '../approval/repository.js';
 import type { ScheduleRepository } from '../schedule/repository.js';
 import type { CalculationRepository } from './calculation-repository.js';
 import type { AttendanceRepository } from './repository.js';
@@ -21,6 +25,7 @@ export interface DayRepositories {
   attendance: AttendanceRepository;
   schedule: ScheduleRepository;
   calculations: CalculationRepository;
+  approval: ApprovalRepository;
 }
 
 function toCorrectable(record: AttendanceEventRecord): CorrectableEvent {
@@ -86,6 +91,12 @@ async function buildContext(
     businessDate,
   );
   const rules = await repositories.schedule.findCalculationRules(workspaceId);
+  const request = await repositories.approval.findRequest(workspaceId, employeeId, businessDate);
+  const closing = await repositories.approval.findClosing(
+    workspaceId,
+    employeeId,
+    closingPeriodOf(businessDate),
+  );
 
   const byId = new Map(history.map((record) => [record.id, record]));
   const effective = resolveEffectiveEvents(history.map(toCorrectable));
@@ -123,6 +134,11 @@ async function buildContext(
       events: effectiveEvents,
       history,
       schedule,
+      request,
+      closing,
+      editable:
+        (request === null || dailyRequestAllowsEditing(request.state)) &&
+        (closing === null || monthlyClosingAllowsEditing(closing.state)),
     },
   };
 }

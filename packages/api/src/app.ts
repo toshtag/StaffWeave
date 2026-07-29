@@ -1,6 +1,9 @@
 import type { Database } from '@staffweave/db';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
+import { createApprovalRepository } from './approval/repository.js';
+import { createApprovalRoutes } from './approval/routes.js';
+import { createApprovalService } from './approval/service.js';
 import { createCalculationRepository } from './attendance/calculation-repository.js';
 import { createAttendanceRepository } from './attendance/repository.js';
 import { createAttendanceRoutes } from './attendance/routes.js';
@@ -46,6 +49,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     attendance: createAttendanceRepository(deps.db),
     schedule: createScheduleRepository(deps.db),
     calculations: createCalculationRepository(deps.db),
+    approval: createApprovalRepository(deps.db),
   };
 
   const withTransaction = <T>(
@@ -53,6 +57,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       attendance: ReturnType<typeof createAttendanceRepository>;
       schedule: ReturnType<typeof createScheduleRepository>;
       calculations: ReturnType<typeof createCalculationRepository>;
+      approval: ReturnType<typeof createApprovalRepository>;
       audit: ReturnType<typeof createAuditRepository>;
     }) => Promise<T>,
   ): Promise<T> =>
@@ -61,6 +66,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         attendance: createAttendanceRepository(tx),
         schedule: createScheduleRepository(tx),
         calculations: createCalculationRepository(tx),
+        approval: createApprovalRepository(tx),
         audit: createAuditRepository(tx),
       }),
     );
@@ -73,6 +79,12 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const scheduleService = createScheduleService({
     repositories: dayRepositories,
+    transaction: withTransaction,
+  });
+
+  const approvalService = createApprovalService({
+    repository: dayRepositories.approval,
+    now,
     transaction: withTransaction,
   });
 
@@ -95,6 +107,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createOrganizationRoutes({ service: organizationService }));
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
+  api.route('/', createApprovalRoutes({ service: approvalService }));
 
   const app = new Hono<AppEnv>();
   app.route('/api', api);

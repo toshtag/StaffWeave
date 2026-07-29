@@ -64,6 +64,23 @@ const EVENT_LABELS: Record<AttendanceEventType, string> = {
   break_end: '休憩終了',
 };
 
+/**
+ * 申請中・承認済み・締め済みの日は打刻や修正を受け付けない。
+ * 確定した記録が黙って変わらないようにするため。
+ */
+function requireEditableDay(day: WorkDay): void {
+  if (day.editable) return;
+  if (day.closing?.state === 'closed') {
+    throw new ApiError('conflict', 'この月は締められているため、打刻や修正はできません');
+  }
+  throw new ApiError(
+    'conflict',
+    day.request?.state === 'approved'
+      ? '承認済みのため、打刻や修正はできません。差し戻しまたは締め解除が必要です'
+      : '申請中のため、打刻や修正はできません。先に申請を取り消してください',
+  );
+}
+
 /** 打刻は本人の従業員レコードに対してのみ行える。 */
 function requireEmployee(context: AuthenticatedContext): string {
   if (!context.employee) {
@@ -176,6 +193,7 @@ export function createAttendanceService(deps: AttendanceServiceDependencies): At
           businessDate,
           timeZone,
         );
+        requireEditableDay(day);
         const decision = decidePunch(day.state, input.eventType);
         if (!decision.accepted) {
           throw new ApiError('conflict', REJECTION_MESSAGES[decision.rejection ?? 'not_working']);
@@ -345,6 +363,10 @@ export function createAttendanceService(deps: AttendanceServiceDependencies): At
         // 修正は対象と同じ業務日に属させる。追加のみ、指定または打刻時刻から決める。
         const businessDate =
           target?.businessDate ?? input.businessDate ?? businessDateOf(occurredAt, timeZone);
+
+        requireEditableDay(
+          await loadWorkDay(repositories, workspaceId, employeeId, businessDate, timeZone),
+        );
 
         const event = await attendance.insertEvent(workspaceId, {
           employeeId,
