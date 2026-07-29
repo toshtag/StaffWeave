@@ -1,4 +1,6 @@
 import type {
+  CorrectAttendanceRequest,
+  CorrectAttendanceResponse,
   ErrorResponse,
   LoginRequest,
   OrganizationList,
@@ -64,6 +66,12 @@ export const api = {
     }),
   listOrganizations: () => request<OrganizationList>('/organizations'),
   getTodayAttendance: () => request<WorkDay>('/attendance/today'),
+  getAttendanceDay: (businessDate: string) => request<WorkDay>(`/attendance/days/${businessDate}`),
+  correctAttendance: (input: CorrectAttendanceRequest) =>
+    request<CorrectAttendanceResponse>('/attendance/corrections', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   recordAttendanceEvent: (input: RecordAttendanceEventRequest) =>
     request<RecordAttendanceEventResponse>('/attendance/events', {
       method: 'POST',

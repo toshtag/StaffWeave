@@ -40,6 +40,26 @@ export interface Messages {
   noPunchYet: string;
   punchFailed: string;
   employeeRequiredForPunch: string;
+  stateOnBreak: string;
+  breakStart: string;
+  breakEnd: string;
+  breaks: string;
+  breakInProgress: string;
+  correct: string;
+  voidPunch: string;
+  addPunch: string;
+  correctionReason: string;
+  correctionTime: string;
+  correctionType: string;
+  save: string;
+  cancel: string;
+  recordHistory: string;
+  showHistory: string;
+  correctedMark: string;
+  actionAdjust: string;
+  actionVoid: string;
+  actionAdd: string;
+  originalPunch: string;
 }
 
 const ja: Messages = {
@@ -78,6 +98,26 @@ const ja: Messages = {
   noPunchYet: 'まだ打刻はありません',
   punchFailed: '打刻を記録できませんでした',
   employeeRequiredForPunch: 'この利用者には従業員が紐づいていないため、打刻できません',
+  stateOnBreak: '休憩中',
+  breakStart: '休憩開始',
+  breakEnd: '休憩終了',
+  breaks: '休憩',
+  breakInProgress: '休憩中',
+  correct: '修正',
+  voidPunch: '取消',
+  addPunch: '打刻を追加',
+  correctionReason: '修正理由',
+  correctionTime: '修正後の時刻',
+  correctionType: '打刻の種別',
+  save: '保存',
+  cancel: 'やめる',
+  recordHistory: '記録の履歴',
+  showHistory: '履歴を表示',
+  correctedMark: '修正済み',
+  actionAdjust: '修正',
+  actionVoid: '取消',
+  actionAdd: '追加',
+  originalPunch: '元の打刻',
 };
 
 const en: Messages = {
@@ -116,6 +156,26 @@ const en: Messages = {
   noPunchYet: 'No punches recorded yet',
   punchFailed: 'Could not record the punch',
   employeeRequiredForPunch: 'No employee record is linked to this user, so punching is unavailable',
+  stateOnBreak: 'On break',
+  breakStart: 'Start break',
+  breakEnd: 'End break',
+  breaks: 'Breaks',
+  breakInProgress: 'In progress',
+  correct: 'Correct',
+  voidPunch: 'Void',
+  addPunch: 'Add a punch',
+  correctionReason: 'Reason',
+  correctionTime: 'Corrected time',
+  correctionType: 'Punch type',
+  save: 'Save',
+  cancel: 'Cancel',
+  recordHistory: 'Record history',
+  showHistory: 'Show history',
+  correctedMark: 'Corrected',
+  actionAdjust: 'Adjust',
+  actionVoid: 'Void',
+  actionAdd: 'Add',
+  originalPunch: 'Original punch',
 };
 
 export const MESSAGES: Record<Locale, Messages> = { 'ja-JP': ja, en };
