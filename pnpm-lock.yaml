@@ -32,9 +32,15 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.5
         version: 1.19.17(hono@4.12.32)
+      '@staffweave/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@staffweave/db':
         specifier: workspace:*
         version: link:../db
+      '@staffweave/domain':
+        specifier: workspace:*
+        version: link:../domain
       hono:
         specifier: ^4.9.10
         version: 4.12.32
@@ -107,6 +113,12 @@ importers:
 
   packages/web:
     dependencies:
+      '@staffweave/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@staffweave/domain':
+        specifier: workspace:*
+        version: link:../domain
       react:
         specifier: ^19.2.0
         version: 19.2.8
