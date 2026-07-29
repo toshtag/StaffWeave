@@ -5,6 +5,8 @@
  * 生成器を挟まないぶん、追加・変更時は必ず両方を更新すること。
  */
 import type {
+  AnomalyKind,
+  AnomalySeverity,
   AttendanceEventType,
   AttendanceSource,
   CalculationBasis,
@@ -657,4 +659,35 @@ export interface UserScopeList {
 export interface GrantUserScopeRequest {
   userId: string;
   organizationId: string;
+}
+
+export interface AnomalyRecord {
+  kind: AnomalyKind;
+  severity: AnomalySeverity;
+  summary: string;
+  employeeId: string | null;
+  businessDate: string | null;
+  deviceId: string | null;
+  detectedAt: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface AnomalyList {
+  anomalies: AnomalyRecord[];
+}
+
+export interface AuditLogRecord {
+  id: string;
+  occurredAt: string;
+  actorKind: 'user' | 'device' | 'system';
+  actorUserId: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+export interface AuditLogList {
+  logs: AuditLogRecord[];
 }

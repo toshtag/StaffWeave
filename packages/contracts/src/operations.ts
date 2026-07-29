@@ -30,6 +30,11 @@ import {
   workDaySchema,
 } from './schemas/attendance.js';
 import {
+  anomalyListSchema,
+  auditLogListSchema,
+  listAnomaliesQuerySchema,
+} from './schemas/audit.js';
+import {
   loginRequestSchema,
   sessionResponseSchema,
   updatePreferencesRequestSchema,
@@ -1057,6 +1062,34 @@ export const operations = {
       unauthorized,
       forbidden,
       { status: 404, description: '利用者または組織が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  listAnomalies: {
+    operationId: 'listAnomalies',
+    method: 'get',
+    path: '/audit/anomalies',
+    summary: '打刻・端末・確定の記録から、確認すべき異常を根拠つきで一覧する',
+    tags: ['audit'],
+    security: 'session',
+    query: listAnomaliesQuerySchema,
+    responses: [
+      { status: 200, description: '検出した異常', schema: anomalyListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
+  },
+  listAuditLogs: {
+    operationId: 'listAuditLogs',
+    method: 'get',
+    path: '/audit/logs',
+    summary: '監査記録を一覧する',
+    tags: ['audit'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '監査記録', schema: auditLogListSchema },
+      unauthorized,
+      forbidden,
     ],
   },
 } as const satisfies Record<string, OperationContract>;
