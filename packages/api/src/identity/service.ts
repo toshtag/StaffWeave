@@ -33,6 +33,8 @@ export interface AuthenticatedContext {
   user: UserRecord;
   roles: Role[];
   employee: EmployeeLinkRecord | null;
+  /** 勤怠を見られる組織。空なら制限なし（ワークスペース全体）。 */
+  organizationScopes: string[];
   sessionExpiresAt: Date;
 }
 
@@ -78,6 +80,7 @@ export function toSessionResponse(context: AuthenticatedContext): SessionRespons
       locale: context.user.locale,
       roles: context.roles,
       permissions: permissionsOf(context.roles),
+      organizationScopes: context.organizationScopes,
     },
     employee: context.employee,
     expiresAt: context.sessionExpiresAt.toISOString(),
@@ -92,11 +95,12 @@ export function createIdentityService(deps: IdentityServiceDependencies): Identi
     user: UserRecord,
     sessionExpiresAt: Date,
   ): Promise<AuthenticatedContext> {
-    const [roles, employee] = await Promise.all([
+    const [roles, employee, organizationScopes] = await Promise.all([
       repository.listRoles(workspace.id, user.id),
       repository.findEmployeeByUserId(workspace.id, user.id),
+      repository.listOrganizationScopes(workspace.id, user.id),
     ]);
-    return { workspace, user, roles, employee, sessionExpiresAt };
+    return { workspace, user, roles, employee, organizationScopes, sessionExpiresAt };
   }
 
   return {

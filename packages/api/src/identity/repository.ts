@@ -48,6 +48,8 @@ export interface IdentityRepository {
   findUserByEmail(workspaceId: string, email: string): Promise<UserRecord | null>;
   findUserById(workspaceId: string, userId: string): Promise<UserRecord | null>;
   listRoles(workspaceId: string, userId: string): Promise<Role[]>;
+  /** 利用者が勤怠を見られる組織。空なら制限なし。 */
+  listOrganizationScopes(workspaceId: string, userId: string): Promise<string[]>;
   findEmployeeByUserId(workspaceId: string, userId: string): Promise<EmployeeLinkRecord | null>;
   updateUserLocale(workspaceId: string, userId: string, locale: Locale): Promise<void>;
   createSession(input: {
@@ -159,6 +161,15 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
         [workspaceId, userId],
       );
       return rows.map((row) => row.role);
+    },
+
+    async listOrganizationScopes(workspaceId, userId) {
+      const rows = await db.query<{ organization_id: string }>(
+        `SELECT organization_id FROM user_organization_scopes
+          WHERE workspace_id = $1 AND user_id = $2 ORDER BY organization_id`,
+        [workspaceId, userId],
+      );
+      return rows.map((row) => row.organization_id);
     },
 
     async findEmployeeByUserId(workspaceId, userId) {

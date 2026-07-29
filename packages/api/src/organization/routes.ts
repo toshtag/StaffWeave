@@ -60,7 +60,7 @@ export function createOrganizationRoutes(deps: OrganizationRouteDependencies): H
 
   app.get(operations.listEmployees.path, async (c) => {
     const auth = requirePermission(c, 'employee.read');
-    return c.json({ employees: await service.listEmployees(auth.workspace.id) }, 200);
+    return c.json({ employees: await service.listEmployees(auth) }, 200);
   });
 
   app.post(operations.createEmployee.path, async (c) => {
