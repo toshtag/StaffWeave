@@ -8,11 +8,60 @@ staffweave は、従業員の勤務実績を「観測された事実」と「人
 
 ## 現在の状態
 
-**P0（基盤初期化）完了時点。** 実行可能なアプリケーションはまだありません。
+**P1（セルフホスト基盤）完了時点。**
+起動できるのは API サーバー、Web クライアント、PostgreSQL のみで、勤怠機能はまだありません。
 ロードマップと各フェーズの範囲は [docs/roadmap.md](docs/roadmap.md) を参照してください。
 
 このリポジトリは、未実装の機能を「提供済み」として記載しません。
 README に書かれている機能は、その時点で実際に動作するものだけです。
+
+## ローカルでの起動
+
+### 必要なもの
+
+- Node.js 22.11 以上（`.nvmrc` は 24）
+- pnpm 11
+- Docker（PostgreSQL 用）
+
+### 手順
+
+```sh
+# 1. 依存をインストール
+pnpm install
+
+# 2. 環境変数を用意
+cp .env.example .env
+
+# 3. PostgreSQL を起動（ホスト側ポートは既定で 5433）
+docker compose up -d db
+
+# 4. マイグレーションを適用
+pnpm db:migrate
+
+# 5. API と Web を同時に起動
+pnpm dev
+```
+
+- API: http://127.0.0.1:8787
+- Web: http://127.0.0.1:5173（`/api` は API へプロキシされます）
+
+稼働確認:
+
+```sh
+curl http://127.0.0.1:8787/api/health   # プロセスの生存確認
+curl http://127.0.0.1:8787/api/ready    # DB 接続とマイグレーション適用状況
+```
+
+### 検証
+
+```sh
+pnpm verify            # lint + typecheck + 全テスト
+pnpm test:unit         # 単体テストのみ（DB 不要）
+pnpm test:integration  # 統合テストのみ（DB 必要）
+```
+
+統合テストは `TEST_DATABASE_URL` のデータベースを使い、実行のたびにデータを消去します。
+開発用データベースを誤って指さないよう、名前が `_test` で終わることを実行時に検査します。
 
 ## 設計の前提
 
