@@ -6,26 +6,23 @@ import type {
   RecordAttendanceEventResponse,
   WorkDay,
 } from '@staffweave/contracts';
-import type { AttendanceEventType, AttendanceSource, BusinessDate } from '@staffweave/domain';
+import type { AttendanceSource } from '@staffweave/domain';
 import {
   addDaysToBusinessDate,
   businessDateOf,
-  decidePunch,
   isBusinessDate,
   isOpenWorkDay,
   validateOccurredAt,
 } from '@staffweave/domain';
-import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
-import { isUniqueViolation } from '../shared/database-errors.js';
 import { ApiError, invalidRequest, notFound } from '../shared/errors.js';
 import type { DayRepositories } from './day.js';
 import { loadWorkDay, recalculateWorkDay } from './day.js';
+import type { AttendanceActor, AttendanceRepositories } from './record.js';
+import { EVENT_LABELS, recordAttendanceEvent, requireEditableDay } from './record.js';
 import type { AttendanceRepository } from './repository.js';
 
-export interface AttendanceRepositories extends DayRepositories {
-  audit: AuditRepository;
-}
+export type { AttendanceRepositories } from './record.js';
 
 export interface AttendanceServiceDependencies {
   repositories: DayRepositories;
@@ -48,39 +45,6 @@ export interface AttendanceService {
   getDay(context: AuthenticatedContext, businessDate: string): Promise<WorkDay>;
 }
 
-const REJECTION_MESSAGES = {
-  already_working: 'すでに出勤済みです',
-  not_working: '勤務中ではないため、この打刻はできません',
-  already_finished: 'すでに退勤済みです。同じ業務日の再出勤はできません',
-  already_on_break: 'すでに休憩中です',
-  not_on_break: '休憩中ではないため、休憩終了は記録できません',
-  still_on_break: '休憩中です。先に休憩終了を記録してください',
-} as const;
-
-const EVENT_LABELS: Record<AttendanceEventType, string> = {
-  clock_in: '出勤',
-  clock_out: '退勤',
-  break_start: '休憩開始',
-  break_end: '休憩終了',
-};
-
-/**
- * 申請中・承認済み・締め済みの日は打刻や修正を受け付けない。
- * 確定した記録が黙って変わらないようにするため。
- */
-function requireEditableDay(day: WorkDay): void {
-  if (day.editable) return;
-  if (day.closing?.state === 'closed') {
-    throw new ApiError('conflict', 'この月は締められているため、打刻や修正はできません');
-  }
-  throw new ApiError(
-    'conflict',
-    day.request?.state === 'approved'
-      ? '承認済みのため、打刻や修正はできません。差し戻しまたは締め解除が必要です'
-      : '申請中のため、打刻や修正はできません。先に申請を取り消してください',
-  );
-}
-
 /** 打刻は本人の従業員レコードに対してのみ行える。 */
 function requireEmployee(context: AuthenticatedContext): string {
   if (!context.employee) {
@@ -89,42 +53,27 @@ function requireEmployee(context: AuthenticatedContext): string {
   return context.employee.id;
 }
 
+function actorOf(context: AuthenticatedContext): AttendanceActor {
+  return {
+    workspaceId: context.workspace.id,
+    employeeId: requireEmployee(context),
+    employeeDisplayName: context.employee?.displayName ?? '',
+    actorKind: 'user',
+    userId: context.user.id,
+  };
+}
+
+export async function resolveTimeZoneForEmployee(
+  repository: AttendanceRepository,
+  workspaceId: string,
+  employeeId: string,
+): Promise<string> {
+  const timeZone = await repository.findTimeZoneForEmployee(workspaceId, employeeId);
+  if (!timeZone) throw notFound('従業員');
+  return timeZone;
+}
+
 export function createAttendanceService(deps: AttendanceServiceDependencies): AttendanceService {
-  async function resolveTimeZone(
-    repository: AttendanceRepository,
-    workspaceId: string,
-    employeeId: string,
-  ): Promise<string> {
-    const timeZone = await repository.findTimeZoneForEmployee(workspaceId, employeeId);
-    if (!timeZone) throw notFound('従業員');
-    return timeZone;
-  }
-
-  /**
-   * 打刻が属する業務日を決める。
-   *
-   * 出勤は打刻時刻から素直に決める。
-   * 出勤以外は、前日の勤務がまだ続いていればその業務日へ付ける。
-   * これにより、日付をまたぐ勤務でも退勤や休憩が別の日に分かれない。
-   */
-  async function resolveBusinessDate(
-    repositories: DayRepositories,
-    workspaceId: string,
-    employeeId: string,
-    eventType: AttendanceEventType,
-    occurredAt: Date,
-    timeZone: string,
-  ): Promise<BusinessDate> {
-    const computed = businessDateOf(occurredAt, timeZone);
-    if (eventType === 'clock_in') return computed;
-
-    for (const candidate of [computed, addDaysToBusinessDate(computed, -1)]) {
-      const day = await loadWorkDay(repositories, workspaceId, employeeId, candidate, timeZone);
-      if (isOpenWorkDay(day.state)) return candidate;
-    }
-    return computed;
-  }
-
   function requireValidOccurredAt(value: string | undefined, now: Date, field: string): Date {
     if (value === undefined) return now;
     const occurredAt = new Date(value);
@@ -143,139 +92,29 @@ export function createAttendanceService(deps: AttendanceServiceDependencies): At
 
   return {
     async recordEvent(context, input, source) {
-      const employeeId = requireEmployee(context);
-      const workspaceId = context.workspace.id;
+      const actor = actorOf(context);
       const now = deps.now();
       const occurredAt = requireValidOccurredAt(input.occurredAt, now, 'occurredAt');
-      const timeZone = await resolveTimeZone(deps.repositories.attendance, workspaceId, employeeId);
+      const timeZone = await resolveTimeZoneForEmployee(
+        deps.repositories.attendance,
+        actor.workspaceId,
+        actor.employeeId,
+      );
 
-      return deps.transaction(async (repositories) => {
-        const { attendance, audit } = repositories;
-        if (!(await attendance.lockEmployee(workspaceId, employeeId))) {
-          throw notFound('従業員');
-        }
-
-        const existing = await attendance.findEventByRequestId(
-          workspaceId,
-          employeeId,
-          input.requestId,
-        );
-        if (existing) {
-          return {
-            result: {
-              event: existing,
-              day: await loadWorkDay(
-                repositories,
-                workspaceId,
-                employeeId,
-                existing.businessDate,
-                timeZone,
-              ),
-              duplicate: true,
-            },
-            created: false,
-          };
-        }
-
-        const businessDate = await resolveBusinessDate(
-          repositories,
-          workspaceId,
-          employeeId,
-          input.eventType,
-          occurredAt,
-          timeZone,
-        );
-
-        const day = await loadWorkDay(
-          repositories,
-          workspaceId,
-          employeeId,
-          businessDate,
-          timeZone,
-        );
-        requireEditableDay(day);
-        const decision = decidePunch(day.state, input.eventType);
-        if (!decision.accepted) {
-          throw new ApiError('conflict', REJECTION_MESSAGES[decision.rejection ?? 'not_working']);
-        }
-
-        let event: AttendanceEventRecord;
-        try {
-          event = await attendance.insertEvent(workspaceId, {
-            employeeId,
-            eventType: input.eventType,
-            occurredAt,
-            businessDate,
-            source,
-            requestId: input.requestId,
-            recordedByUserId: context.user.id,
-          });
-        } catch (error) {
-          if (isUniqueViolation(error, 'attendance_events_request_key')) {
-            const duplicate = await attendance.findEventByRequestId(
-              workspaceId,
-              employeeId,
-              input.requestId,
-            );
-            if (duplicate) {
-              return {
-                result: {
-                  event: duplicate,
-                  day: await loadWorkDay(
-                    repositories,
-                    workspaceId,
-                    employeeId,
-                    duplicate.businessDate,
-                    timeZone,
-                  ),
-                  duplicate: true,
-                },
-                created: false,
-              };
-            }
-          }
-          throw error;
-        }
-
-        await audit.record(workspaceId, {
-          actorKind: 'user',
-          actorUserId: context.user.id,
-          action: 'attendance_event.recorded',
-          targetType: 'attendance_event',
-          targetId: event.id,
-          summary: `${context.employee?.displayName ?? ''} が${EVENT_LABELS[input.eventType]}を打刻しました`,
-          detail: {
-            employeeId,
-            eventType: event.eventType,
-            occurredAt: event.occurredAt,
-            businessDate: event.businessDate,
-            source,
-            requestId: input.requestId,
-          },
-        });
-
-        return {
-          result: {
-            event,
-            day: await recalculateWorkDay(
-              repositories,
-              workspaceId,
-              employeeId,
-              businessDate,
-              timeZone,
-            ),
-            duplicate: false,
-          },
-          created: true,
-        };
-      });
+      return deps.transaction((repositories) =>
+        recordAttendanceEvent(repositories, actor, input, source, occurredAt, timeZone),
+      );
     },
 
     async correct(context, input) {
       const employeeId = requireEmployee(context);
       const workspaceId = context.workspace.id;
       const now = deps.now();
-      const timeZone = await resolveTimeZone(deps.repositories.attendance, workspaceId, employeeId);
+      const timeZone = await resolveTimeZoneForEmployee(
+        deps.repositories.attendance,
+        workspaceId,
+        employeeId,
+      );
 
       if (input.reason.trim().length < 2) {
         throw invalidRequest([{ field: 'reason', message: '修正の理由を入力してください' }]);
@@ -429,7 +268,11 @@ export function createAttendanceService(deps: AttendanceServiceDependencies): At
     async getToday(context) {
       const employeeId = requireEmployee(context);
       const workspaceId = context.workspace.id;
-      const timeZone = await resolveTimeZone(deps.repositories.attendance, workspaceId, employeeId);
+      const timeZone = await resolveTimeZoneForEmployee(
+        deps.repositories.attendance,
+        workspaceId,
+        employeeId,
+      );
       const today = businessDateOf(deps.now(), timeZone);
 
       // 前日からの勤務が続いていれば、そちらを「今の勤務日」として見せる。
@@ -454,7 +297,11 @@ export function createAttendanceService(deps: AttendanceServiceDependencies): At
           { field: 'businessDate', message: '業務日の形式が正しくありません' },
         ]);
       }
-      const timeZone = await resolveTimeZone(deps.repositories.attendance, workspaceId, employeeId);
+      const timeZone = await resolveTimeZoneForEmployee(
+        deps.repositories.attendance,
+        workspaceId,
+        employeeId,
+      );
       return loadWorkDay(deps.repositories, workspaceId, employeeId, businessDate, timeZone);
     },
   };
