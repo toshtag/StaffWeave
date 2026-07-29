@@ -28,7 +28,9 @@
     "agent": "pnpm --filter \"@staffweave/agent\" start",
     "seed:demo": "pnpm --filter \"@staffweave/api\" seed:demo",
     "backup": "./scripts/backup.sh",
-    "restore": "./scripts/restore.sh"
+    "restore": "./scripts/restore.sh",
+    "check:policy": "./scripts/check-policy.sh",
+    "db:verify": "pnpm --filter \"@staffweave/db\" verify"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",
