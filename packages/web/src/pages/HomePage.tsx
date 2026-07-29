@@ -4,6 +4,7 @@ import { ApiRequestError, api } from '../api/client.ts';
 import { LocaleSwitcher } from '../components/LocaleSwitcher.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import { useSession } from '../session/SessionProvider.tsx';
+import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
 import { PendingApprovals } from './PendingApprovals.tsx';
 import { TodayAttendance } from './TodayAttendance.tsx';
 
@@ -97,6 +98,10 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
 
       <main id="main">
         <TodayAttendance session={session} />
+
+        {session.employee !== null && (
+          <DiscrepancyPanel businessDate={new Date().toISOString().slice(0, 10)} />
+        )}
 
         <PendingApprovals session={session} />
 

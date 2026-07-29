@@ -13,9 +13,11 @@ import type {
   DailyRequestState,
   DayType,
   DeviceState,
+  Discrepancy,
   Locale,
   MonthlyClosingState,
   Role,
+  SessionObservationType,
   WorkDayState,
 } from '@staffweave/domain';
 
@@ -473,4 +475,42 @@ export interface CardEventResponse {
   employeeDisplayName: string;
   sequenceStep: number;
   clockSkewSeconds: number;
+}
+
+export interface SessionObservationRecord {
+  id: string;
+  employeeId: string;
+  observationType: SessionObservationType;
+  occurredAt: string;
+  recordedAt: string;
+  businessDate: string;
+  workstationName: string | null;
+}
+
+export interface SessionObservationList {
+  observations: SessionObservationRecord[];
+}
+
+export interface RecordSessionObservationsRequest {
+  sequence: number;
+  requestId: string;
+  workstationName: string;
+  observations: {
+    employeeNumber: string;
+    observationType: SessionObservationType;
+    occurredAt: string;
+  }[];
+}
+
+export interface RecordSessionObservationsResponse {
+  outcome: 'accepted' | 'duplicate';
+  accepted: number;
+  skipped: number;
+}
+
+export interface DiscrepancyReport {
+  businessDate: string;
+  employeeId: string;
+  discrepancies: Discrepancy[];
+  observations: SessionObservationRecord[];
 }

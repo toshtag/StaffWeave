@@ -10,14 +10,22 @@
  *   pnpm agent status        保存されている資格情報を表示する
  *   pnpm agent card-register --token <登録トークン> --card <カード識別子>
  *   pnpm agent card-punch --card <カード識別子>
+ *   pnpm agent session-observe --employee E001 --type sign_in [--at <ISO日時>]
  *
  * カードの生の識別子は端末の中で指紋へ変換し、サーバーへは送らない。
  */
 import { randomUUID } from 'node:crypto';
 import type { AttendanceEventType } from '@staffweave/domain';
-import { isAttendanceEventType } from '@staffweave/domain';
+import { isAttendanceEventType, isSessionObservationType } from '@staffweave/domain';
 import { cardFingerprint } from './card/reader.js';
-import { AgentRequestError, enroll, registerCard, sendCardEvent, sendEvent } from './client.js';
+import {
+  AgentRequestError,
+  enroll,
+  registerCard,
+  sendCardEvent,
+  sendEvent,
+  sendSessionObservations,
+} from './client.js';
 import type { DeviceCredentials } from './credentials.js';
 import { generateKeyPair, loadCredentials, saveCredentials } from './credentials.js';
 
@@ -181,6 +189,34 @@ async function runCardPunch(): Promise<void> {
   console.log(`記録した打刻: ${body.eventType}（${body.businessDate}）`);
 }
 
+async function runSessionObserve(): Promise<void> {
+  const credentials = (await loadCredentials(storePath())) as StoredCredentials;
+  const employeeNumber = requireOption('employee');
+  const observationType = option('type') ?? 'sign_in';
+  if (!isSessionObservationType(observationType)) {
+    throw new Error(`--type が不正です: ${observationType}`);
+  }
+
+  const now = new Date();
+  const { status, body } = await sendSessionObservations(credentials, {
+    sequence: credentials.nextSequence,
+    requestId: randomUUID(),
+    workstationName: option('workstation') ?? 'simulated-workstation',
+    observations: [
+      { employeeNumber, observationType, occurredAt: option('at') ?? now.toISOString() },
+    ],
+  });
+
+  await saveCredentials(storePath(), {
+    ...credentials,
+    nextSequence: credentials.nextSequence + 1,
+  });
+
+  console.log(
+    `${status === 201 ? '受理' : '再送として受理'}: 記録 ${body.accepted} 件 / 対象外 ${body.skipped} 件`,
+  );
+}
+
 async function runStatus(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
   console.log(`接続先: ${credentials.baseUrl}`);
@@ -202,11 +238,13 @@ async function main(): Promise<void> {
       return runCardRegister();
     case 'card-punch':
       return runCardPunch();
+    case 'session-observe':
+      return runSessionObserve();
     case 'status':
       return runStatus();
     default:
       throw new Error(
-        'enroll / punch / replay / card-register / card-punch / status のいずれかを指定してください',
+        'enroll / punch / replay / card-register / card-punch / session-observe / status のいずれかを指定してください',
       );
   }
 }

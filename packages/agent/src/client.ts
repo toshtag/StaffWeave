@@ -6,9 +6,15 @@ import type {
   DeviceEventResponse,
   EnrollDeviceResponse,
   ErrorResponse,
+  RecordSessionObservationsRequest,
+  RecordSessionObservationsResponse,
   RegisterCardRequest,
 } from '@staffweave/contracts';
-import { canonicalCardEvent, canonicalCardRegistration } from '@staffweave/domain';
+import {
+  canonicalCardEvent,
+  canonicalCardRegistration,
+  canonicalSessionObservations,
+} from '@staffweave/domain';
 import type { DeviceCredentials } from './credentials.js';
 import { signMessage, signPayload } from './credentials.js';
 
@@ -132,4 +138,30 @@ export async function sendCardEvent(
 
   if (!response.ok) await readError(response);
   return { status: response.status, body: (await response.json()) as CardEventResponse };
+}
+
+export async function sendSessionObservations(
+  credentials: DeviceCredentials,
+  input: RecordSessionObservationsRequest,
+): Promise<{ status: number; body: RecordSessionObservationsResponse }> {
+  const signature = signMessage(
+    credentials.privateKeyPem,
+    canonicalSessionObservations({ deviceId: credentials.deviceId, ...input }),
+  );
+
+  const response = await fetch(`${credentials.baseUrl}/api/device-agent/session-observations`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-staffweave-device': credentials.deviceId,
+      'x-staffweave-signature': signature,
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) await readError(response);
+  return {
+    status: response.status,
+    body: (await response.json()) as RecordSessionObservationsResponse,
+  };
 }

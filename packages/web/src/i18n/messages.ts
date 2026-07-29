@@ -91,6 +91,10 @@ export interface Messages {
   offlineNotice: string;
   pendingPunches: (count: number) => string;
   skipToMain: string;
+  discrepancies: string;
+  noDiscrepancies: string;
+  discrepancyNotice: string;
+  discrepancyMinutes: (minutes: number) => string;
 }
 
 const ja: Messages = {
@@ -181,6 +185,10 @@ const ja: Messages = {
   offlineNotice: 'オフラインです。打刻は端末に残し、接続が戻ったら送ります。',
   pendingPunches: (count) => `送信待ちの打刻が ${count} 件あります`,
   skipToMain: '本文へ移動',
+  discrepancies: 'PC の利用記録との食い違い',
+  noDiscrepancies: '打刻と PC の利用記録に食い違いはありません',
+  discrepancyNotice: 'これは確認のための材料です。打刻や集計が自動で書き換わることはありません。',
+  discrepancyMinutes: (minutes) => `${minutes} 分`,
 };
 
 const en: Messages = {
@@ -271,6 +279,11 @@ const en: Messages = {
   offlineNotice: 'You are offline. Punches stay on this device and are sent once you reconnect.',
   pendingPunches: (count) => `${count} punch(es) waiting to be sent`,
   skipToMain: 'Skip to main content',
+  discrepancies: 'Differences from workstation activity',
+  noDiscrepancies: 'No differences between punches and workstation activity',
+  discrepancyNotice:
+    'These are for review only. Punches and totals are never changed automatically.',
+  discrepancyMinutes: (minutes) => `${minutes} min`,
 };
 
 export const MESSAGES: Record<Locale, Messages> = { 'ja-JP': ja, en };

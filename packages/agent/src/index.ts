@@ -6,6 +6,7 @@ export {
   registerCard,
   sendCardEvent,
   sendEvent,
+  sendSessionObservations,
 } from './client.js';
 export type { DeviceCredentials, KeyPair } from './credentials.js';
 export {

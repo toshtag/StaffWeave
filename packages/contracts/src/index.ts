@@ -18,6 +18,7 @@ export * from './schemas/common.js';
 export * from './schemas/device.js';
 export * from './schemas/organization.js';
 export * from './schemas/schedule.js';
+export * from './schemas/session.js';
 export * from './types.js';
 export type { ValidationProblem, ValidationResult } from './validation.js';
 export { validate } from './validation.js';
