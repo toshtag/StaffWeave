@@ -1,7 +1,13 @@
-import { ROLES, SUPPORTED_LOCALES } from '@staffweave/domain';
+import { BUSINESS_DATE_PATTERN, ROLES, SUPPORTED_LOCALES } from '@staffweave/domain';
 import { type JsonSchema, objectSchema } from '../json-schema.js';
 
 export const uuidSchema: JsonSchema = { type: 'string', format: 'uuid' };
+
+export const businessDateSchema: JsonSchema = {
+  type: 'string',
+  pattern: BUSINESS_DATE_PATTERN.source,
+  description: '業務日（YYYY-MM-DD）。暦日ではなく、勤務が属する日',
+};
 
 export const localeSchema: JsonSchema = {
   type: 'string',

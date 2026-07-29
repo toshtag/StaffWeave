@@ -7,7 +7,9 @@
 import type {
   AttendanceEventType,
   AttendanceSource,
+  CalculationBasis,
   CorrectionAction,
+  DayType,
   Locale,
   Role,
   WorkDayState,
@@ -159,6 +161,68 @@ export interface BreakPeriodRecord {
   endedAt: string | null;
 }
 
+export interface WorkPattern {
+  id: string;
+  code: string;
+  name: string;
+  startMinutes: number;
+  endMinutes: number;
+  breakMinutes: number;
+  createdAt: string;
+}
+
+export interface WorkPatternList {
+  workPatterns: WorkPattern[];
+}
+
+export interface CreateWorkPatternRequest {
+  code: string;
+  name: string;
+  startMinutes: number;
+  endMinutes: number;
+  breakMinutes?: number;
+}
+
+export interface WorkScheduleRecord {
+  employeeId: string;
+  businessDate: string;
+  workPatternId: string | null;
+  dayType: DayType;
+  startMinutes: number | null;
+  endMinutes: number | null;
+  breakMinutes: number;
+}
+
+export interface WorkScheduleList {
+  workSchedules: WorkScheduleRecord[];
+}
+
+export interface UpsertWorkScheduleRequest {
+  employeeId: string;
+  businessDate: string;
+  workPatternId?: string;
+  dayType?: DayType;
+  startMinutes?: number;
+  endMinutes?: number;
+  breakMinutes?: number;
+}
+
+export interface AttendanceCalculationRecord {
+  version: number;
+  calculatedAt: string;
+  inputFingerprint: string;
+  ruleVersion: string;
+  attendedMinutes: number;
+  workedMinutes: number;
+  breakMinutes: number;
+  scheduledMinutes: number;
+  withinScheduleMinutes: number;
+  outsideScheduleMinutes: number;
+  nightMinutes: number;
+  nonWorkingDayMinutes: number;
+  basis: CalculationBasis;
+}
+
 export interface WorkDay {
   businessDate: string;
   employeeId: string;
@@ -170,6 +234,8 @@ export interface WorkDay {
   events: AttendanceEventRecord[];
   /** 記録されたすべてのイベント（修正を含む、追記順）。 */
   history: AttendanceEventRecord[];
+  schedule: WorkScheduleRecord | null;
+  calculation: AttendanceCalculationRecord | null;
 }
 
 export interface CorrectAttendanceRequest {

@@ -1,3 +1,4 @@
+import type { JsonSchema } from './json-schema.js';
 import { type OperationContract, operationList } from './operations.js';
 
 export const API_BASE_PATH = '/api';
@@ -12,8 +13,34 @@ interface OpenApiOperation {
   responses: Record<string, unknown>;
 }
 
+/** クエリ用のオブジェクトスキーマを、OpenAPI のクエリパラメーターへ展開する。 */
+function queryParametersOf(schema: JsonSchema | undefined): unknown[] {
+  if (schema === undefined) return [];
+  const properties = schema.properties;
+  if (typeof properties !== 'object' || properties === null) return [];
+  const required = Array.isArray(schema.required) ? (schema.required as string[]) : [];
+
+  return Object.entries(properties as Record<string, JsonSchema>).map(([name, property]) => ({
+    name,
+    in: 'query',
+    required: required.includes(name),
+    ...(typeof property.description === 'string' ? { description: property.description } : {}),
+    schema: property,
+  }));
+}
+
 function toOpenApiOperation(operation: OperationContract): OpenApiOperation {
   const responses: Record<string, unknown> = {};
+  const parameters = [
+    ...(operation.pathParameters ?? []).map((parameter) => ({
+      name: parameter.name,
+      in: 'path',
+      required: true,
+      description: parameter.description,
+      schema: parameter.schema,
+    })),
+    ...queryParametersOf(operation.query),
+  ];
   for (const response of operation.responses) {
     responses[String(response.status)] = {
       description: response.description,
@@ -28,17 +55,7 @@ function toOpenApiOperation(operation: OperationContract): OpenApiOperation {
     summary: operation.summary,
     tags: [...operation.tags],
     ...(operation.security === 'session' ? { security: [{ sessionCookie: [] }] } : {}),
-    ...(operation.pathParameters === undefined
-      ? {}
-      : {
-          parameters: operation.pathParameters.map((parameter) => ({
-            name: parameter.name,
-            in: 'path',
-            required: true,
-            description: parameter.description,
-            schema: parameter.schema,
-          })),
-        }),
+    ...(parameters.length === 0 ? {} : { parameters }),
     ...(operation.requestBody === undefined
       ? {}
       : {
