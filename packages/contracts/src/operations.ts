@@ -23,6 +23,15 @@ import {
   sessionResponseSchema,
   updatePreferencesRequestSchema,
 } from './schemas/auth.js';
+import {
+  cardCredentialListSchema,
+  cardCredentialSchema,
+  cardEventRequestSchema,
+  cardEventResponseSchema,
+  createCardRegistrationRequestSchema,
+  createCardRegistrationResponseSchema,
+  registerCardRequestSchema,
+} from './schemas/card.js';
 import { businessDateSchema, errorResponseSchema, uuidSchema } from './schemas/common.js';
 import {
   deviceEventRequestSchema,
@@ -662,6 +671,101 @@ export const operations = {
         schema: errorResponseSchema,
       },
       { status: 404, description: '従業員が見つからない', schema: errorResponseSchema },
+      {
+        status: 409,
+        description: '現在の状態では受け付けられない打刻',
+        schema: errorResponseSchema,
+      },
+    ],
+  },
+  listCardCredentials: {
+    operationId: 'listCardCredentials',
+    method: 'get',
+    path: '/card-credentials',
+    summary: 'IC カードの資格情報を一覧する（指紋は含めない）',
+    tags: ['card'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '資格情報の一覧', schema: cardCredentialListSchema },
+      unauthorized,
+      forbidden,
+    ],
+  },
+  createCardRegistration: {
+    operationId: 'createCardRegistration',
+    method: 'post',
+    path: '/card-credentials/registrations',
+    summary: 'カード登録用の一度きりのトークンを発行する',
+    tags: ['card'],
+    security: 'session',
+    requestBody: createCardRegistrationRequestSchema,
+    responses: [
+      {
+        status: 201,
+        description: '登録トークン',
+        schema: createCardRegistrationResponseSchema,
+      },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '従業員が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  revokeCardCredential: {
+    operationId: 'revokeCardCredential',
+    method: 'post',
+    path: '/card-credentials/{cardCredentialId}/revoke',
+    summary: 'IC カードの資格情報を失効させる',
+    tags: ['card'],
+    security: 'session',
+    pathParameters: [
+      { name: 'cardCredentialId', description: '資格情報の識別子', schema: uuidSchema },
+    ],
+    responses: [
+      { status: 200, description: '失効した資格情報', schema: cardCredentialSchema },
+      unauthorized,
+      forbidden,
+      { status: 404, description: '資格情報が見つからない', schema: errorResponseSchema },
+      { status: 409, description: 'すでに失効している', schema: errorResponseSchema },
+    ],
+  },
+  registerCard: {
+    operationId: 'registerCard',
+    method: 'post',
+    path: '/device-agent/card-credentials',
+    summary: 'Agent が読み取ったカードの指紋を登録トークンと結び付ける',
+    tags: ['card'],
+    security: 'deviceSignature',
+    requestBody: registerCardRequestSchema,
+    responses: [
+      { status: 201, description: '登録した資格情報', schema: cardCredentialSchema },
+      invalidRequest,
+      {
+        status: 401,
+        description: '端末を認証できない、または登録トークンが一致しない',
+        schema: errorResponseSchema,
+      },
+      {
+        status: 409,
+        description: 'このカードは別の従業員に登録されている',
+        schema: errorResponseSchema,
+      },
+    ],
+  },
+  recordCardEvent: {
+    operationId: 'recordCardEvent',
+    method: 'post',
+    path: '/device-agent/card-events',
+    summary: '端末がカードの読み取りから作った打刻イベントを受け取る',
+    tags: ['card'],
+    security: 'deviceSignature',
+    requestBody: cardEventRequestSchema,
+    responses: [
+      { status: 201, description: '受理した打刻', schema: cardEventResponseSchema },
+      { status: 200, description: '同じ冪等キーの再送', schema: cardEventResponseSchema },
+      invalidRequest,
+      { status: 401, description: '端末を認証できません', schema: errorResponseSchema },
+      { status: 404, description: 'カードが登録されていない', schema: errorResponseSchema },
       {
         status: 409,
         description: '現在の状態では受け付けられない打刻',

@@ -14,6 +14,7 @@ describe('loadConfig', () => {
       port: 8787,
       environment: 'development',
       defaultWorkspaceSlug: 'default',
+      cardFingerprintKey: null,
     });
   });
 

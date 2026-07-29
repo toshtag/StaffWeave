@@ -90,7 +90,8 @@
 | 連番 | sequence number | 端末ごとの単調増加 |
 | 失効 | revoke | |
 | カード資格情報 | card credential | 生識別子は保存しない |
-| カード指紋 | card fingerprint | 重複検出用の一方向値 |
+| カード指紋 | card fingerprint | 生の識別子から作る一方向値。保存はこれのみ |
+| カード登録トークン | card registration token | 一度きりの登録用トークン |
 | PC セッション観測 | workstation session observation | |
 | ログイン | sign in | |
 | ログオフ | sign out | |

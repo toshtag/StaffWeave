@@ -8,11 +8,16 @@
  *   pnpm agent punch --employee E001 --type clock_in
  *   pnpm agent replay        直前に送ったイベントをそのまま再送する
  *   pnpm agent status        保存されている資格情報を表示する
+ *   pnpm agent card-register --token <登録トークン> --card <カード識別子>
+ *   pnpm agent card-punch --card <カード識別子>
+ *
+ * カードの生の識別子は端末の中で指紋へ変換し、サーバーへは送らない。
  */
 import { randomUUID } from 'node:crypto';
 import type { AttendanceEventType } from '@staffweave/domain';
 import { isAttendanceEventType } from '@staffweave/domain';
-import { AgentRequestError, enroll, sendEvent } from './client.js';
+import { cardFingerprint } from './card/reader.js';
+import { AgentRequestError, enroll, registerCard, sendCardEvent, sendEvent } from './client.js';
 import type { DeviceCredentials } from './credentials.js';
 import { generateKeyPair, loadCredentials, saveCredentials } from './credentials.js';
 
@@ -64,6 +69,9 @@ async function runEnroll(): Promise<void> {
     privateKeyPem: keyPair.privateKeyPem,
     publicKeyPem: keyPair.publicKeyPem,
     nextSequence: result.device.lastSequence + 1,
+    ...(result.cardFingerprintKey === undefined
+      ? {}
+      : { cardFingerprintKey: result.cardFingerprintKey }),
   };
   await saveCredentials(storePath(), credentials);
 
@@ -122,6 +130,57 @@ async function runReplay(): Promise<void> {
   console.log(`再送の結果: ${body.outcome}（HTTP ${status}）`);
 }
 
+function requireCardKey(credentials: StoredCredentials): string {
+  if (credentials.cardFingerprintKey === undefined) {
+    throw new Error(
+      'サーバーでカードの指紋鍵が設定されていません。CARD_FINGERPRINT_KEY を設定して登録し直してください。',
+    );
+  }
+  return credentials.cardFingerprintKey;
+}
+
+async function runCardRegister(): Promise<void> {
+  const credentials = (await loadCredentials(storePath())) as StoredCredentials;
+  const token = requireOption('token');
+  // 実機の読み取り装置の代わりに、指定された識別子を読み取ったものとして扱う。
+  const rawCardId = requireOption('card');
+
+  const credential = await registerCard(credentials, {
+    registrationToken: token,
+    cardFingerprint: cardFingerprint(requireCardKey(credentials), rawCardId),
+  });
+
+  console.log(`カードを登録しました: ${credential.id}`);
+  console.log('生のカード識別子はサーバーへ送っていません。');
+}
+
+async function runCardPunch(): Promise<void> {
+  const credentials = (await loadCredentials(storePath())) as StoredCredentials;
+  const rawCardId = requireOption('card');
+  const eventType = option('type');
+  if (eventType !== undefined && !isAttendanceEventType(eventType)) {
+    throw new Error(`--type が不正です: ${eventType}`);
+  }
+
+  const now = new Date();
+  const { status, body } = await sendCardEvent(credentials, {
+    sequence: credentials.nextSequence,
+    requestId: randomUUID(),
+    cardFingerprint: cardFingerprint(requireCardKey(credentials), rawCardId),
+    ...(eventType === undefined ? {} : { eventType }),
+    occurredAt: option('at') ?? now.toISOString(),
+    deviceTime: now.toISOString(),
+  });
+
+  await saveCredentials(storePath(), {
+    ...credentials,
+    nextSequence: credentials.nextSequence + 1,
+  });
+
+  console.log(`${status === 201 ? '受理' : '再送として受理'}: ${body.employeeDisplayName}`);
+  console.log(`記録した打刻: ${body.eventType}（${body.businessDate}）`);
+}
+
 async function runStatus(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
   console.log(`接続先: ${credentials.baseUrl}`);
@@ -139,10 +198,16 @@ async function main(): Promise<void> {
       return runPunch();
     case 'replay':
       return runReplay();
+    case 'card-register':
+      return runCardRegister();
+    case 'card-punch':
+      return runCardPunch();
     case 'status':
       return runStatus();
     default:
-      throw new Error('enroll / punch / replay / status のいずれかを指定してください');
+      throw new Error(
+        'enroll / punch / replay / card-register / card-punch / status のいずれかを指定してください',
+      );
   }
 }
 

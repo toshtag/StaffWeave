@@ -389,6 +389,8 @@ export interface EnrollDeviceResponse {
   deviceId: string;
   workspaceSlug: string;
   device: DeviceRecord;
+  /** IC カードの指紋を計算するための鍵。設定されていなければ返らない。 */
+  cardFingerprintKey?: string;
 }
 
 export interface DeviceEventRequest {
@@ -423,4 +425,52 @@ export interface DeviceReceiptRecord {
 
 export interface DeviceReceiptList {
   receipts: DeviceReceiptRecord[];
+}
+
+export interface CardCredentialRecord {
+  id: string;
+  employeeId: string;
+  label: string | null;
+  state: 'active' | 'revoked';
+  registeredAt: string;
+  revokedAt: string | null;
+}
+
+export interface CardCredentialList {
+  cardCredentials: CardCredentialRecord[];
+}
+
+export interface CreateCardRegistrationRequest {
+  employeeId: string;
+  label?: string;
+  expiresInMinutes?: number;
+}
+
+export interface CreateCardRegistrationResponse {
+  registrationToken: string;
+  expiresAt: string;
+}
+
+export interface RegisterCardRequest {
+  registrationToken: string;
+  cardFingerprint: string;
+}
+
+export interface CardEventRequest {
+  sequence: number;
+  requestId: string;
+  cardFingerprint: string;
+  eventType?: AttendanceEventType;
+  occurredAt: string;
+  deviceTime: string;
+}
+
+export interface CardEventResponse {
+  outcome: 'accepted' | 'duplicate';
+  attendanceEventId: string | null;
+  eventType: AttendanceEventType;
+  businessDate: string;
+  employeeDisplayName: string;
+  sequenceStep: number;
+  clockSkewSeconds: number;
 }

@@ -137,6 +137,26 @@ export function summarizeWorkDay(
   return { businessDate, state, firstClockInAt, lastClockOutAt, breaks };
 }
 
+/**
+ * IC カードのように操作が 1 種類しかない入力で、次に記録すべき打刻を決める。
+ *
+ * 出勤前なら出勤、勤務中なら退勤、休憩中なら休憩終了。
+ * 休憩の開始は種別を選べる入力からのみ行う。カードのひと触りで
+ * 休憩に入るのか退勤するのかを取り違えないようにするため。
+ */
+export function nextCardPunch(state: WorkDayState): AttendanceEventType | null {
+  switch (state) {
+    case 'not_started':
+      return 'clock_in';
+    case 'working':
+      return 'clock_out';
+    case 'on_break':
+      return 'break_end';
+    case 'finished':
+      return null;
+  }
+}
+
 /** 勤務が継続中（退勤していない）かどうか。日跨ぎ勤務の判定に使う。 */
 export function isOpenWorkDay(state: WorkDayState): boolean {
   return state === 'working' || state === 'on_break';

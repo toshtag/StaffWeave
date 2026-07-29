@@ -36,6 +36,8 @@ export interface DeviceServiceDependencies {
   repository: DeviceRepository;
   attendance: AttendanceRepositories['attendance'];
   now: () => Date;
+  /** 登録時に Agent へ渡す、IC カードの指紋を計算するための鍵。 */
+  cardFingerprintKey: string | null;
   transaction<T>(fn: (repositories: DeviceRepositories) => Promise<T>): Promise<T>;
 }
 
@@ -152,7 +154,14 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
           detail: { deviceId: device.id },
         });
 
-        return { deviceId: device.id, workspaceSlug: found.workspaceSlug, device };
+        return {
+          deviceId: device.id,
+          workspaceSlug: found.workspaceSlug,
+          device,
+          ...(deps.cardFingerprintKey === null
+            ? {}
+            : { cardFingerprintKey: deps.cardFingerprintKey }),
+        };
       });
     },
 

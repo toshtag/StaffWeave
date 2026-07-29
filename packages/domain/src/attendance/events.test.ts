@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decidePunch, isOpenWorkDay, summarizeWorkDay } from './events.js';
+import { decidePunch, isOpenWorkDay, nextCardPunch, summarizeWorkDay } from './events.js';
 
 describe('decidePunch', () => {
   it('出勤前の出勤は受け付ける', () => {
@@ -147,5 +147,17 @@ describe('summarizeWorkDay', () => {
     ]);
     expect(summary.state).toBe('finished');
     expect(summary.firstClockInAt).toEqual(at('00:00'));
+  });
+});
+
+describe('nextCardPunch', () => {
+  it('状態から次の打刻を一意に決める', () => {
+    expect(nextCardPunch('not_started')).toBe('clock_in');
+    expect(nextCardPunch('working')).toBe('clock_out');
+    expect(nextCardPunch('on_break')).toBe('break_end');
+  });
+
+  it('退勤済みでは何もしない', () => {
+    expect(nextCardPunch('finished')).toBeNull();
   });
 });

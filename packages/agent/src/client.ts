@@ -1,11 +1,16 @@
 import type {
+  CardCredentialRecord,
+  CardEventRequest,
+  CardEventResponse,
   DeviceEventRequest,
   DeviceEventResponse,
   EnrollDeviceResponse,
   ErrorResponse,
+  RegisterCardRequest,
 } from '@staffweave/contracts';
+import { canonicalCardEvent, canonicalCardRegistration } from '@staffweave/domain';
 import type { DeviceCredentials } from './credentials.js';
-import { signPayload } from './credentials.js';
+import { signMessage, signPayload } from './credentials.js';
 
 /**
  * Agent からサーバーへの送信。
@@ -73,4 +78,58 @@ export async function sendEvent(
 
   if (!response.ok) await readError(response);
   return { status: response.status, body: (await response.json()) as DeviceEventResponse };
+}
+
+export async function registerCard(
+  credentials: DeviceCredentials,
+  input: RegisterCardRequest,
+): Promise<CardCredentialRecord> {
+  const signature = signMessage(
+    credentials.privateKeyPem,
+    canonicalCardRegistration({ deviceId: credentials.deviceId, ...input }),
+  );
+
+  const response = await fetch(`${credentials.baseUrl}/api/device-agent/card-credentials`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-staffweave-device': credentials.deviceId,
+      'x-staffweave-signature': signature,
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) await readError(response);
+  return (await response.json()) as CardCredentialRecord;
+}
+
+export async function sendCardEvent(
+  credentials: DeviceCredentials,
+  input: CardEventRequest,
+): Promise<{ status: number; body: CardEventResponse }> {
+  const signature = signMessage(
+    credentials.privateKeyPem,
+    canonicalCardEvent({
+      deviceId: credentials.deviceId,
+      sequence: input.sequence,
+      requestId: input.requestId,
+      cardFingerprint: input.cardFingerprint,
+      eventType: input.eventType ?? '',
+      occurredAt: input.occurredAt,
+      deviceTime: input.deviceTime,
+    }),
+  );
+
+  const response = await fetch(`${credentials.baseUrl}/api/device-agent/card-events`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-staffweave-device': credentials.deviceId,
+      'x-staffweave-signature': signature,
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) await readError(response);
+  return { status: response.status, body: (await response.json()) as CardEventResponse };
 }

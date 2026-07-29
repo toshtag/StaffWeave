@@ -10,6 +10,11 @@ export interface ApiConfig {
   environment: 'development' | 'test' | 'production';
   /** ログイン時にワークスペースが指定されなかった場合の既定値。 */
   defaultWorkspaceSlug: string;
+  /**
+   * IC カードの指紋を計算するための鍵。
+   * データベースへは保存せず、登録時に Agent へ渡す。未設定ならカード機能は使えない。
+   */
+  cardFingerprintKey: string | null;
 }
 
 export class ConfigurationError extends Error {}
@@ -43,5 +48,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     port: readPort(env.API_PORT, 8787),
     environment: readEnvironment(env.NODE_ENV),
     defaultWorkspaceSlug: env.DEFAULT_WORKSPACE_SLUG ?? 'default',
+    cardFingerprintKey: env.CARD_FINGERPRINT_KEY ?? null,
   };
 }

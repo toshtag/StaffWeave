@@ -17,6 +17,8 @@ export interface DeviceCredentials {
   publicKeyPem: string;
   /** 次に送る連番。送信のたびに 1 ずつ増やす。 */
   nextSequence: number;
+  /** IC カードの指紋を計算するための鍵。サーバーが設定していれば登録時に受け取る。 */
+  cardFingerprintKey?: string;
 }
 
 export interface KeyPair {
@@ -32,10 +34,13 @@ export function generateKeyPair(): KeyPair {
   };
 }
 
+/** 任意の署名対象文字列に署名する。 */
+export function signMessage(privateKeyPem: string, message: string): string {
+  return sign(null, Buffer.from(message, 'utf8'), privateKeyPem).toString('base64');
+}
+
 export function signPayload(privateKeyPem: string, payload: SignedEventPayload): string {
-  return sign(null, Buffer.from(canonicalPayload(payload), 'utf8'), privateKeyPem).toString(
-    'base64',
-  );
+  return signMessage(privateKeyPem, canonicalPayload(payload));
 }
 
 export async function loadCredentials(path: string): Promise<DeviceCredentials> {
