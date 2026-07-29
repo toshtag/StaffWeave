@@ -7,7 +7,7 @@ interface OpenApiOperation {
   operationId: string;
   summary: string;
   tags: string[];
-  security?: { sessionCookie: string[] }[];
+  security?: Record<string, string[]>[];
   parameters?: unknown[];
   requestBody?: unknown;
   responses: Record<string, unknown>;
@@ -55,6 +55,9 @@ function toOpenApiOperation(operation: OperationContract): OpenApiOperation {
     summary: operation.summary,
     tags: [...operation.tags],
     ...(operation.security === 'session' ? { security: [{ sessionCookie: [] }] } : {}),
+    ...(operation.security === 'deviceSignature'
+      ? { security: [{ deviceId: [], deviceSignature: [] }] }
+      : {}),
     ...(parameters.length === 0 ? {} : { parameters }),
     ...(operation.requestBody === undefined
       ? {}
@@ -99,6 +102,19 @@ export function buildOpenApiDocument(version: string): Record<string, unknown> {
           in: 'cookie',
           name: 'staffweave_session',
           description: 'ログイン時に発行されるセッション Cookie',
+        },
+        deviceId: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'x-staffweave-device',
+          description: '打刻端末の識別子',
+        },
+        deviceSignature: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'x-staffweave-signature',
+          description:
+            '端末の秘密鍵による Ed25519 署名（base64）。署名対象は canonicalPayload が定める文字列',
         },
       },
     },

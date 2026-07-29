@@ -14,6 +14,7 @@ export * from './schemas/approval.js';
 export * from './schemas/attendance.js';
 export * from './schemas/auth.js';
 export * from './schemas/common.js';
+export * from './schemas/device.js';
 export * from './schemas/organization.js';
 export * from './schemas/schedule.js';
 export * from './types.js';
