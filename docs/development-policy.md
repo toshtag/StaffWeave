@@ -85,3 +85,27 @@ staffweave の実装判断で迷ったとき、この文書が優先されます
 - PR は日本語で作成し、検証成功後に merge commit 方式で `main` へマージする（squash しない）。
 - 履歴の改変、`main` への force push、検証失敗状態でのマージを禁止する。
 - コミットと PR に、生成ツールに由来する定型文・署名・リンクを含めない。
+
+## 自動検証
+
+`main` へ入る前に、次をすべて機械的に通します（GitHub Actions）。
+
+| 検証 | コマンド |
+| --- | --- |
+| 依存の再現性 | `pnpm install --frozen-lockfile` |
+| lint と format | `pnpm lint` |
+| 型検査 | `pnpm typecheck` |
+| 単体テスト | `pnpm test:unit` |
+| 統合テスト | `pnpm test:integration` |
+| 画面テスト | `pnpm test:e2e` |
+| マイグレーション | `pnpm db:migrate`（二度実行）、`pnpm db:verify` |
+| リポジトリの決めごと | `pnpm check:policy` |
+| コンテナのビルド | `docker build -f docker/api.Dockerfile` |
+
+`pnpm check:policy` が見るのは、レビューで見落としやすく、後から直すと影響が大きいものだけです。
+
+- 正式名称が `staffweave` から変形していないか
+- `.env`、端末の資格情報、秘密鍵、API キーがコミットされていないか
+- 生成ツールに由来する定型文が含まれていないか
+- マイグレーションの版番号とファイル名が規約どおりか
+- ドメイン層がフレームワークや上位パッケージへ依存していないか
