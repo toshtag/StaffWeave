@@ -199,6 +199,34 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
         <dd>{formatTime(day.lastClockOutAt, locale)}</dd>
       </dl>
 
+      <h3>{messages.calculation}</h3>
+      {day.calculation === null ? (
+        <p className="notice">{messages.calculationPending}</p>
+      ) : (
+        <>
+          {day.calculation.basis.incomplete && (
+            <p className="notice">{messages.calculationIncomplete}</p>
+          )}
+          <dl className="details calculation-details">
+            <dt>{messages.workedTime}</dt>
+            <dd>{messages.formatDuration(day.calculation.workedMinutes)}</dd>
+            <dt>{messages.breakTime}</dt>
+            <dd>{messages.formatDuration(day.calculation.breakMinutes)}</dd>
+            <dt>{messages.scheduledTime}</dt>
+            <dd>{messages.formatDuration(day.calculation.scheduledMinutes)}</dd>
+            <dt>{messages.outsideScheduleTime}</dt>
+            <dd>{messages.formatDuration(day.calculation.outsideScheduleMinutes)}</dd>
+            <dt>{messages.nightTime}</dt>
+            <dd>{messages.formatDuration(day.calculation.nightMinutes)}</dd>
+            <dt>{messages.nonWorkingDayTime}</dt>
+            <dd>{messages.formatDuration(day.calculation.nonWorkingDayMinutes)}</dd>
+          </dl>
+          <p className="notice">
+            {messages.calculationVersion}: {day.calculation.version} / {day.calculation.ruleVersion}
+          </p>
+        </>
+      )}
+
       {day.breaks.length > 0 && (
         <>
           <h3>{messages.breaks}</h3>
