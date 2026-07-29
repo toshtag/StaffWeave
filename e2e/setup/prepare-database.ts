@@ -17,12 +17,25 @@ export interface SeededAccount {
   displayName: string;
 }
 
+/**
+ * 検証用の従業員。
+ * 画面テストはファイルごとに別の従業員を使い、打刻の状態が互いに干渉しないようにする。
+ */
 export const E2E_EMPLOYEE: SeededAccount = {
   email: 'employee@example.test',
   password: 'staffweave e2e pass',
   employeeNumber: 'E001',
   displayName: '検証 太郎',
 };
+
+export const E2E_MOBILE_EMPLOYEE: SeededAccount = {
+  email: 'mobile@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E002',
+  displayName: '検証 花子',
+};
+
+const SEEDED_ACCOUNTS = [E2E_EMPLOYEE, E2E_MOBILE_EMPLOYEE];
 
 export function e2eDatabaseUrl(): string {
   const base = process.env.DATABASE_URL;
@@ -84,35 +97,27 @@ export default async function prepareDatabase(): Promise<void> {
       const organizationId = organization[0]?.id;
       if (!organizationId) throw new Error('組織を作成できませんでした');
 
-      const user = await tx.query<{ id: string }>(
-        `INSERT INTO users (workspace_id, email, password_hash, display_name)
-         VALUES ($1, $2, $3, $4) RETURNING id`,
-        [
-          workspaceId,
-          E2E_EMPLOYEE.email,
-          await hashPassword(E2E_EMPLOYEE.password),
-          E2E_EMPLOYEE.displayName,
-        ],
-      );
-      const userId = user[0]?.id;
-      if (!userId) throw new Error('利用者を作成できませんでした');
+      for (const account of SEEDED_ACCOUNTS) {
+        const user = await tx.query<{ id: string }>(
+          `INSERT INTO users (workspace_id, email, password_hash, display_name)
+           VALUES ($1, $2, $3, $4) RETURNING id`,
+          [workspaceId, account.email, await hashPassword(account.password), account.displayName],
+        );
+        const userId = user[0]?.id;
+        if (!userId) throw new Error('利用者を作成できませんでした');
 
-      await tx.query(
-        "INSERT INTO user_roles (workspace_id, user_id, role) VALUES ($1, $2, 'employee')",
-        [workspaceId, userId],
-      );
+        await tx.query(
+          "INSERT INTO user_roles (workspace_id, user_id, role) VALUES ($1, $2, 'employee')",
+          [workspaceId, userId],
+        );
 
-      await tx.query(
-        `INSERT INTO employees (workspace_id, organization_id, user_id, employee_number, display_name)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-          workspaceId,
-          organizationId,
-          userId,
-          E2E_EMPLOYEE.employeeNumber,
-          E2E_EMPLOYEE.displayName,
-        ],
-      );
+        await tx.query(
+          `INSERT INTO employees
+             (workspace_id, organization_id, user_id, employee_number, display_name)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [workspaceId, organizationId, userId, account.employeeNumber, account.displayName],
+        );
+      }
     });
   } finally {
     await db.close();

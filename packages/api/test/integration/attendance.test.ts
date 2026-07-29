@@ -73,6 +73,29 @@ describe('最小打刻', () => {
     expect(body.day.events).toHaveLength(2);
   });
 
+  it('携帯からの打刻は入力元が mobile として記録される', async () => {
+    const response = await punch(app(), cookie, {
+      eventType: 'clock_in',
+      requestId: 'mobile-source-request',
+      source: 'mobile',
+    });
+    const body = (await response.json()) as RecordAttendanceEventResponse;
+
+    expect(response.status).toBe(201);
+    expect(body.event.source).toBe('mobile');
+  });
+
+  it('端末や修正を入力元として指定することはできない', async () => {
+    for (const source of ['device', 'correction']) {
+      const response = await punch(app(), cookie, {
+        eventType: 'clock_in',
+        requestId: `invalid-source-${source}`,
+        source,
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
   it('当日の状態を取得できる', async () => {
     const instance = app();
     const before = (await (
