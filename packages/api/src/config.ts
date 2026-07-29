@@ -15,6 +15,8 @@ export interface ApiConfig {
    * データベースへは保存せず、登録時に Agent へ渡す。未設定ならカード機能は使えない。
    */
   cardFingerprintKey: string | null;
+  /** ビルド済みの Web を配信する場合の場所。未設定なら配信しない。 */
+  webDistPath: string | null;
 }
 
 export class ConfigurationError extends Error {}
@@ -49,5 +51,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     environment: readEnvironment(env.NODE_ENV),
     defaultWorkspaceSlug: env.DEFAULT_WORKSPACE_SLUG ?? 'default',
     cardFingerprintKey: env.CARD_FINGERPRINT_KEY ?? null,
+    webDistPath: env.WEB_DIST_PATH ?? null,
   };
 }

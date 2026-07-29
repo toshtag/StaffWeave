@@ -8,6 +8,8 @@ import { forbidden, unauthenticated } from './errors.js';
 export interface AppEnv {
   Variables: {
     auth: AuthenticatedContext | null;
+    /** API キーで来た要求。セッションとは別の経路として扱う。 */
+    apiKey: { workspaceId: string; scopes: string[] } | null;
   };
 }
 

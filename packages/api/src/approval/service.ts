@@ -6,7 +6,11 @@ import type {
   ReopenMonthRequest,
   SubmitDailyRequestRequest,
 } from '@staffweave/contracts';
-import type { DailyRequestEventType, DailyRequestState } from '@staffweave/domain';
+import type {
+  DailyRequestEventType,
+  DailyRequestState,
+  WebhookEventType,
+} from '@staffweave/domain';
 import {
   applyDailyRequestEvent,
   applyMonthlyClosingEvent,
@@ -32,6 +36,8 @@ export interface ApprovalRepositories {
 export interface ApprovalServiceDependencies {
   repository: ApprovalRepository;
   assignments: AssignmentRepository;
+  /** 承認や締めの結果を外部へ知らせる。失敗しても本体の処理は続ける。 */
+  notify: (workspaceId: string, eventType: WebhookEventType, payload: unknown) => Promise<void>;
   now: () => Date;
   transaction<T>(fn: (repositories: ApprovalRepositories) => Promise<T>): Promise<T>;
 }
@@ -246,7 +252,25 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
           },
         });
 
-        return approval.findRequestById(workspaceId, saved.id) as Promise<DailyRequestRecord>;
+        const decided = (await approval.findRequestById(
+          workspaceId,
+          saved.id,
+        )) as DailyRequestRecord;
+
+        if (event === 'APPROVE' || event === 'RETURN') {
+          await deps.notify(
+            workspaceId,
+            event === 'APPROVE' ? 'attendance_request.approved' : 'attendance_request.returned',
+            {
+              requestId: decided.id,
+              employeeId: decided.employeeId,
+              businessDate: decided.businessDate,
+              state: decided.state,
+            },
+          );
+        }
+
+        return decided;
       });
     },
 
@@ -332,6 +356,11 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
           detail: { employeeId: input.employeeId, period: input.period },
         });
 
+        await deps.notify(workspaceId, 'monthly_closing.closed', {
+          employeeId: input.employeeId,
+          period: input.period,
+        });
+
         return saved;
       });
     },
@@ -398,6 +427,12 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
             reason: input.reason.trim(),
             reopenedRequests: reopened.length,
           },
+        });
+
+        await deps.notify(workspaceId, 'monthly_closing.reopened', {
+          employeeId: input.employeeId,
+          period: input.period,
+          reason: input.reason.trim(),
         });
 
         return saved;

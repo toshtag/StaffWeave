@@ -15,6 +15,7 @@ describe('loadConfig', () => {
       environment: 'development',
       defaultWorkspaceSlug: 'default',
       cardFingerprintKey: null,
+      webDistPath: null,
     });
   });
 

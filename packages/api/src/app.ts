@@ -21,6 +21,10 @@ import { createDeviceService } from './device/service.js';
 import { createIdentityRepository } from './identity/repository.js';
 import { createIdentityRoutes, SESSION_COOKIE_NAME } from './identity/routes.js';
 import { createIdentityService } from './identity/service.js';
+import { createExportService } from './integration/export-service.js';
+import { createIntegrationRepository } from './integration/repository.js';
+import { createIntegrationRoutes } from './integration/routes.js';
+import { createIntegrationService } from './integration/service.js';
 import { createAssignmentRepository } from './organization/assignment-repository.js';
 import { createAssignmentRoutes } from './organization/assignment-routes.js';
 import { createAssignmentService } from './organization/assignment-service.js';
@@ -47,6 +51,8 @@ export interface AppDependencies {
   useSecureCookie?: boolean;
   /** IC カードの指紋を計算するための鍵。未設定ならカード機能は使えない。 */
   cardFingerprintKey?: string | null;
+  /** Webhook の送信実装。テストから差し替えられるようにする。 */
+  sendWebhook?: (url: string, headers: Record<string, string>, body: string) => Promise<Response>;
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -67,6 +73,12 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   });
 
   const assignmentService = createAssignmentService({ repository: assignmentRepository });
+
+  const integrationService = createIntegrationService({
+    repository: createIntegrationRepository(deps.db),
+    now,
+    ...(deps.sendWebhook === undefined ? {} : { send: deps.sendWebhook }),
+  });
 
   const anomalyService = createAnomalyService({
     repository: createAnomalyRepository(deps.db),
@@ -144,15 +156,19 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const approvalService = createApprovalService({
     repository: dayRepositories.approval,
     assignments: assignmentRepository,
+    // 通知に失敗しても承認や締めは成立させる。届かなかったことは記録に残る。
+    notify: (workspaceId, eventType, payload) =>
+      integrationService.dispatch(workspaceId, eventType, payload).catch(() => {}),
     now,
     transaction: withTransaction,
   });
 
   const api = new Hono<AppEnv>();
 
-  // 認証は一箇所で行い、各ルートは c.get('auth') を通じてのみ利用者を知る。
+  // 認証は一箇所で行い、各ルートは c.get('auth') / c.get('apiKey') を通じてのみ相手を知る。
   api.use('*', async (c, next) => {
     c.set('auth', await identityService.authenticate(getCookie(c, SESSION_COOKIE_NAME)));
+    c.set('apiKey', await integrationService.authenticate(c.req.header('authorization')));
     await next();
   });
 
@@ -169,6 +185,14 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route(
     '/',
     createAuditRoutes({ anomalies: anomalyService, logs: createAuditRepository(deps.db) }),
+  );
+  api.route(
+    '/',
+    createIntegrationRoutes({
+      integration: integrationService,
+      exports: createExportService(deps.db),
+      organization: organizationService,
+    }),
   );
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
