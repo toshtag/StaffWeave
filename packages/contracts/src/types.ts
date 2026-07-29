@@ -4,7 +4,13 @@
  * JSON Schema と手作業で対応させ、`types.test.ts` で実データが両方を満たすことを検証する。
  * 生成器を挟まないぶん、追加・変更時は必ず両方を更新すること。
  */
-import type { Locale, Role } from '@staffweave/domain';
+import type {
+  AttendanceEventType,
+  AttendanceSource,
+  Locale,
+  Role,
+  WorkDayState,
+} from '@staffweave/domain';
 
 export interface ErrorDetail {
   field?: string;
@@ -132,6 +138,37 @@ export interface Employee {
 
 export interface EmployeeList {
   employees: Employee[];
+}
+
+export interface AttendanceEventRecord {
+  id: string;
+  employeeId: string;
+  eventType: AttendanceEventType;
+  occurredAt: string;
+  recordedAt: string;
+  businessDate: string;
+  source: AttendanceSource;
+}
+
+export interface WorkDay {
+  businessDate: string;
+  employeeId: string;
+  state: WorkDayState;
+  firstClockInAt: string | null;
+  lastClockOutAt: string | null;
+  events: AttendanceEventRecord[];
+}
+
+export interface RecordAttendanceEventRequest {
+  eventType: AttendanceEventType;
+  occurredAt?: string;
+  requestId: string;
+}
+
+export interface RecordAttendanceEventResponse {
+  event: AttendanceEventRecord;
+  day: WorkDay;
+  duplicate: boolean;
 }
 
 export interface CreateEmployeeRequest {
