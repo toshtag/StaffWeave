@@ -1,5 +1,6 @@
 import { ATTENDANCE_EVENT_TYPES, ATTENDANCE_SOURCES, CORRECTION_ACTIONS } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
+import { dailyRequestSchema, monthlyClosingSchema } from './approval.js';
 import { businessDateSchema, timestampSchema, uuidSchema } from './common.js';
 import { attendanceCalculationSchema, workScheduleSchema } from './schedule.js';
 
@@ -59,6 +60,12 @@ export const workDaySchema = objectSchema({
     history: arraySchema(attendanceEventSchema, '記録されたすべてのイベント（修正を含む）'),
     schedule: { oneOf: [workScheduleSchema, { type: 'null' }] },
     calculation: { oneOf: [attendanceCalculationSchema, { type: 'null' }] },
+    request: { oneOf: [dailyRequestSchema, { type: 'null' }] },
+    closing: { oneOf: [monthlyClosingSchema, { type: 'null' }] },
+    editable: {
+      type: 'boolean',
+      description: '申請中・承認済み・締め済みでないため、打刻や修正を受け付けられるか',
+    },
   },
   required: [
     'businessDate',
@@ -71,6 +78,9 @@ export const workDaySchema = objectSchema({
     'history',
     'schedule',
     'calculation',
+    'request',
+    'closing',
+    'editable',
   ],
 });
 

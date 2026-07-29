@@ -9,8 +9,11 @@ import type {
   AttendanceSource,
   CalculationBasis,
   CorrectionAction,
+  DailyRequestEventType,
+  DailyRequestState,
   DayType,
   Locale,
+  MonthlyClosingState,
   Role,
   WorkDayState,
 } from '@staffweave/domain';
@@ -236,6 +239,71 @@ export interface WorkDay {
   history: AttendanceEventRecord[];
   schedule: WorkScheduleRecord | null;
   calculation: AttendanceCalculationRecord | null;
+  request: DailyRequestRecord | null;
+  closing: MonthlyClosingRecord | null;
+  /** 申請中・承認済み・締め済みでないため、打刻や修正を受け付けられるか。 */
+  editable: boolean;
+}
+
+export interface RequestTransitionRecord {
+  fromState: DailyRequestState;
+  toState: DailyRequestState;
+  event: DailyRequestEventType;
+  actorUserId: string | null;
+  comment: string | null;
+  occurredAt: string;
+}
+
+export interface DailyRequestRecord {
+  id: string;
+  employeeId: string;
+  businessDate: string;
+  state: DailyRequestState;
+  submissions: number;
+  returns: number;
+  submittedAt: string | null;
+  decidedAt: string | null;
+  decidedByUserId: string | null;
+  transitions: RequestTransitionRecord[];
+}
+
+export interface DailyRequestList {
+  requests: DailyRequestRecord[];
+}
+
+export interface SubmitDailyRequestRequest {
+  businessDate: string;
+  comment?: string;
+}
+
+export interface DecideDailyRequestRequest {
+  comment?: string;
+}
+
+export interface MonthlyClosingRecord {
+  employeeId: string;
+  period: string;
+  state: MonthlyClosingState;
+  reopens: number;
+  closedAt: string | null;
+  closedByUserId: string | null;
+  reopenedAt: string | null;
+  reopenReason: string | null;
+}
+
+export interface MonthlyClosingList {
+  closings: MonthlyClosingRecord[];
+}
+
+export interface CloseMonthRequest {
+  employeeId: string;
+  period: string;
+}
+
+export interface ReopenMonthRequest {
+  employeeId: string;
+  period: string;
+  reason: string;
 }
 
 export interface CorrectAttendanceRequest {
