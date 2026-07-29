@@ -106,3 +106,35 @@ export function canonicalCardEvent(payload: CardEventPayload): string {
     payload.deviceTime,
   ].join('\n');
 }
+
+export interface SessionObservationLine {
+  employeeNumber: string;
+  observationType: string;
+  occurredAt: string;
+}
+
+export interface SessionObservationBatchPayload {
+  deviceId: string;
+  sequence: number;
+  requestId: string;
+  workstationName: string;
+  observations: readonly SessionObservationLine[];
+}
+
+/**
+ * PC セッション観測のまとめ送りに対する署名対象。
+ * 観測は送った順にそのまま並べ、1 件でも欠けたり入れ替わったりすれば署名が合わなくなる。
+ */
+export function canonicalSessionObservations(payload: SessionObservationBatchPayload): string {
+  return [
+    'staffweave-session-observations/1',
+    payload.deviceId,
+    String(payload.sequence),
+    payload.requestId,
+    payload.workstationName,
+    String(payload.observations.length),
+    ...payload.observations.map((line) =>
+      [line.employeeNumber, line.observationType, line.occurredAt].join('|'),
+    ),
+  ].join('\n');
+}

@@ -94,6 +94,23 @@ export {
   validateOccurredAt,
 } from './attendance/occurred-at.js';
 export type {
+  ActivePeriod,
+  AttendanceShape,
+  Discrepancy,
+  DiscrepancyKind,
+  DiscrepancyRules,
+  SessionObservation,
+  SessionObservationType,
+} from './attendance/session-observations.js';
+export {
+  DEFAULT_DISCREPANCY_RULES,
+  DISCREPANCY_KINDS,
+  detectDiscrepancies,
+  isSessionObservationType,
+  SESSION_OBSERVATION_TYPES,
+  toActivePeriods,
+} from './attendance/session-observations.js';
+export type {
   DeviceContext,
   DeviceEvent,
   DeviceEventType,
@@ -113,12 +130,15 @@ export type {
   CardEventPayload,
   CardRegistrationPayload,
   SequenceVerdict,
+  SessionObservationBatchPayload,
+  SessionObservationLine,
   SignedEventPayload,
 } from './device/protocol.js';
 export {
   canonicalCardEvent,
   canonicalCardRegistration,
   canonicalPayload,
+  canonicalSessionObservations,
   clockSkewSeconds,
   evaluateSequence,
   isNotableClockSkew,
