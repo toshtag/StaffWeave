@@ -13,6 +13,7 @@ describe('loadConfig', () => {
       host: '127.0.0.1',
       port: 8787,
       environment: 'development',
+      defaultWorkspaceSlug: 'default',
     });
   });
 
