@@ -1,12 +1,19 @@
 import type {
+  CloseMonthRequest,
   CorrectAttendanceRequest,
   CorrectAttendanceResponse,
+  DailyRequestList,
+  DailyRequestRecord,
+  DecideDailyRequestRequest,
   ErrorResponse,
   LoginRequest,
+  MonthlyClosingRecord,
   OrganizationList,
   RecordAttendanceEventRequest,
   RecordAttendanceEventResponse,
+  ReopenMonthRequest,
   SessionResponse,
+  SubmitDailyRequestRequest,
   UpdatePreferencesRequest,
   WorkDay,
 } from '@staffweave/contracts';
@@ -69,6 +76,34 @@ export const api = {
   getAttendanceDay: (businessDate: string) => request<WorkDay>(`/attendance/days/${businessDate}`),
   correctAttendance: (input: CorrectAttendanceRequest) =>
     request<CorrectAttendanceResponse>('/attendance/corrections', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  submitDailyRequest: (input: SubmitDailyRequestRequest) =>
+    request<DailyRequestRecord>('/attendance/requests', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listDailyRequests: (query: { from: string; to: string; state?: string }) =>
+    request<DailyRequestList>(
+      `/attendance/requests?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  decideDailyRequest: (
+    requestId: string,
+    decision: 'approve' | 'return' | 'cancel',
+    input: DecideDailyRequestRequest,
+  ) =>
+    request<DailyRequestRecord>(`/attendance/requests/${requestId}/${decision}`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  closeMonth: (input: CloseMonthRequest) =>
+    request<MonthlyClosingRecord>('/monthly-closings/close', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  reopenMonth: (input: ReopenMonthRequest) =>
+    request<MonthlyClosingRecord>('/monthly-closings/reopen', {
       method: 'POST',
       body: JSON.stringify(input),
     }),

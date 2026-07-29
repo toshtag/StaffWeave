@@ -288,3 +288,35 @@ h3 {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+.request-state {
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+}
+
+.request-state[data-state="submitted"] {
+  color: #9a6700;
+}
+
+.request-state[data-state="approved"] {
+  color: #0a7d3c;
+}
+
+.request-state[data-state="returned"] {
+  color: #b3261e;
+}
+
+.approval-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.approval-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
