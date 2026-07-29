@@ -214,7 +214,7 @@ describe('受け付けられない打刻', () => {
     });
     expect(response.status).toBe(409);
     expect(((await response.json()) as { error: { message: string } }).error.message).toContain(
-      '出勤の記録がない',
+      '勤務中ではない',
     );
   });
 
@@ -264,7 +264,7 @@ describe('受け付けられない打刻', () => {
 
   it('未知の打刻種別は契約違反として拒否する', async () => {
     const response = await punch(app(), cookie, {
-      eventType: 'break_start',
+      eventType: 'lunch_start',
       requestId: 'unknown-type-request',
     });
     expect(response.status).toBe(400);

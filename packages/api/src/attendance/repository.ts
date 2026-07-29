@@ -1,6 +1,24 @@
 import type { AttendanceEventRecord } from '@staffweave/contracts';
 import type { Queryable } from '@staffweave/db';
-import type { AttendanceEventType, AttendanceSource, BusinessDate } from '@staffweave/domain';
+import type {
+  AttendanceEventType,
+  AttendanceSource,
+  BusinessDate,
+  CorrectionAction,
+} from '@staffweave/domain';
+
+export interface InsertAttendanceEventInput {
+  employeeId: string;
+  eventType: AttendanceEventType;
+  occurredAt: Date;
+  businessDate: BusinessDate;
+  source: AttendanceSource;
+  requestId: string;
+  recordedByUserId: string | null;
+  correctsEventId?: string | null;
+  correctionAction?: CorrectionAction | null;
+  correctionReason?: string | null;
+}
 
 export interface AttendanceRepository {
   /**
@@ -21,6 +39,13 @@ export interface AttendanceRepository {
     requestId: string,
   ): Promise<AttendanceEventRecord | null>;
 
+  findEventById(
+    workspaceId: string,
+    employeeId: string,
+    eventId: string,
+  ): Promise<AttendanceEventRecord | null>;
+
+  /** 指定した業務日に記録されたすべてのイベント（修正を含む）を追記順に返す。 */
   listEventsForDay(
     workspaceId: string,
     employeeId: string,
@@ -29,15 +54,7 @@ export interface AttendanceRepository {
 
   insertEvent(
     workspaceId: string,
-    input: {
-      employeeId: string;
-      eventType: AttendanceEventType;
-      occurredAt: Date;
-      businessDate: BusinessDate;
-      source: AttendanceSource;
-      requestId: string;
-      recordedByUserId: string | null;
-    },
+    input: InsertAttendanceEventInput,
   ): Promise<AttendanceEventRecord>;
 }
 
@@ -49,10 +66,13 @@ interface AttendanceEventRow {
   recorded_at: Date;
   business_date: string;
   source: AttendanceSource;
+  corrects_event_id: string | null;
+  correction_action: CorrectionAction | null;
+  correction_reason: string | null;
 }
 
-const EVENT_COLUMNS =
-  'id, employee_id, event_type, occurred_at, recorded_at, business_date, source';
+const EVENT_COLUMNS = `id, employee_id, event_type, occurred_at, recorded_at, business_date,
+  source, corrects_event_id, correction_action, correction_reason`;
 
 function toEvent(row: AttendanceEventRow): AttendanceEventRecord {
   return {
@@ -63,6 +83,9 @@ function toEvent(row: AttendanceEventRow): AttendanceEventRecord {
     recordedAt: row.recorded_at.toISOString(),
     businessDate: row.business_date,
     source: row.source,
+    correctionAction: row.correction_action,
+    correctsEventId: row.corrects_event_id,
+    correctionReason: row.correction_reason,
   };
 }
 
@@ -99,11 +122,20 @@ export function createAttendanceRepository(db: Queryable): AttendanceRepository 
       return rows[0] ? toEvent(rows[0]) : null;
     },
 
+    async findEventById(workspaceId, employeeId, eventId) {
+      const rows = await db.query<AttendanceEventRow>(
+        `SELECT ${EVENT_COLUMNS} FROM attendance_events
+          WHERE workspace_id = $1 AND employee_id = $2 AND id = $3`,
+        [workspaceId, employeeId, eventId],
+      );
+      return rows[0] ? toEvent(rows[0]) : null;
+    },
+
     async listEventsForDay(workspaceId, employeeId, businessDate) {
       const rows = await db.query<AttendanceEventRow>(
         `SELECT ${EVENT_COLUMNS} FROM attendance_events
           WHERE workspace_id = $1 AND employee_id = $2 AND business_date = $3
-          ORDER BY occurred_at, recorded_at`,
+          ORDER BY recorded_at, id`,
         [workspaceId, employeeId, businessDate],
       );
       return rows.map(toEvent);
@@ -113,8 +145,9 @@ export function createAttendanceRepository(db: Queryable): AttendanceRepository 
       const rows = await db.query<AttendanceEventRow>(
         `INSERT INTO attendance_events
            (workspace_id, employee_id, event_type, occurred_at, business_date,
-            source, request_id, recorded_by_user_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            source, request_id, recorded_by_user_id,
+            corrects_event_id, correction_action, correction_reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING ${EVENT_COLUMNS}`,
         [
           workspaceId,
@@ -125,6 +158,9 @@ export function createAttendanceRepository(db: Queryable): AttendanceRepository 
           input.source,
           input.requestId,
           input.recordedByUserId,
+          input.correctsEventId ?? null,
+          input.correctionAction ?? null,
+          input.correctionReason ?? null,
         ],
       );
       const row = rows[0];

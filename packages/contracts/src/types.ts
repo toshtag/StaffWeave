@@ -7,6 +7,7 @@
 import type {
   AttendanceEventType,
   AttendanceSource,
+  CorrectionAction,
   Locale,
   Role,
   WorkDayState,
@@ -148,6 +149,14 @@ export interface AttendanceEventRecord {
   recordedAt: string;
   businessDate: string;
   source: AttendanceSource;
+  correctionAction: CorrectionAction | null;
+  correctsEventId: string | null;
+  correctionReason: string | null;
+}
+
+export interface BreakPeriodRecord {
+  startedAt: string;
+  endedAt: string | null;
 }
 
 export interface WorkDay {
@@ -156,7 +165,27 @@ export interface WorkDay {
   state: WorkDayState;
   firstClockInAt: string | null;
   lastClockOutAt: string | null;
+  breaks: BreakPeriodRecord[];
+  /** 修正を適用した後の有効な打刻。 */
   events: AttendanceEventRecord[];
+  /** 記録されたすべてのイベント（修正を含む、追記順）。 */
+  history: AttendanceEventRecord[];
+}
+
+export interface CorrectAttendanceRequest {
+  action: CorrectionAction;
+  targetEventId?: string;
+  eventType?: AttendanceEventType;
+  occurredAt?: string;
+  businessDate?: string;
+  reason: string;
+  requestId: string;
+}
+
+export interface CorrectAttendanceResponse {
+  event: AttendanceEventRecord;
+  day: WorkDay;
+  duplicate: boolean;
 }
 
 export interface RecordAttendanceEventRequest {

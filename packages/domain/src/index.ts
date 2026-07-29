@@ -7,9 +7,20 @@ export {
   isBusinessDate,
 } from './attendance/business-date.js';
 export type {
+  CorrectableEvent,
+  CorrectionAction,
+  EffectiveEvent,
+} from './attendance/corrections.js';
+export {
+  CORRECTION_ACTIONS,
+  isCorrectionAction,
+  resolveEffectiveEvents,
+} from './attendance/corrections.js';
+export type {
   AttendanceEvent,
   AttendanceEventType,
   AttendanceSource,
+  BreakPeriod,
   PunchDecision,
   PunchRejection,
   WorkDayState,
@@ -20,6 +31,7 @@ export {
   ATTENDANCE_SOURCES,
   decidePunch,
   isAttendanceEventType,
+  isOpenWorkDay,
   summarizeWorkDay,
 } from './attendance/events.js';
 export type { OccurredAtProblem } from './attendance/occurred-at.js';

@@ -7,6 +7,7 @@ interface OpenApiOperation {
   summary: string;
   tags: string[];
   security?: { sessionCookie: string[] }[];
+  parameters?: unknown[];
   requestBody?: unknown;
   responses: Record<string, unknown>;
 }
@@ -27,6 +28,17 @@ function toOpenApiOperation(operation: OperationContract): OpenApiOperation {
     summary: operation.summary,
     tags: [...operation.tags],
     ...(operation.security === 'session' ? { security: [{ sessionCookie: [] }] } : {}),
+    ...(operation.pathParameters === undefined
+      ? {}
+      : {
+          parameters: operation.pathParameters.map((parameter) => ({
+            name: parameter.name,
+            in: 'path',
+            required: true,
+            description: parameter.description,
+            schema: parameter.schema,
+          })),
+        }),
     ...(operation.requestBody === undefined
       ? {}
       : {
