@@ -8,7 +8,7 @@ staffweave は、従業員の勤務実績を「観測された事実」と「人
 
 ## 現在の状態
 
-**P13（監査と異常検出）完了時点。**
+**P14（外部連携と公開可能状態）完了時点。**
 
 動作するもの:
 
@@ -32,8 +32,11 @@ staffweave は、従業員の勤務実績を「観測された事実」と「人
 - 休暇・欠勤の記録と集計、有効期間付きの制度切り替え
 - 雇用元と受入組織の契約、配属、勤務先別の閲覧権限と外部承認者
 - 確定後の変更・大量修正・端末時計差・連番欠落・重複打刻の検出と、根拠つきの表示・CSV 出力
+- CSV の入出力、給与連携向けの汎用出力、Webhook、API キーとスコープ
+- 外部連携を作るための connector SDK、バックアップと復元、デモ用データ
 
-まだ無いもの: 外部連携（CSV 入出力、給与出力、Webhook、API キー）、バックアップ手順。
+ロードマップの P0〜P14 はすべて完了しています。
+以降の変更点は [docs/roadmap.md](docs/roadmap.md) を参照してください。
 ロードマップと各フェーズの範囲は [docs/roadmap.md](docs/roadmap.md) を参照してください。
 
 このリポジトリは、未実装の機能を「提供済み」として記載しません。
@@ -113,6 +116,76 @@ IC カードの生の識別子は端末の中で一方向の指紋へ変換さ�
 
 秘密鍵は Agent 側のファイルにのみ保存され、サーバーへは公開鍵しか渡りません。
 資格情報のファイルは `.gitignore` に登録済みです。
+
+### デモ用データ
+
+説明のための架空のデータを入れて、ひととおりの画面を確認できます。
+
+```sh
+pnpm seed:demo            # デモワークスペースを作る
+pnpm seed:demo --reset    # 作り直す
+```
+
+作成される利用者とパスワードは実行時に表示されます。
+すべて架空の値です。公開された場所では使わないでください。
+
+### 外部連携
+
+```sh
+# API キーを作る（生の鍵は作成時の応答にしか現れません）
+curl -X POST http://127.0.0.1:8787/api/api-keys \
+  -H 'content-type: application/json' -b cookie.txt \
+  -d '{"name":"給与連携","scopes":["payroll:read"]}'
+
+# API キーで月次の集計を取り出す
+curl -H 'authorization: Bearer <生の鍵>' \
+  'http://127.0.0.1:8787/api/exports/payroll.csv?period=2026-04-01'
+```
+
+出力できるもの:
+
+| 出力 | 内容 |
+| --- | --- |
+| `GET /api/exports/attendance.csv?from&to` | 日次の勤怠と集計 |
+| `GET /api/exports/payroll.csv?period` | 月次の集計（給与連携向けの汎用列） |
+| `GET /api/audit/anomalies?from&to&format=csv` | 確認が必要な記録 |
+
+取り込めるもの:
+
+| 取り込み | 見出し |
+| --- | --- |
+| `POST /api/imports/employees` | `organization_code`, `employee_number`, `display_name`, `hired_on`（任意） |
+
+Webhook は承認・差し戻し・締め・締め解除で送られます。
+受け取り側の署名検証は `@staffweave/connector` の `verifyWebhook` を使ってください。
+署名用の秘密は送信先の登録時にしか返りません。
+
+### バックアップと復元
+
+```sh
+pnpm backup                                        # backups/ へ保存
+pnpm restore backups/staffweave-<日時>.dump         # 復元（既存データは失われます）
+```
+
+バックアップには業務データがすべて含まれます。保管場所の扱いに注意してください。
+`CARD_FINGERPRINT_KEY` はバックアップに含まれません。
+復元後に IC カード機能を使うには、同じ鍵を環境変数へ設定する必要があります。
+
+### Docker だけで動かす
+
+```sh
+cp .env.example .env
+docker compose --profile app up -d
+docker compose exec app pnpm db:migrate
+docker compose exec app pnpm bootstrap --email admin@example.com
+```
+
+`http://127.0.0.1:8787` で API と画面の両方が使えます。
+公開する場合は次を必ず行ってください。
+
+- `.env` の `CARD_FINGERPRINT_KEY` を十分に長い秘密の値へ変更する
+- PostgreSQL のパスワードを変更する
+- HTTPS で終端する（`NODE_ENV=production` のとき、セッション Cookie に `Secure` が付きます）
 
 ### 検証
 
