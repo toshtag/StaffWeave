@@ -5,6 +5,7 @@ import type {
   DailyRequestList,
   DailyRequestRecord,
   DecideDailyRequestRequest,
+  DiscrepancyReport,
   ErrorResponse,
   LoginRequest,
   MonthlyClosingRecord,
@@ -73,6 +74,8 @@ export const api = {
     }),
   listOrganizations: () => request<OrganizationList>('/organizations'),
   getTodayAttendance: () => request<WorkDay>('/attendance/today'),
+  getDiscrepancyReport: (businessDate: string) =>
+    request<DiscrepancyReport>(`/attendance/days/${businessDate}/discrepancies`),
   getAttendanceDay: (businessDate: string) => request<WorkDay>(`/attendance/days/${businessDate}`),
   correctAttendance: (input: CorrectAttendanceRequest) =>
     request<CorrectAttendanceResponse>('/attendance/corrections', {
