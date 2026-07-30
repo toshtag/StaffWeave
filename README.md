@@ -8,7 +8,11 @@ staffweave は、従業員の勤務実績を「観測された事実」と「人
 
 ## 現在の状態
 
-**P14（外部連携と公開可能状態）完了時点。**
+**P14（外部連携の初期実装）完了時点。公開判定は保留中です。**
+
+実装後のレビューで、認可の適用漏れ・競合制御・秘密情報の扱いに未解決の問題が見つかりました。
+`release-blocker` を付けた GitHub Issue として登録してあります。
+これらを解消するまで、公開も実データの投入も行いません。
 
 動作するもの:
 
@@ -35,8 +39,7 @@ staffweave は、従業員の勤務実績を「観測された事実」と「人
 - CSV の入出力、給与連携向けの汎用出力、Webhook、API キーとスコープ
 - 外部連携を作るための connector SDK、バックアップと復元、デモ用データ
 
-ロードマップの P0〜P14 はすべて完了しています。
-以降の変更点は [docs/roadmap.md](docs/roadmap.md) を参照してください。
+ロードマップの P0〜P14 は完了し、現在は P15（公開前セキュリティ・整合性是正）を進めています。
 ロードマップと各フェーズの範囲は [docs/roadmap.md](docs/roadmap.md) を参照してください。
 
 このリポジトリは、未実装の機能を「提供済み」として記載しません。
@@ -228,7 +231,7 @@ staffweave は不正打刻の完全な防止や、特定の国・地域の労働
 | [docs/development-policy.md](docs/development-policy.md) | 開発方針・技術選定・守るべき制約 |
 | [docs/module-boundaries.md](docs/module-boundaries.md) | パッケージ構成と依存方向 |
 | [docs/glossary.md](docs/glossary.md) | 日英用語集（識別子・API・DB 名の基準） |
-| [docs/roadmap.md](docs/roadmap.md) | P0〜P14 のロードマップ |
+| [docs/roadmap.md](docs/roadmap.md) | P0〜P22 のロードマップ |
 
 ## ライセンス
 
