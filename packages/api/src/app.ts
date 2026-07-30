@@ -39,6 +39,7 @@ import { createSessionObservationRepository } from './session/repository.js';
 import { createSessionRoutes } from './session/routes.js';
 import { createSessionService } from './session/service.js';
 import type { AppEnv } from './shared/context.js';
+import { createEmployeeVisibilityGuard } from './shared/employee-visibility.js';
 import { ApiError } from './shared/errors.js';
 import { createSystemRoutes } from './system/routes.js';
 
@@ -65,14 +66,19 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   });
 
   const assignmentRepository = createAssignmentRepository(deps.db);
+  // 従業員データを見てよい相手の判断は、どの機能からも同じ実装を通す。
+  const visibility = createEmployeeVisibilityGuard(assignmentRepository);
 
   const organizationService = createOrganizationService({
     repository: createOrganizationRepository(deps.db),
-    assignments: assignmentRepository,
+    visibility,
     transaction: (fn) => deps.db.transaction((tx) => fn(createOrganizationRepository(tx))),
   });
 
-  const assignmentService = createAssignmentService({ repository: assignmentRepository });
+  const assignmentService = createAssignmentService({
+    repository: assignmentRepository,
+    visibility,
+  });
 
   const integrationService = createIntegrationService({
     repository: createIntegrationRepository(deps.db),
@@ -82,7 +88,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const anomalyService = createAnomalyService({
     repository: createAnomalyRepository(deps.db),
-    assignments: assignmentRepository,
+    visibility,
     now,
   });
 
@@ -127,6 +133,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const scheduleService = createScheduleService({
     repositories: dayRepositories,
     cycles: createWorkCycleRepository(deps.db),
+    visibility,
     transaction: withTransaction,
   });
 
@@ -141,6 +148,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const cardService = createCardService({
     cards: createCardRepository(deps.db),
     devices: createDeviceRepository(deps.db),
+    visibility,
     now,
     transaction: withTransaction,
   });
@@ -149,13 +157,14 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     repositories: dayRepositories,
     observations: createSessionObservationRepository(deps.db),
     devices: createDeviceRepository(deps.db),
+    visibility,
     now,
     transaction: withTransaction,
   });
 
   const approvalService = createApprovalService({
     repository: dayRepositories.approval,
-    assignments: assignmentRepository,
+    visibility,
     // 通知に失敗しても承認や締めは成立させる。届かなかったことは記録に残る。
     notify: (workspaceId, eventType, payload) =>
       integrationService.dispatch(workspaceId, eventType, payload).catch(() => {}),
@@ -192,6 +201,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       integration: integrationService,
       exports: createExportService(deps.db),
       organization: organizationService,
+      visibility,
     }),
   );
   api.route('/', createAttendanceRoutes({ service: attendanceService }));

@@ -15,11 +15,13 @@ import {
 } from '@staffweave/domain';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
+import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { conflict, invalidRequest, notFound } from '../shared/errors.js';
 import type { AssignmentRepository } from './assignment-repository.js';
 
 export interface AssignmentServiceDependencies {
   repository: AssignmentRepository;
+  visibility: EmployeeVisibilityGuard;
 }
 
 export interface AssignmentService {
@@ -28,7 +30,7 @@ export interface AssignmentService {
     workspaceId: string,
     input: CreateAssignmentContractRequest,
   ): Promise<AssignmentContractRecord>;
-  listAssignments(workspaceId: string): Promise<EmployeeAssignmentRecord[]>;
+  listAssignments(context: AuthenticatedContext): Promise<EmployeeAssignmentRecord[]>;
   createAssignment(
     workspaceId: string,
     input: CreateEmployeeAssignmentRequest,
@@ -77,7 +79,14 @@ export function createAssignmentService(deps: AssignmentServiceDependencies): As
       }
     },
 
-    listAssignments: (workspaceId) => deps.repository.listAssignments(workspaceId),
+    async listAssignments(context) {
+      const assignments = await deps.repository.listAssignments(context.workspace.id);
+      return deps.visibility.filterVisible(
+        context,
+        assignments,
+        (assignment) => assignment.employeeId,
+      );
+    },
 
     async createAssignment(workspaceId, input) {
       const startsOn = requireDate(input.startsOn, 'startsOn');

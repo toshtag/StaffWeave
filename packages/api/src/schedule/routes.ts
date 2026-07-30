@@ -50,10 +50,7 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
       Object.fromEntries(new URL(c.req.url).searchParams),
     );
     if (!query.valid) throw invalidRequest(query.problems);
-    return c.json(
-      { workSchedules: await service.listWorkSchedules(auth.workspace.id, query.value) },
-      200,
-    );
+    return c.json({ workSchedules: await service.listWorkSchedules(auth, query.value) }, 200);
   });
 
   app.put(operations.upsertWorkSchedule.path, async (c) => {
@@ -90,10 +87,7 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
     if (employeeId === null) {
       throw invalidRequest([{ field: 'employeeId', message: '従業員を指定してください' }]);
     }
-    return c.json(
-      { assignments: await service.listAssignments(auth.workspace.id, employeeId) },
-      200,
-    );
+    return c.json({ assignments: await service.listAssignments(auth, employeeId) }, 200);
   });
 
   app.post(operations.assignWorkCycle.path, async (c) => {

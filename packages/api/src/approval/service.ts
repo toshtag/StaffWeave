@@ -14,7 +14,6 @@ import type {
 import {
   applyDailyRequestEvent,
   applyMonthlyClosingEvent,
-  canAccessEmployee,
   closingPeriodOf,
   hasPermission,
   INITIAL_DAILY_REQUEST,
@@ -24,7 +23,7 @@ import {
 } from '@staffweave/domain';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
-import type { AssignmentRepository } from '../organization/assignment-repository.js';
+import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.js';
 import type { ApprovalRepository } from './repository.js';
 
@@ -35,7 +34,7 @@ export interface ApprovalRepositories {
 
 export interface ApprovalServiceDependencies {
   repository: ApprovalRepository;
-  assignments: AssignmentRepository;
+  visibility: EmployeeVisibilityGuard;
   /** 承認や締めの結果を外部へ知らせる。失敗しても本体の処理は続ける。 */
   notify: (workspaceId: string, eventType: WebhookEventType, payload: unknown) => Promise<void>;
   now: () => Date;
@@ -96,20 +95,13 @@ function resolveTargetEmployeeId(
 
 export function createApprovalService(deps: ApprovalServiceDependencies): ApprovalService {
   /**
-   * 承認できる相手かどうかを、勤務先別の閲覧権限で判断する。
-   * 閲覧範囲を持たない利用者はワークスペース全体を承認できる（管理者を想定）。
-   * 範囲を持つ利用者は、雇用元か受入組織が範囲に含まれる従業員だけを承認できる。
+   * 承認・締めの相手として指定してよいかを、閲覧範囲で判断する。
    * 受入組織側の承認者（外部承認者）もこの仕組みで表す。
    */
-  async function requireEmployeeInScope(
+  const requireEmployeeInScope = (
     context: AuthenticatedContext,
     employeeId: string,
-  ): Promise<void> {
-    if (context.organizationScopes.length === 0) return;
-    const organizations = await deps.assignments.listEmployeeOrganizations(context.workspace.id);
-    const view = organizations.get(employeeId);
-    if (!view || !canAccessEmployee(context.organizationScopes, view)) throw forbidden();
-  }
+  ): Promise<void> => deps.visibility.requireVisibleEmployee(context, employeeId);
 
   return {
     async submit(context, input) {
@@ -288,23 +280,20 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
         ...(query.state === undefined ? {} : { state: query.state as DailyRequestState }),
       });
 
-      if (context.organizationScopes.length === 0) return requests;
-
-      const organizations = await deps.assignments.listEmployeeOrganizations(context.workspace.id);
-      return requests.filter((request) => {
-        if (request.employeeId === context.employee?.id) return true;
-        const view = organizations.get(request.employeeId);
-        return view !== undefined && canAccessEmployee(context.organizationScopes, view);
-      });
+      return deps.visibility.filterVisible(context, requests, (request) => request.employeeId);
     },
 
     async listClosings(context, query) {
       const employeeId = resolveTargetEmployeeId(context, query.employeeId);
-      return deps.repository.listClosings(context.workspace.id, {
+      if (employeeId !== undefined) await requireEmployeeInScope(context, employeeId);
+
+      const closings = await deps.repository.listClosings(context.workspace.id, {
         ...(employeeId === undefined ? {} : { employeeId }),
         from: query.from,
         to: query.to,
       });
+
+      return deps.visibility.filterVisible(context, closings, (closing) => closing.employeeId);
     },
 
     async close(context, input) {

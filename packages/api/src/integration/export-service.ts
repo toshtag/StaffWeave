@@ -1,5 +1,7 @@
 import type { Queryable } from '@staffweave/db';
+import type { EmployeeVisibility } from '@staffweave/domain';
 import { isBusinessDate, toCsv } from '@staffweave/domain';
+import { employeeVisibilityCondition } from '../shared/employee-visibility.js';
 import { invalidRequest } from '../shared/errors.js';
 
 /**
@@ -7,11 +9,22 @@ import { invalidRequest } from '../shared/errors.js';
  *
  * 特定の給与ソフトの形式には寄せず、汎用の列で出す。
  * 取り込む側が必要な列だけを選べるよう、意味の分かる列名を使う。
+ *
+ * 件数が多くなるため、閲覧範囲は SQL の条件として渡す。
+ * 全件を読み込んでから捨てる形にすると、絞り込みを忘れたときに気付けない。
  */
 
 export interface ExportService {
-  attendanceCsv(workspaceId: string, query: { from: string; to: string }): Promise<string>;
-  payrollCsv(workspaceId: string, query: { period: string }): Promise<string>;
+  attendanceCsv(
+    workspaceId: string,
+    visibility: EmployeeVisibility,
+    query: { from: string; to: string },
+  ): Promise<string>;
+  payrollCsv(
+    workspaceId: string,
+    visibility: EmployeeVisibility,
+    query: { period: string },
+  ): Promise<string>;
 }
 
 function requireDate(value: string, field: string): string {
@@ -23,12 +36,18 @@ function requireDate(value: string, field: string): string {
 
 export function createExportService(db: Queryable): ExportService {
   return {
-    async attendanceCsv(workspaceId, query) {
+    async attendanceCsv(workspaceId, visibility, query) {
       const from = requireDate(query.from, 'from');
       const to = requireDate(query.to, 'to');
       if (from > to) {
         throw invalidRequest([{ field: 'to', message: '終了日は開始日以降にしてください' }]);
       }
+
+      const visible = employeeVisibilityCondition(visibility, {
+        employeeIdExpression: 'employees.id',
+        workspaceIdExpression: 'employees.workspace_id',
+        firstParameterIndex: 4,
+      });
 
       const rows = await db.query<{
         employee_number: string;
@@ -82,6 +101,7 @@ export function createExportService(db: Queryable): ExportService {
             AND closings.period = date_trunc('month', calculations.business_date)::date
           WHERE calculations.workspace_id = $1
             AND calculations.business_date BETWEEN $2 AND $3
+            AND ${visible.sql}
             AND calculations.version = (
               SELECT max(latest.version) FROM attendance_calculations AS latest
                WHERE latest.workspace_id = calculations.workspace_id
@@ -89,7 +109,7 @@ export function createExportService(db: Queryable): ExportService {
                  AND latest.business_date = calculations.business_date
             )
           ORDER BY employees.employee_number, calculations.business_date`,
-        [workspaceId, from, to],
+        [workspaceId, from, to, ...visible.parameters],
       );
 
       return toCsv(
@@ -132,8 +152,14 @@ export function createExportService(db: Queryable): ExportService {
       );
     },
 
-    async payrollCsv(workspaceId, query) {
+    async payrollCsv(workspaceId, visibility, query) {
       const period = requireDate(query.period, 'period');
+
+      const visible = employeeVisibilityCondition(visibility, {
+        employeeIdExpression: 'employees.id',
+        workspaceIdExpression: 'employees.workspace_id',
+        firstParameterIndex: 3,
+      });
 
       const rows = await db.query<{
         employee_number: string;
@@ -181,9 +207,10 @@ export function createExportService(db: Queryable): ExportService {
             AND closings.employee_id = employees.id
             AND closings.period = $2::date
           WHERE employees.workspace_id = $1
+            AND ${visible.sql}
           GROUP BY employees.employee_number, employees.display_name
           ORDER BY employees.employee_number`,
-        [workspaceId, period],
+        [workspaceId, period, ...visible.parameters],
       );
 
       return toCsv(

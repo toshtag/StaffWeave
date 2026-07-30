@@ -202,11 +202,15 @@ export type {
   ContractProblem,
   EmployeeAssignment,
   EmployeeOrganizationView,
+  EmployeeVisibility,
 } from './organization/assignment.js';
 export {
   activeAssignmentAt,
   canAccessEmployee,
   contractCoversDate,
+  isEmployeeVisible,
+  resolveEmployeeVisibility,
+  seesWholeWorkspace,
   validateContractPeriod,
 } from './organization/assignment.js';
 export type { CodeProblem } from './organization/codes.js';
