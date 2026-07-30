@@ -50,15 +50,15 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 | `returnDailyRequest` | POST | `/attendance/requests/{requestId}/return` | 申請の状態 | `attendance.approve` | 全件 | 範囲内 | なし | — | `approval/service.ts` `decide` | ✅ |
 | `cancelDailyRequest` | POST | `/attendance/requests/{requestId}/cancel` | 申請の状態 | なし（本人のみ） | 自分 | 自分 | 自分 | — | `approval/service.ts` `decide` | ✅ |
 | `listMonthlyClosings` | GET | `/monthly-closings` | 月次締め | なし（本人は自分のみ） | 全件 | 範囲内 | 自分 | — | `approval/service.ts` `listClosings` | ✅ |
-| `closeMonth` | POST | `/monthly-closings/close` | 月次締め | `attendance.close` | 全件 | 範囲内 | なし | — | `approval/service.ts` `close` | ✅ |
-| `reopenMonth` | POST | `/monthly-closings/reopen` | 月次締め | `attendance.close` | 全件 | 範囲内 | なし | — | `approval/service.ts` `reopen` | ✅ |
+| `closeMonth` | POST | `/monthly-closings/close` | 月次締め | `attendance.close` | 全件 | なし | なし | — | `approval/service.ts` `close` | ✅ |
+| `reopenMonth` | POST | `/monthly-closings/reopen` | 月次締め | `attendance.close` | 全件 | なし | なし | — | `approval/service.ts` `reopen` | ✅ |
 | `listWorkSchedules` | GET | `/work-schedules` | 勤務予定 | `employee.read` | 全件 | 範囲内 | なし | — | `schedule/service.ts` `listWorkSchedules` | ✅ |
 | `listEmployeeWorkCycles` | GET | `/employee-work-cycles` | 勤務周期割当 | `employee.read` | 全件 | 範囲内 | なし | — | `schedule/service.ts` `listAssignments` | ✅ |
 | `listSessionObservations` | GET | `/session-observations` | PC の利用記録 | なし（本人は自分のみ） | 全件 | 範囲内 | 自分 | — | `session/service.ts` `listObservations` | ✅ |
 | `getDiscrepancyReport` | GET | `/attendance/days/{businessDate}/discrepancies` | 打刻と PC 記録の乖離 | なし（本人は自分のみ） | 全件 | 範囲内 | 自分 | — | `session/service.ts` `getDiscrepancyReport` | ✅ |
 | `listAnomalies` | GET | `/audit/anomalies` | 異常（従業員分・端末分） | `employee.read` | 全件 | 範囲内 | なし | — | `audit/anomaly-service.ts` `list` | ✅ |
 | `listEmployeeAssignments` | GET | `/employee-assignments` | 配属 | `employee.read` | 全件 | 範囲内 | なし | — | `organization/assignment-service.ts` `listAssignments` | ✅ |
-| `listCardCredentials` | GET | `/card-credentials` | IC カードの資格情報 | `employee.read` | 全件 | 範囲内 | なし | — | `card/service.ts` `listCredentials` | 未 |
+| `listCardCredentials` | GET | `/card-credentials` | IC カードの資格情報 | `employee.read` | 全件 | 範囲内 | なし | — | `card/service.ts` `listCredentials` | ✅ |
 | `exportAttendanceCsv` | GET | `/exports/attendance.csv` | 日次の勤怠（氏名・従業員番号つき） | `employee.read` または `attendance:read` | 全件 | 範囲内 | なし | 全件 | `integration/routes.ts` `resolveExportTarget` → `export-service.ts` | ✅ |
 | `exportPayrollCsv` | GET | `/exports/payroll.csv` | 月次の集計（氏名・従業員番号つき） | `employee.read` または `payroll:read` | 全件 | 範囲内 | なし | 全件 | `integration/routes.ts` `resolveExportTarget` → `export-service.ts` | ✅ |
 | `getTodayAttendance` | GET | `/attendance/today` | 自分の当日 | なし | 自分 | 自分 | 自分 | — | `attendance/service.ts` `getToday` | 既存 |
@@ -66,6 +66,11 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 
 `listAnomalies` の端末に紐づく異常（時計差・連番欠落・拒否イベント）は、
 特定の従業員のものではないため閲覧範囲では絞りません。
+
+`closeMonth` と `reopenMonth` は `attendance.close` を必要とします。この権限を持つのは
+`workspace_admin` だけです（`packages/domain/src/identity/roles.ts`）。
+組織管理者は閲覧範囲の検査に到達する前に権限で止まります。
+組織管理者へ締めを許す場合は、閲覧範囲の検査がそのまま効きます。
 
 ## 従業員データを変更するルート
 
@@ -123,19 +128,50 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 
 この判断は今回の共通修正の対象外とし、別途 Issue として記録しています。
 
-### IC カードの資格情報に負のテストがない
+### 配属の期間を見ていない
 
-`listCardCredentials` には閲覧範囲を適用していますが、
-組織をまたぐ負のテストをまだ書いていません。
+従業員と受入組織の対応を作る `listEmployeeOrganizations`
+（`packages/api/src/organization/assignment-repository.ts`）と、
+CSV 用の `employeeVisibilityCondition`
+（`packages/api/src/shared/employee-visibility.ts`）は、
+契約と配属の `starts_on` / `ends_on` を条件に含めていません。
+
+そのため、将来開始する配属や終了済みの配属だけを根拠として、
+受入組織の管理者が現在の従業員データを閲覧できます。
+
+基準日を何にするかは API ごとに判断が分かれるため
+（日次は業務日、CSV は出力対象日、基本情報は現在日など）、
+この文書だけでは決められません。公開前に解消すべき問題として、
+仕様を決めてから着手します。
+
+## 歴史的な記録
+
+`packages/db/migrations/0012_create_assignments_and_scopes.sql` のコメントには、
+作成時点の旧設計が残っています。閲覧範囲の行がないことを管理者の印として扱う、
+という前提に立った説明です。
+
+現在の認可契約では、空の組織スコープは全件閲覧を意味しません。
+適用済みのマイグレーションはチェックサム保護のため書き換えないので、
+このコメントは当時の設計を示す記録として残します。
+
+同じ説明が他のファイルへ再び入り込まないよう、`pnpm check:policy` に検査を置いています。
+例外はこの 1 ファイルだけで、例外側の件数もちょうど 1 件であることを検査します。
+この文書を含め、他のどのファイルにも旧説明を書き写さないでください
+（説明が必要な場合は、この節のように言い換えてください）。
 
 ## 検証
 
 負のテストは `packages/api/test/integration/employee-visibility.test.ts` にあります。
-1 つのワークスペースに 2 つの組織を置き、次の 4 者から同じ経路を叩いて確かめています。
+1 つのワークスペースに 3 つの組織（雇用元 A、雇用元 B、受入組織 H）を置き、
+次の 5 者から同じ経路を叩いて確かめています。
 
 - ワークスペース管理者
-- 組織 A の管理者（閲覧範囲あり）
+- 組織 A の管理者（閲覧範囲あり、雇用元として閲覧）
+- 受入組織 H の管理者（閲覧範囲あり、配属だけを根拠に閲覧）
 - 閲覧範囲を持たない組織管理者（従業員が紐づく場合と、紐づかない場合）
 - 一般従業員
 
-閲覧範囲のモデルを旧動作へ戻すと、このテストは失敗します。
+CSV は SQL 側で絞り込むため、インメモリの判定とは別実装になります。
+受入組織を経由する許可と、本人だけを見る場合の 2 つの分岐を、CSV でも検証しています。
+
+閲覧範囲のモデルを旧動作へ戻すか、いずれかの絞り込みを外すと、このテストは失敗します。
