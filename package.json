@@ -21,6 +21,7 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "bootstrap": "pnpm --filter \"@staffweave/api\" bootstrap",
+    "webhook:worker": "pnpm --filter \"@staffweave/api\" webhook-worker",
     "db:migrate": "pnpm --filter \"@staffweave/db\" migrate",
     "db:status": "pnpm --filter \"@staffweave/db\" status",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e",

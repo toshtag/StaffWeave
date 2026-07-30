@@ -16,6 +16,12 @@ describe('loadConfig', () => {
       defaultWorkspaceSlug: 'default',
       cardFingerprintKey: null,
       webDistPath: null,
+      webhookWorker: {
+        batchSize: 20,
+        pollIntervalMs: 5_000,
+        sendTimeoutMs: 10_000,
+        claimLeaseMs: 60_000,
+      },
     });
   });
 
@@ -35,5 +41,40 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ DATABASE_URL: 'postgres://x', NODE_ENV: 'staging' })).toThrow(
       ConfigurationError,
     );
+  });
+
+  it('Webhook ワーカーの設定を環境変数から読む', () => {
+    const config = loadConfig({
+      DATABASE_URL: 'postgres://x',
+      WEBHOOK_WORKER_BATCH_SIZE: '5',
+      WEBHOOK_WORKER_POLL_INTERVAL_MS: '500',
+      WEBHOOK_SEND_TIMEOUT_MS: '1000',
+      WEBHOOK_CLAIM_LEASE_MS: '30000',
+    });
+    expect(config.webhookWorker).toEqual({
+      batchSize: 5,
+      pollIntervalMs: 500,
+      sendTimeoutMs: 1000,
+      claimLeaseMs: 30_000,
+    });
+  });
+
+  it('Webhook ワーカーの設定が許容範囲外なら設定エラーになる', () => {
+    expect(() =>
+      loadConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_WORKER_BATCH_SIZE: '0' }),
+    ).toThrow(ConfigurationError);
+    expect(() =>
+      loadConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_SEND_TIMEOUT_MS: '1.5' }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it('占有時間が送信の上限以下なら設定エラーになる', () => {
+    expect(() =>
+      loadConfig({
+        DATABASE_URL: 'postgres://x',
+        WEBHOOK_SEND_TIMEOUT_MS: '10000',
+        WEBHOOK_CLAIM_LEASE_MS: '10000',
+      }),
+    ).toThrow(ConfigurationError);
   });
 });
