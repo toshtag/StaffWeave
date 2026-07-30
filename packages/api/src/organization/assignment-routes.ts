@@ -39,7 +39,7 @@ export function createAssignmentRoutes(deps: AssignmentRouteDependencies): Hono<
 
   app.get(operations.listEmployeeAssignments.path, async (c) => {
     const auth = requirePermission(c, 'employee.read');
-    return c.json({ assignments: await service.listAssignments(auth.workspace.id) }, 200);
+    return c.json({ assignments: await service.listAssignments(auth) }, 200);
   });
 
   app.post(operations.createEmployeeAssignment.path, async (c) => {

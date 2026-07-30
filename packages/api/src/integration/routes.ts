@@ -1,11 +1,12 @@
 import { operations } from '@staffweave/contracts';
-import type { ApiScope } from '@staffweave/domain';
+import type { ApiScope, EmployeeVisibility } from '@staffweave/domain';
 import { parseCsv } from '@staffweave/domain';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { OrganizationService } from '../organization/service.js';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth, requirePermission } from '../shared/context.js';
+import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { invalidRequest } from '../shared/errors.js';
 import type { ExportService } from './export-service.js';
 import type { IntegrationService } from './service.js';
@@ -14,6 +15,7 @@ export interface IntegrationRouteDependencies {
   integration: IntegrationService;
   exports: ExportService;
   organization: OrganizationService;
+  visibility: EmployeeVisibilityGuard;
 }
 
 /**
@@ -25,7 +27,17 @@ export interface IntegrationRouteDependencies {
 export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  function resolveWorkspace(c: Context<AppEnv>, scope: ApiScope): string {
+  /**
+   * 出力の対象を決める。
+   *
+   * API キーはワークスペース単位のスコープであり、組織単位の制限は持たない。
+   * セッションでは、その利用者が画面で見られる範囲と同じ範囲を出力する。
+   * 出力だけ広い範囲を返すと、画面で隠した相手が CSV から読めてしまう。
+   */
+  function resolveExportTarget(
+    c: Context<AppEnv>,
+    scope: ApiScope,
+  ): { workspaceId: string; visibility: EmployeeVisibility } {
     const apiKey = c.get('apiKey');
     if (apiKey) {
       if (!apiKey.scopes.includes(scope)) {
@@ -33,15 +45,16 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
           { field: 'scope', message: `この API キーには ${scope} が与えられていません` },
         ]);
       }
-      return apiKey.workspaceId;
+      return { workspaceId: apiKey.workspaceId, visibility: { kind: 'workspace' } };
     }
-    return requirePermission(c, 'employee.read').workspace.id;
+    const auth = requirePermission(c, 'employee.read');
+    return { workspaceId: auth.workspace.id, visibility: deps.visibility.of(auth) };
   }
 
   app.get('/exports/attendance.csv', async (c) => {
     const url = new URL(c.req.url);
-    const workspaceId = resolveWorkspace(c, 'attendance:read');
-    const csv = await deps.exports.attendanceCsv(workspaceId, {
+    const target = resolveExportTarget(c, 'attendance:read');
+    const csv = await deps.exports.attendanceCsv(target.workspaceId, target.visibility, {
       from: url.searchParams.get('from') ?? '',
       to: url.searchParams.get('to') ?? '',
     });
@@ -53,8 +66,8 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
 
   app.get('/exports/payroll.csv', async (c) => {
     const url = new URL(c.req.url);
-    const workspaceId = resolveWorkspace(c, 'payroll:read');
-    const csv = await deps.exports.payrollCsv(workspaceId, {
+    const target = resolveExportTarget(c, 'payroll:read');
+    const csv = await deps.exports.payrollCsv(target.workspaceId, target.visibility, {
       period: url.searchParams.get('period') ?? '',
     });
     return c.body(csv, 200, {

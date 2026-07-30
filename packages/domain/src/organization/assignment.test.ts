@@ -4,6 +4,9 @@ import {
   activeAssignmentAt,
   canAccessEmployee,
   contractCoversDate,
+  isEmployeeVisible,
+  resolveEmployeeVisibility,
+  seesWholeWorkspace,
   validateContractPeriod,
 } from './assignment.js';
 
@@ -67,8 +70,9 @@ describe('canAccessEmployee', () => {
     hostOrganizationIds: ['host'],
   };
 
-  it('閲覧範囲の指定が無ければ全員を見られる', () => {
-    expect(canAccessEmployee([], employee)).toBe(true);
+  it('組織の指定が無ければ誰も見られない', () => {
+    // 空配列は「すべて」ではなく「指定なし」。全体を見られるかはロールで決める。
+    expect(canAccessEmployee([], employee)).toBe(false);
   });
 
   it('雇用元が範囲に含まれていれば見られる', () => {
@@ -87,6 +91,133 @@ describe('canAccessEmployee', () => {
     const unassigned = { employerOrganizationId: 'employer', hostOrganizationIds: [] };
     expect(canAccessEmployee(['employer'], unassigned)).toBe(true);
     expect(canAccessEmployee(['host'], unassigned)).toBe(false);
+  });
+});
+
+describe('resolveEmployeeVisibility', () => {
+  it('ワークスペース管理者は全体を見られる', () => {
+    expect(
+      resolveEmployeeVisibility({
+        roles: ['workspace_admin'],
+        organizationIds: [],
+        selfEmployeeId: null,
+      }),
+    ).toEqual({ kind: 'workspace' });
+  });
+
+  it('ワークスペース管理者は閲覧範囲を与えられていても全体を見られる', () => {
+    expect(
+      resolveEmployeeVisibility({
+        roles: ['workspace_admin', 'organization_manager'],
+        organizationIds: ['employer'],
+        selfEmployeeId: 'employee-1',
+      }),
+    ).toEqual({ kind: 'workspace' });
+  });
+
+  it('組織管理者は与えられた組織だけを見られる', () => {
+    expect(
+      resolveEmployeeVisibility({
+        roles: ['organization_manager'],
+        organizationIds: ['host'],
+        selfEmployeeId: 'employee-1',
+      }),
+    ).toEqual({ kind: 'organizations', organizationIds: ['host'], selfEmployeeId: 'employee-1' });
+  });
+
+  it('閲覧範囲を持たない組織管理者は管理対象を持たない', () => {
+    const visibility = resolveEmployeeVisibility({
+      roles: ['organization_manager'],
+      organizationIds: [],
+      selfEmployeeId: null,
+    });
+
+    expect(visibility).toEqual({
+      kind: 'organizations',
+      organizationIds: [],
+      selfEmployeeId: null,
+    });
+    expect(seesWholeWorkspace(visibility)).toBe(false);
+  });
+
+  it('一般従業員は自分だけを見られる', () => {
+    expect(
+      resolveEmployeeVisibility({
+        roles: ['employee'],
+        organizationIds: [],
+        selfEmployeeId: 'employee-1',
+      }),
+    ).toEqual({ kind: 'self', employeeId: 'employee-1' });
+  });
+
+  it('従業員が紐づいていない一般利用者は誰も見られない', () => {
+    expect(
+      resolveEmployeeVisibility({
+        roles: ['employee'],
+        organizationIds: [],
+        selfEmployeeId: null,
+      }),
+    ).toEqual({ kind: 'none' });
+  });
+});
+
+describe('isEmployeeVisible', () => {
+  const view = { employerOrganizationId: 'employer', hostOrganizationIds: ['host'] };
+
+  it('ワークスペース全体なら組織を知らなくても見られる', () => {
+    expect(isEmployeeVisible({ kind: 'workspace' }, 'employee-1')).toBe(true);
+  });
+
+  it('管理対象を持たない組織管理者は誰も見られない', () => {
+    const visibility = {
+      kind: 'organizations',
+      organizationIds: [],
+      selfEmployeeId: null,
+    } as const;
+    expect(isEmployeeVisible(visibility, 'employee-1', view)).toBe(false);
+  });
+
+  it('管理対象を持たない組織管理者でも自分自身は見られる', () => {
+    const visibility = {
+      kind: 'organizations',
+      organizationIds: [],
+      selfEmployeeId: 'employee-1',
+    } as const;
+    expect(isEmployeeVisible(visibility, 'employee-1')).toBe(true);
+    expect(isEmployeeVisible(visibility, 'employee-2', view)).toBe(false);
+  });
+
+  it('範囲内の組織に属する従業員だけを見られる', () => {
+    const visibility = {
+      kind: 'organizations',
+      organizationIds: ['host'],
+      selfEmployeeId: null,
+    } as const;
+    expect(isEmployeeVisible(visibility, 'employee-1', view)).toBe(true);
+    expect(
+      isEmployeeVisible(visibility, 'employee-2', {
+        employerOrganizationId: 'other',
+        hostOrganizationIds: [],
+      }),
+    ).toBe(false);
+  });
+
+  it('組織の対応が分からない従業員は自分自身でなければ見られない', () => {
+    const visibility = {
+      kind: 'organizations',
+      organizationIds: ['host'],
+      selfEmployeeId: null,
+    } as const;
+    expect(isEmployeeVisible(visibility, 'employee-1', undefined)).toBe(false);
+  });
+
+  it('一般従業員は自分だけを見られる', () => {
+    expect(isEmployeeVisible({ kind: 'self', employeeId: 'employee-1' }, 'employee-1')).toBe(true);
+    expect(isEmployeeVisible({ kind: 'self', employeeId: 'employee-1' }, 'employee-2')).toBe(false);
+  });
+
+  it('誰も見られない場合は自分の ID でも見られない', () => {
+    expect(isEmployeeVisible({ kind: 'none' }, 'employee-1')).toBe(false);
   });
 });
 

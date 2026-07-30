@@ -31,6 +31,19 @@ export const codeSchema: JsonSchema = {
 
 export const nameSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 200 };
 
+/**
+ * 閲覧範囲の説明の正本。
+ *
+ * 閲覧範囲は勤怠だけでなく、従業員一覧・勤務予定・配属・IC カードの資格情報・
+ * CSV 出力といった従業員データ全般へ適用される。
+ * 同じ意味を複数の場所で言い直すと、片方だけが古くなる。契約に現れる説明は
+ * すべてこの定数を使う。
+ */
+export const ORGANIZATION_SCOPE_DESCRIPTION =
+  '利用者へ明示的に付与された、従業員データの閲覧対象組織。' +
+  '登録がない場合は管理対象の組織がないことを表す。' +
+  'ワークスペース全体を閲覧できるかどうかは、この値ではなく workspace_admin ロールが決める。';
+
 export const timestampSchema: JsonSchema = {
   type: 'string',
   description: 'ISO 8601 形式の日時（UTC）',

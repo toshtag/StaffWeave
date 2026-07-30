@@ -28,6 +28,7 @@ import type { AttendanceRepository } from '../attendance/repository.js';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
+import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { conflict, invalidRequest, notFound } from '../shared/errors.js';
 import type { WorkCycleRepository } from './cycle-repository.js';
 
@@ -38,6 +39,7 @@ export interface ScheduleRepositories extends DayRepositories {
 export interface ScheduleServiceDependencies {
   repositories: DayRepositories;
   cycles: WorkCycleRepository;
+  visibility: EmployeeVisibilityGuard;
   transaction<T>(fn: (repositories: ScheduleRepositories) => Promise<T>): Promise<T>;
 }
 
@@ -45,7 +47,7 @@ export interface ScheduleService {
   listWorkPatterns(workspaceId: string): Promise<WorkPattern[]>;
   createWorkPattern(workspaceId: string, input: CreateWorkPatternRequest): Promise<WorkPattern>;
   listWorkSchedules(
-    workspaceId: string,
+    context: AuthenticatedContext,
     query: { employeeId: string; from: string; to: string },
   ): Promise<WorkScheduleRecord[]>;
   upsertWorkSchedule(
@@ -57,7 +59,10 @@ export interface ScheduleService {
   createLeaveType(workspaceId: string, input: CreateLeaveTypeRequest): Promise<LeaveTypeRecord>;
   listWorkCycles(workspaceId: string): Promise<WorkCycleRecord[]>;
   createWorkCycle(workspaceId: string, input: CreateWorkCycleRequest): Promise<WorkCycleRecord>;
-  listAssignments(workspaceId: string, employeeId: string): Promise<EmployeeWorkCycleRecord[]>;
+  listAssignments(
+    context: AuthenticatedContext,
+    employeeId: string,
+  ): Promise<EmployeeWorkCycleRecord[]>;
   assignWorkCycle(
     workspaceId: string,
     input: AssignWorkCycleRequest,
@@ -120,13 +125,14 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
       }
     },
 
-    async listWorkSchedules(workspaceId, query) {
+    async listWorkSchedules(context, query) {
       const from = requireBusinessDate(query.from, 'from');
       const to = requireBusinessDate(query.to, 'to');
       if (from > to) {
         throw invalidRequest([{ field: 'to', message: '終了日は開始日以降にしてください' }]);
       }
-      return schedule.listWorkSchedules(workspaceId, query.employeeId, from, to);
+      await deps.visibility.requireVisibleEmployee(context, query.employeeId);
+      return schedule.listWorkSchedules(context.workspace.id, query.employeeId, from, to);
     },
 
     async upsertWorkSchedule(context, input) {
@@ -276,8 +282,10 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
       }
     },
 
-    listAssignments: (workspaceId, employeeId) =>
-      deps.cycles.listAssignments(workspaceId, employeeId),
+    async listAssignments(context, employeeId) {
+      await deps.visibility.requireVisibleEmployee(context, employeeId);
+      return deps.cycles.listAssignments(context.workspace.id, employeeId);
+    },
 
     async assignWorkCycle(workspaceId, input) {
       const anchorDate = requireBusinessDate(input.anchorDate, 'anchorDate');

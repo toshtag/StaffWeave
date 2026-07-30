@@ -19,6 +19,7 @@ import type { AuditRepository } from '../audit/repository.js';
 import type { DeviceRepository } from '../device/repository.js';
 import { verifySignature } from '../device/signature.js';
 import type { AuthenticatedContext } from '../identity/service.js';
+import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError, forbidden, invalidRequest } from '../shared/errors.js';
 import type { SessionObservationRepository } from './repository.js';
 
@@ -32,6 +33,7 @@ export interface SessionServiceDependencies {
   repositories: DayRepositories;
   observations: SessionObservationRepository;
   devices: DeviceRepository;
+  visibility: EmployeeVisibilityGuard;
   now: () => Date;
   transaction<T>(fn: (repositories: SessionRepositories) => Promise<T>): Promise<T>;
 }
@@ -155,11 +157,21 @@ export function createSessionService(deps: SessionServiceDependencies): SessionS
 
     async listObservations(context, query) {
       const employeeId = resolveEmployeeId(context, query.employeeId);
-      return deps.observations.listForRange(context.workspace.id, {
+      if (employeeId !== undefined) {
+        await deps.visibility.requireVisibleEmployee(context, employeeId);
+      }
+
+      const observations = await deps.observations.listForRange(context.workspace.id, {
         ...(employeeId === undefined ? {} : { employeeId }),
         from: query.from,
         to: query.to,
       });
+
+      return deps.visibility.filterVisible(
+        context,
+        observations,
+        (observation) => observation.employeeId,
+      );
     },
 
     async getDiscrepancyReport(context, businessDate, requestedEmployeeId) {
@@ -173,6 +185,7 @@ export function createSessionService(deps: SessionServiceDependencies): SessionS
       if (employeeId === undefined) {
         throw invalidRequest([{ field: 'employeeId', message: '従業員を指定してください' }]);
       }
+      await deps.visibility.requireVisibleEmployee(context, employeeId);
 
       const workspaceId = context.workspace.id;
       const timeZone = await resolveTimeZoneForEmployee(

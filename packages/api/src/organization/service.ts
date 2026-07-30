@@ -10,7 +10,6 @@ import type {
 } from '@staffweave/contracts';
 import type { Role } from '@staffweave/domain';
 import {
-  canAccessEmployee,
   DEFAULT_LOCALE,
   isValidEmail,
   normalizeCode,
@@ -20,14 +19,14 @@ import {
 } from '@staffweave/domain';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
+import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { conflict, invalidRequest, notFound } from '../shared/errors.js';
 import { hashPassword } from '../shared/security/password.js';
-import type { AssignmentRepository } from './assignment-repository.js';
 import type { OrganizationRepository } from './repository.js';
 
 export interface OrganizationServiceDependencies {
   repository: OrganizationRepository;
-  assignments: AssignmentRepository;
+  visibility: EmployeeVisibilityGuard;
   /** 複数テーブルへまたがる登録をまとめるためのトランザクション境界。 */
   transaction<T>(fn: (repository: OrganizationRepository) => Promise<T>): Promise<T>;
 }
@@ -117,22 +116,10 @@ export function createOrganizationService(
       }
     },
 
-    /**
-     * 従業員の一覧は閲覧範囲で絞る。
-     * 範囲を持たない利用者はワークスペース全体を見られる（管理者を想定）。
-     * 範囲を持つ利用者は、雇用元か受入組織が範囲に含まれる従業員だけを見られる。
-     */
+    /** 従業員の一覧は、その利用者が見てよい相手だけを返す。 */
     async listEmployees(context) {
-      const workspaceId = context.workspace.id;
-      const employees = await repository.listEmployees(workspaceId);
-      if (context.organizationScopes.length === 0) return employees;
-
-      const organizations = await deps.assignments.listEmployeeOrganizations(workspaceId);
-      return employees.filter((employee) => {
-        const view = organizations.get(employee.id);
-        if (!view) return false;
-        return canAccessEmployee(context.organizationScopes, view);
-      });
+      const employees = await repository.listEmployees(context.workspace.id);
+      return deps.visibility.filterVisible(context, employees, (employee) => employee.id);
     },
 
     async createEmployee(workspaceId, input) {

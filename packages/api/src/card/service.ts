@@ -26,6 +26,7 @@ import type { DeviceRepository } from '../device/repository.js';
 import { verifySignature } from '../device/signature.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
+import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError, invalidRequest, notFound } from '../shared/errors.js';
 import { generateToken, hashToken } from '../shared/security/tokens.js';
 import type { CardRepository } from './repository.js';
@@ -39,6 +40,7 @@ export interface CardRepositories extends AttendanceRepositories {
 export interface CardServiceDependencies {
   cards: CardRepository;
   devices: DeviceRepository;
+  visibility: EmployeeVisibilityGuard;
   now: () => Date;
   transaction<T>(fn: (repositories: CardRepositories) => Promise<T>): Promise<T>;
 }
@@ -85,7 +87,14 @@ export function createCardService(deps: CardServiceDependencies): CardService {
   }
 
   return {
-    listCredentials: (context) => deps.cards.listCredentials(context.workspace.id),
+    async listCredentials(context) {
+      const credentials = await deps.cards.listCredentials(context.workspace.id);
+      return deps.visibility.filterVisible(
+        context,
+        credentials,
+        (credential) => credential.employeeId,
+      );
+    },
 
     async createRegistration(context, input) {
       const token = generateToken();

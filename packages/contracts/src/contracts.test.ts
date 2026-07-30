@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildOpenApiDocument } from './openapi.js';
 import { operationList, operations } from './operations.js';
 import { loginRequestSchema, sessionResponseSchema } from './schemas/auth.js';
+import { ORGANIZATION_SCOPE_DESCRIPTION } from './schemas/common.js';
 import { createEmployeeRequestSchema } from './schemas/organization.js';
 import type { CreateEmployeeRequest, LoginRequest, SessionResponse } from './types.js';
 import { validate } from './validation.js';
@@ -183,5 +184,62 @@ describe('operations の参照', () => {
   it('操作 ID から契約を引ける', () => {
     expect(operations.login.path).toBe('/auth/login');
     expect(operations.createEmployee.security).toBe('session');
+  });
+});
+
+/**
+ * 閲覧範囲は公開契約の一部である。
+ *
+ * スキーマの定義だけを見ても、生成された OpenAPI に載っているとは限らない。
+ * 外部の実装者が読むのは生成物なので、生成物の側を検査する。
+ */
+describe('閲覧範囲の公開契約', () => {
+  const document = buildOpenApiDocument('test') as {
+    paths: Record<string, Record<string, { responses: Record<string, ResponseObject> }>>;
+  };
+
+  interface SchemaObject {
+    description?: string;
+    properties?: Record<string, SchemaObject>;
+    items?: SchemaObject;
+  }
+  interface ResponseObject {
+    content?: { 'application/json'?: { schema?: SchemaObject } };
+  }
+
+  function schemaOf(path: string, method: string, status: string): SchemaObject {
+    const schema =
+      document.paths[path]?.[method]?.responses[status]?.content?.['application/json']?.schema;
+    if (!schema) throw new Error(`${method} ${path} の ${status} 応答が見つかりません`);
+    return schema;
+  }
+
+  it('セッション応答が閲覧範囲の意味を説明している', () => {
+    const scopes = schemaOf('/api/auth/session', 'get', '200').properties?.user?.properties
+      ?.organizationScopes;
+    expect(scopes?.description).toBe(ORGANIZATION_SCOPE_DESCRIPTION);
+  });
+
+  it('閲覧範囲の一覧が同じ説明を使う', () => {
+    const item = schemaOf('/api/user-scopes', 'get', '200').properties?.scopes?.items;
+    expect(item?.description).toBe(ORGANIZATION_SCOPE_DESCRIPTION);
+  });
+
+  it('閲覧範囲の登録が同じ説明を使う', () => {
+    expect(schemaOf('/api/user-scopes', 'post', '201').description).toBe(
+      ORGANIZATION_SCOPE_DESCRIPTION,
+    );
+  });
+
+  it('旧い認可契約の説明が生成物へ現れない', () => {
+    const json = JSON.stringify(document);
+    for (const phrase of [
+      '行が無ければワークスペース全体',
+      '行がなければワークスペース全体',
+      '空なら制限なし',
+      '空ならワークスペース全体',
+    ]) {
+      expect(json, phrase).not.toContain(phrase);
+    }
   });
 });

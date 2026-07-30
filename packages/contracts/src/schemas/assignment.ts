@@ -3,6 +3,7 @@ import {
   businessDateSchema,
   codeSchema,
   nameSchema,
+  ORGANIZATION_SCOPE_DESCRIPTION,
   timestampSchema,
   uuidSchema,
 } from './common.js';
@@ -78,7 +79,7 @@ export const createEmployeeAssignmentRequestSchema = objectSchema({
 });
 
 export const userScopeSchema = objectSchema({
-  description: '利用者が勤怠を見られる組織。行が無ければワークスペース全体を見られる',
+  description: ORGANIZATION_SCOPE_DESCRIPTION,
   properties: {
     userId: uuidSchema,
     organizationId: uuidSchema,

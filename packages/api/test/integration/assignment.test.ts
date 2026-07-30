@@ -246,8 +246,16 @@ describe('勤務先別の閲覧権限', () => {
     expect(body.employees.map((employee) => employee.employeeNumber)).toEqual(['E001']);
   });
 
-  it('閲覧範囲を持たない管理者には全員が見える', async () => {
-    const response = await app().request('/api/employees', authorized(fixture.adminCookie));
+  it('ワークスペース管理者は組織スコープがなくても全従業員を閲覧できる', async () => {
+    const instance = app();
+
+    // 全体を見られる根拠がロールであることを、この場で確かめる。
+    const session = await instance.request('/api/auth/session', authorized(fixture.adminCookie));
+    const user = ((await session.json()) as SessionResponse).user;
+    expect(user.roles).toContain('workspace_admin');
+    expect(user.organizationScopes).toEqual([]);
+
+    const response = await instance.request('/api/employees', authorized(fixture.adminCookie));
     const body = (await response.json()) as EmployeeList;
 
     expect(body.employees).toHaveLength(2);
@@ -370,8 +378,14 @@ describe('外部承認者による承認', () => {
     expect(response.status).toBe(403);
   });
 
-  it('閲覧範囲を持たない管理者は誰でも承認できる', async () => {
+  it('ワークスペース管理者は組織スコープがなくても対象申請を承認できる', async () => {
     const instance = app();
+
+    const session = await instance.request('/api/auth/session', authorized(fixture.adminCookie));
+    const user = ((await session.json()) as SessionResponse).user;
+    expect(user.roles).toContain('workspace_admin');
+    expect(user.organizationScopes).toEqual([]);
+
     const listed = await instance.request(
       `/api/attendance/requests?employeeId=${fixture.internalEmployeeId}&from=2026-04-01&to=2026-04-30`,
       authorized(fixture.adminCookie),

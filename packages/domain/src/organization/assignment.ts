@@ -6,6 +6,7 @@
  * ここでは「いつ・どこへ配属されているか」と「誰がその勤怠を見てよいか」を決める規則だけを持つ。
  */
 import type { BusinessDate } from '../attendance/business-date.js';
+import type { Role } from '../identity/roles.js';
 
 export interface AssignmentContract {
   id: string;
@@ -68,19 +69,96 @@ export interface EmployeeOrganizationView {
 }
 
 /**
- * 勤務先別の閲覧権限。
+ * 指定した組織のいずれかが、その従業員の雇用元か受入組織かどうか。
  *
- * 閲覧できる組織を持たない利用者は、ワークスペース全体を見られる（管理者を想定）。
- * 組織を指定された利用者は、その組織が雇用元か受入組織である従業員だけを見られる。
- * 受入組織側の承認者（外部承認者）も、この仕組みで表す。
+ * 空の配列は「どの組織も指定されていない」という意味であり、「すべて」ではない。
+ * 空の配列を渡した場合は常に false になる。
+ * 誰をどこまで見られるかの判断は {@link resolveEmployeeVisibility} が決める。
  */
 export function canAccessEmployee(
   scopedOrganizationIds: readonly string[],
   employee: EmployeeOrganizationView,
 ): boolean {
-  if (scopedOrganizationIds.length === 0) return true;
   if (scopedOrganizationIds.includes(employee.employerOrganizationId)) return true;
   return employee.hostOrganizationIds.some((id) => scopedOrganizationIds.includes(id));
+}
+
+/**
+ * 従業員データをどこまで見られるかを表す。
+ *
+ * 「組織の指定がない」ことと「全体を見られる」ことは別の状態である。
+ * ひとつの空配列に両方の意味を持たせると、閲覧範囲をまだ与えられていない
+ * 組織管理者がワークスペース全体を見られてしまう。そのため状態として区別する。
+ */
+export type EmployeeVisibility =
+  /** ワークスペース全体。ワークスペース管理者。 */
+  | { kind: 'workspace' }
+  /**
+   * 指定された組織が雇用元か受入組織である従業員。組織管理者。
+   * `organizationIds` が空なら管理対象はない。
+   * 自分自身の従業員データは、閲覧範囲とは別に見られる。
+   */
+  | {
+      kind: 'organizations';
+      organizationIds: readonly string[];
+      selfEmployeeId: string | null;
+    }
+  /** 自分自身だけ。一般従業員。 */
+  | { kind: 'self'; employeeId: string }
+  /** 誰も見られない。従業員が紐づいていない一般利用者。 */
+  | { kind: 'none' };
+
+/**
+ * ロールと閲覧範囲から、見られる相手を決める。
+ *
+ * ロールは「誰が何をできるか」を決める唯一の根拠であり、
+ * 閲覧範囲の有無からロールを推定しない。
+ */
+export function resolveEmployeeVisibility(input: {
+  roles: readonly Role[];
+  organizationIds: readonly string[];
+  selfEmployeeId: string | null;
+}): EmployeeVisibility {
+  if (input.roles.includes('workspace_admin')) return { kind: 'workspace' };
+  if (input.roles.includes('organization_manager')) {
+    return {
+      kind: 'organizations',
+      organizationIds: [...input.organizationIds],
+      selfEmployeeId: input.selfEmployeeId,
+    };
+  }
+  if (input.selfEmployeeId === null) return { kind: 'none' };
+  return { kind: 'self', employeeId: input.selfEmployeeId };
+}
+
+/**
+ * その従業員を見てよいかどうか。
+ *
+ * `organizations` を渡さなかった場合、組織の対応が分からない従業員として扱い、
+ * 自分自身でない限り見られない。
+ */
+export function isEmployeeVisible(
+  visibility: EmployeeVisibility,
+  employeeId: string,
+  organizations?: EmployeeOrganizationView | undefined,
+): boolean {
+  switch (visibility.kind) {
+    case 'workspace':
+      return true;
+    case 'none':
+      return false;
+    case 'self':
+      return visibility.employeeId === employeeId;
+    case 'organizations':
+      if (visibility.selfEmployeeId === employeeId) return true;
+      if (organizations === undefined) return false;
+      return canAccessEmployee(visibility.organizationIds, organizations);
+  }
+}
+
+/** ワークスペース全体を見られるかどうか。一覧の絞り込みを省いてよいかの判断に使う。 */
+export function seesWholeWorkspace(visibility: EmployeeVisibility): boolean {
+  return visibility.kind === 'workspace';
 }
 
 export type ContractProblem = 'invalid_period' | 'same_organization_without_reason';

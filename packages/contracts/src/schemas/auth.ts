@@ -1,6 +1,12 @@
 import { MAXIMUM_PASSWORD_LENGTH, MINIMUM_PASSWORD_LENGTH } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
-import { localeSchema, nameSchema, roleSchema, uuidSchema } from './common.js';
+import {
+  localeSchema,
+  nameSchema,
+  ORGANIZATION_SCOPE_DESCRIPTION,
+  roleSchema,
+  uuidSchema,
+} from './common.js';
 
 export const workspaceSummarySchema = objectSchema({
   properties: {
@@ -30,8 +36,7 @@ export const sessionUserSchema = objectSchema({
     locale: localeSchema,
     roles: arraySchema(roleSchema),
     permissions: arraySchema({ type: 'string' }),
-    /** 勤怠を見られる組織。空なら制限なし（ワークスペース全体）。 */
-    organizationScopes: arraySchema(uuidSchema),
+    organizationScopes: arraySchema(uuidSchema, ORGANIZATION_SCOPE_DESCRIPTION),
   },
   required: ['id', 'email', 'displayName', 'locale', 'roles', 'permissions', 'organizationScopes'],
 });
