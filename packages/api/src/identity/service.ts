@@ -33,7 +33,11 @@ export interface AuthenticatedContext {
   user: UserRecord;
   roles: Role[];
   employee: EmployeeLinkRecord | null;
-  /** 勤怠を見られる組織。空なら制限なし（ワークスペース全体）。 */
+  /**
+   * 閲覧対象として明示的に与えられた組織。
+   * 空配列は管理対象の組織がないことを表す。ワークスペース全体を見られるかどうかは
+   * ここではなく `workspace_admin` ロールが決める。
+   */
   organizationScopes: string[];
   sessionExpiresAt: Date;
 }

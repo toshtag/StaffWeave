@@ -48,7 +48,10 @@ export interface IdentityRepository {
   findUserByEmail(workspaceId: string, email: string): Promise<UserRecord | null>;
   findUserById(workspaceId: string, userId: string): Promise<UserRecord | null>;
   listRoles(workspaceId: string, userId: string): Promise<Role[]>;
-  /** 利用者が勤怠を見られる組織。空なら制限なし。 */
+  /**
+   * 利用者へ明示的に与えられた閲覧対象の組織。
+   * 空配列は管理対象の組織がないことを表す。全体の閲覧可否はロールが決める。
+   */
   listOrganizationScopes(workspaceId: string, userId: string): Promise<string[]>;
   findEmployeeByUserId(workspaceId: string, userId: string): Promise<EmployeeLinkRecord | null>;
   updateUserLocale(workspaceId: string, userId: string, locale: Locale): Promise<void>;

@@ -30,8 +30,11 @@ export const sessionUserSchema = objectSchema({
     locale: localeSchema,
     roles: arraySchema(roleSchema),
     permissions: arraySchema({ type: 'string' }),
-    /** 勤怠を見られる組織。空なら制限なし（ワークスペース全体）。 */
-    organizationScopes: arraySchema(uuidSchema),
+    organizationScopes: arraySchema(
+      uuidSchema,
+      '閲覧対象として明示的に与えられた組織。空配列は管理対象の組織がないことを表す。' +
+        'ワークスペース全体を見られるかどうかは、この値ではなく workspace_admin ロールが決める。',
+    ),
   },
   required: ['id', 'email', 'displayName', 'locale', 'roles', 'permissions', 'organizationScopes'],
 });

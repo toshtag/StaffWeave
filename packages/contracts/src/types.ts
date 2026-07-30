@@ -59,7 +59,10 @@ export interface SessionUser {
   locale: Locale;
   roles: Role[];
   permissions: string[];
-  /** 勤怠を見られる組織。空なら制限なし。 */
+  /**
+   * 閲覧対象として明示的に与えられた組織。
+   * 空配列は管理対象の組織がないことを表す。全体の閲覧可否はロールが決める。
+   */
   organizationScopes: string[];
 }
 
