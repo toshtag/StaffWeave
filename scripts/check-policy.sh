@@ -69,27 +69,42 @@ echo '認可契約'
 # 「閲覧範囲が空ならワークスペース全体」という旧設計の説明。
 # 空配列は「管理対象なし」を意味し、全体の閲覧可否はロールが決める。
 # 説明が実装と食い違うと、次に読む人が同じ穴を掘り直す。
-OLD_SCOPE_PATTERN='空なら制限なし|空ならワークスペース全体|行を持たない利用者はワークスペース全体|閲覧範囲を持たない管理者には全員|閲覧範囲を持たない管理者は誰でも|閲覧範囲を持たない利用者はワークスペース全体'
-# 適用済みマイグレーションはチェックサム保護のため書き換えない。
-# 作成時点の設計を示す歴史的記録として、この 1 ファイルだけを例外にする。
+# 表現を網羅できるわけではない。過去に実際に書かれたものを覚えさせ、同じ形の再発だけを止める。
+OLD_SCOPE_PATTERN='空なら制限なし|空ならワークスペース全体|行が無ければワークスペース全体|行がなければワークスペース全体|行を持たない利用者はワークスペース全体|閲覧範囲を持たない管理者には全員|閲覧範囲を持たない管理者は誰でも|閲覧範囲を持たない利用者はワークスペース全体'
+# 例外は 2 つだけ。どちらも「旧説明を書き写した箇所」ではなく、
+# 旧説明そのものを対象として扱うファイルであるため除く。
+#
+#   0012 マイグレーション: 適用済みでチェックサム保護のため書き換えられない歴史的記録。
+#   contracts の契約テスト: 旧表現が生成 OpenAPI に現れないことを確かめるための列挙。
+#
+# この脚本自身も、検査の対象語をそのまま持つため冒頭で TRACKED から外している。
 HISTORICAL_SCOPE_FILE='packages/db/migrations/0012_create_assignments_and_scopes.sql'
+CONTRACT_TEST_FILE='packages/contracts/src/contracts.test.ts'
 
-SCOPE_TARGETS=$(printf '%s\n' "$TRACKED" | grep -v "^$HISTORICAL_SCOPE_FILE\$")
+SCOPE_TARGETS=$(printf '%s\n' "$TRACKED" \
+  | grep -v "^$HISTORICAL_SCOPE_FILE\$" \
+  | grep -v "^$CONTRACT_TEST_FILE\$")
 if printf '%s\n' "$SCOPE_TARGETS" | xargs grep -lE "$OLD_SCOPE_PATTERN" 2>/dev/null | grep . > /dev/null; then
   printf '%s\n' "$SCOPE_TARGETS" | xargs grep -nE "$OLD_SCOPE_PATTERN" 2>/dev/null | head -20
   fail '旧い認可契約（閲覧範囲が空なら全件）の説明が残っています'
 else
-  pass '旧い認可契約の説明は残っていません'
+  pass '既知の旧認可契約の表現は残っていません'
 fi
 
-# 例外の範囲が知らないうちに広がらないよう、歴史的記録の側も件数を固定する。
-HISTORICAL_SCOPE_HITS=$(grep -cE "$OLD_SCOPE_PATTERN" "$HISTORICAL_SCOPE_FILE" 2>/dev/null || echo 0)
-if [ "$HISTORICAL_SCOPE_HITS" -eq 1 ]; then
-  pass '歴史的な旧説明は 0012 マイグレーションの 1 件だけです'
-else
-  printf '  検出件数: %s（期待値 1）\n' "$HISTORICAL_SCOPE_HITS"
-  fail '例外として認めた旧説明の件数が変わっています'
-fi
+# 例外の範囲が知らないうちに広がらないよう、例外の側も件数を固定する。
+check_scope_exception() {
+  expected=$2
+  actual=$(grep -cE "$OLD_SCOPE_PATTERN" "$1" 2>/dev/null || echo 0)
+  if [ "$actual" -eq "$expected" ]; then
+    pass "$3"
+  else
+    printf '  %s の検出件数: %s（期待値 %s）\n' "$1" "$actual" "$expected"
+    fail '例外として認めた旧説明の件数が変わっています'
+  fi
+}
+
+check_scope_exception "$HISTORICAL_SCOPE_FILE" 1 '歴史的な旧説明は 0012 マイグレーションの 1 件だけです'
+check_scope_exception "$CONTRACT_TEST_FILE" 4 '契約テストが列挙する旧表現は 4 件のままです'
 
 echo 'マイグレーション'
 DUPLICATES=$(git ls-files 'packages/db/migrations/*.sql' | sed 's#.*/##' | cut -c1-4 | sort | uniq -d)
