@@ -1,6 +1,5 @@
-import { createHmac, randomBytes } from 'node:crypto';
-import type { WebhookEventType } from '@staffweave/domain';
-import { canonicalWebhookMessage, isApiScope, isWebhookEventType } from '@staffweave/domain';
+import { randomBytes } from 'node:crypto';
+import { isApiScope, isWebhookEventType } from '@staffweave/domain';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { ApiError, invalidRequest } from '../shared/errors.js';
 import { hashToken } from '../shared/security/tokens.js';
@@ -14,8 +13,6 @@ import type {
 export interface IntegrationServiceDependencies {
   repository: IntegrationRepository;
   now: () => Date;
-  /** 送信の実装。テストから差し替えられるようにする。 */
-  send?: (url: string, headers: Record<string, string>, body: string) => Promise<Response>;
 }
 
 export interface IntegrationService {
@@ -36,8 +33,6 @@ export interface IntegrationService {
     input: { name: string; url: string; eventTypes: string[] },
   ): Promise<{ endpoint: WebhookEndpointRecord; secret: string }>;
   listDeliveries(workspaceId: string): Promise<WebhookDeliveryRecord[]>;
-  /** 出来事を登録済みの送信先へ通知する。送信の成否は記録として残す。 */
-  dispatch(workspaceId: string, eventType: WebhookEventType, payload: unknown): Promise<void>;
 }
 
 const KEY_PREFIX = 'sw';
@@ -49,8 +44,6 @@ function generateApiKey(): { secret: string; prefix: string } {
 }
 
 export function createIntegrationService(deps: IntegrationServiceDependencies): IntegrationService {
-  const send = deps.send ?? ((url, headers, body) => fetch(url, { method: 'POST', headers, body }));
-
   return {
     listApiKeys: (workspaceId) => deps.repository.listApiKeys(workspaceId),
 
@@ -116,57 +109,5 @@ export function createIntegrationService(deps: IntegrationServiceDependencies): 
     },
 
     listDeliveries: (workspaceId) => deps.repository.listDeliveries(workspaceId, 200),
-
-    async dispatch(workspaceId, eventType, payload) {
-      const endpoints = await deps.repository.listActiveEndpointsFor(workspaceId, eventType);
-      if (endpoints.length === 0) return;
-
-      const attemptedAt = deps.now();
-      const eventId = randomBytes(12).toString('hex');
-      const timestamp = attemptedAt.toISOString();
-      const body = JSON.stringify({ eventId, eventType, occurredAt: timestamp, data: payload });
-
-      for (const endpoint of endpoints) {
-        // 署名にはハッシュではなく秘密そのものが必要だが、サーバーはハッシュしか持たない。
-        // ハッシュを鍵として使うことで、保存物が漏れても受け取り側の検証鍵は別に保てる。
-        const signature = createHmac('sha256', endpoint.secretHash)
-          .update(canonicalWebhookMessage({ eventId, eventType, timestamp, body }), 'utf8')
-          .digest('base64');
-
-        let statusCode: number | null = null;
-        let outcome: WebhookDeliveryRecord['outcome'] = 'failed';
-        let errorMessage: string | null = null;
-
-        try {
-          const response = await send(
-            endpoint.url,
-            {
-              'content-type': 'application/json',
-              'x-staffweave-event': eventType,
-              'x-staffweave-event-id': eventId,
-              'x-staffweave-timestamp': timestamp,
-              'x-staffweave-signature': signature,
-            },
-            body,
-          );
-          statusCode = response.status;
-          outcome = response.ok ? 'delivered' : 'failed';
-          if (!response.ok) errorMessage = `HTTP ${response.status}`;
-        } catch (error) {
-          errorMessage = error instanceof Error ? error.message : '送信に失敗しました';
-        }
-
-        await deps.repository.recordDelivery(workspaceId, {
-          endpointId: endpoint.id,
-          eventType,
-          eventId,
-          payload,
-          attemptedAt,
-          statusCode,
-          outcome,
-          errorMessage,
-        });
-      }
-    },
   };
 }

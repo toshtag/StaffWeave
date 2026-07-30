@@ -6,11 +6,7 @@ import type {
   ReopenMonthRequest,
   SubmitDailyRequestRequest,
 } from '@staffweave/contracts';
-import type {
-  DailyRequestEventType,
-  DailyRequestState,
-  WebhookEventType,
-} from '@staffweave/domain';
+import type { DailyRequestEventType, DailyRequestState } from '@staffweave/domain';
 import {
   applyDailyRequestEvent,
   applyMonthlyClosingEvent,
@@ -25,18 +21,22 @@ import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.js';
+import type { NotificationOutbox } from '../shared/notification-outbox.js';
 import type { ApprovalRepository } from './repository.js';
 
 export interface ApprovalRepositories {
   approval: ApprovalRepository;
   audit: AuditRepository;
+  /**
+   * 承認や締めの結果を外部へ知らせるための送信待ち。
+   * 業務データと同じトランザクションで確定し、実際の送信は別のワーカーが行う。
+   */
+  outbox: NotificationOutbox;
 }
 
 export interface ApprovalServiceDependencies {
   repository: ApprovalRepository;
   visibility: EmployeeVisibilityGuard;
-  /** 承認や締めの結果を外部へ知らせる。失敗しても本体の処理は続ける。 */
-  notify: (workspaceId: string, eventType: WebhookEventType, payload: unknown) => Promise<void>;
   now: () => Date;
   transaction<T>(fn: (repositories: ApprovalRepositories) => Promise<T>): Promise<T>;
 }
@@ -177,7 +177,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
         throw invalidRequest([{ field: 'comment', message: '差し戻しの理由を入力してください' }]);
       }
 
-      return deps.transaction(async ({ approval, audit }) => {
+      return deps.transaction(async ({ approval, audit, outbox }) => {
         const existing = await approval.findRequestById(workspaceId, requestId);
         if (!existing) throw notFound('申請');
 
@@ -250,16 +250,17 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
         )) as DailyRequestRecord;
 
         if (event === 'APPROVE' || event === 'RETURN') {
-          await deps.notify(
-            workspaceId,
-            event === 'APPROVE' ? 'attendance_request.approved' : 'attendance_request.returned',
-            {
+          await outbox.enqueue(workspaceId, {
+            eventType:
+              event === 'APPROVE' ? 'attendance_request.approved' : 'attendance_request.returned',
+            payload: {
               requestId: decided.id,
               employeeId: decided.employeeId,
               businessDate: decided.businessDate,
               state: decided.state,
             },
-          );
+            occurredAt: now,
+          });
         }
 
         return decided;
@@ -301,7 +302,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
       await requireEmployeeInScope(context, input.employeeId);
       const workspaceId = context.workspace.id;
 
-      return deps.transaction(async ({ approval, audit }) => {
+      return deps.transaction(async ({ approval, audit, outbox }) => {
         const existing = await approval.findClosing(workspaceId, input.employeeId, input.period);
         const current =
           existing === null
@@ -323,12 +324,13 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
           );
         }
 
+        const now = deps.now();
         const saved = await approval.saveClosing(workspaceId, {
           employeeId: input.employeeId,
           period: input.period,
           state: next.state,
           reopens: next.context.reopens,
-          closedAt: deps.now(),
+          closedAt: now,
           closedByUserId: context.user.id,
           reopenedAt: existing?.reopenedAt === undefined ? null : null,
           reopenedByUserId: null,
@@ -345,9 +347,10 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
           detail: { employeeId: input.employeeId, period: input.period },
         });
 
-        await deps.notify(workspaceId, 'monthly_closing.closed', {
-          employeeId: input.employeeId,
-          period: input.period,
+        await outbox.enqueue(workspaceId, {
+          eventType: 'monthly_closing.closed',
+          payload: { employeeId: input.employeeId, period: input.period },
+          occurredAt: now,
         });
 
         return saved;
@@ -363,7 +366,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
         throw invalidRequest([{ field: 'reason', message: '解除の理由を入力してください' }]);
       }
 
-      return deps.transaction(async ({ approval, audit }) => {
+      return deps.transaction(async ({ approval, audit, outbox }) => {
         const existing = await approval.findClosing(workspaceId, input.employeeId, input.period);
         if (!existing) throw notFound('締め');
 
@@ -418,10 +421,14 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
           },
         });
 
-        await deps.notify(workspaceId, 'monthly_closing.reopened', {
-          employeeId: input.employeeId,
-          period: input.period,
-          reason: input.reason.trim(),
+        await outbox.enqueue(workspaceId, {
+          eventType: 'monthly_closing.reopened',
+          payload: {
+            employeeId: input.employeeId,
+            period: input.period,
+            reason: input.reason.trim(),
+          },
+          occurredAt: now,
         });
 
         return saved;
