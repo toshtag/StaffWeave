@@ -16,6 +16,7 @@ import {
   createOrganization,
   createUser,
   createWorkspace,
+  grantOrganizationScope,
   loginAndGetCookie,
 } from '../support/fixtures.js';
 
@@ -58,10 +59,11 @@ async function setUp(): Promise<Fixture> {
   const workspaceId = await createWorkspace(db, { slug: 'default' });
   const organizationId = await createOrganization(db, workspaceId, { code: 'HQ' });
   await createUser(db, workspaceId, { email: 'admin@example.com', roles: ['workspace_admin'] });
-  await createUser(db, workspaceId, {
+  const approverUserId = await createUser(db, workspaceId, {
     email: 'approver@example.com',
     roles: ['organization_manager'],
   });
+  await grantOrganizationScope(db, workspaceId, { userId: approverUserId, organizationId });
   await createEmployeeWithAccount(db, workspaceId, {
     organizationId,
     employeeNumber: 'E001',

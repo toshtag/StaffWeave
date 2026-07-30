@@ -13,6 +13,7 @@ import {
   createOrganization,
   createUser,
   createWorkspace,
+  grantOrganizationScope,
   loginAndGetCookie,
 } from '../support/fixtures.js';
 
@@ -46,9 +47,13 @@ async function setUp(): Promise<Fixture> {
     email: 'admin@example.com',
     roles: ['workspace_admin'],
   });
-  await createUser(testDatabase(), workspaceId, {
+  const approverUserId = await createUser(testDatabase(), workspaceId, {
     email: 'approver@example.com',
     roles: ['organization_manager'],
+  });
+  await grantOrganizationScope(testDatabase(), workspaceId, {
+    userId: approverUserId,
+    organizationId,
   });
   const { employeeId } = await createEmployeeWithAccount(testDatabase(), workspaceId, {
     organizationId,

@@ -73,6 +73,24 @@ export async function createOrganization(
   return id;
 }
 
+/**
+ * 組織管理者へ閲覧範囲を与える。
+ *
+ * 組織管理者は、与えられた範囲の従業員だけを扱える。
+ * 範囲を与えないと管理対象を持たないため、承認や一覧を試すテストでは必ず与える。
+ */
+export async function grantOrganizationScope(
+  db: Database,
+  workspaceId: string,
+  input: { userId: string; organizationId: string },
+): Promise<void> {
+  await db.query(
+    `INSERT INTO user_organization_scopes (workspace_id, user_id, organization_id)
+     VALUES ($1, $2, $3)`,
+    [workspaceId, input.userId, input.organizationId],
+  );
+}
+
 /** ログインできる従業員（利用者付き）を作る。 */
 export async function createEmployeeWithAccount(
   db: Database,
