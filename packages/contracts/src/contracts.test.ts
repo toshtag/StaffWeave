@@ -4,13 +4,16 @@ import type { JsonSchema } from './json-schema.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { operationList, operations } from './operations.js';
 import { loginRequestSchema, sessionResponseSchema } from './schemas/auth.js';
-import { ORGANIZATION_SCOPE_DESCRIPTION } from './schemas/common.js';
+import { cardEventRequestSchema } from './schemas/card.js';
+import { ORGANIZATION_SCOPE_DESCRIPTION, signedDeviceSequenceSchema } from './schemas/common.js';
+import { deviceEventRequestSchema } from './schemas/device.js';
 import {
   createWebhookEndpointRequestSchema,
   createWebhookEndpointResponseSchema,
   webhookEndpointSchema,
 } from './schemas/integration.js';
 import { createEmployeeRequestSchema } from './schemas/organization.js';
+import { recordSessionObservationsRequestSchema } from './schemas/session.js';
 import type { CreateEmployeeRequest, LoginRequest, SessionResponse } from './types.js';
 import { validate } from './validation.js';
 
@@ -298,6 +301,53 @@ describe('閲覧範囲の公開契約', () => {
       '空ならワークスペース全体',
     ]) {
       expect(json, phrase).not.toContain(phrase);
+    }
+  });
+});
+
+/**
+ * 端末が署名して送る要求の連番は、経路ごとではなく端末ごとに一つである。
+ *
+ * 説明を経路ごとに書き分けると、片方だけが古くなっても誰も気付けない。
+ * 外部の利用者が読むのは生成物なので、定義だけでなく OpenAPI 側も合わせて固定する。
+ */
+describe('署名端末の連番', () => {
+  const SIGNED_SEQUENCE_PATHS = [
+    '/api/device-agent/events',
+    '/api/device-agent/card-events',
+    '/api/device-agent/session-observations',
+  ] as const;
+
+  it('経路ごとに連番の定義を持たない', () => {
+    for (const schema of [
+      deviceEventRequestSchema,
+      cardEventRequestSchema,
+      recordSessionObservationsRequestSchema,
+    ]) {
+      const properties = schema.properties as Record<string, JsonSchema>;
+      expect(properties.sequence).toBe(signedDeviceSequenceSchema);
+    }
+  });
+
+  it('生成物でも 3 経路が同じ説明を持つ', () => {
+    const document = buildOpenApiDocument('test') as {
+      paths: Record<
+        string,
+        Record<
+          string,
+          { requestBody?: { content: { 'application/json': { schema: JsonSchema } } } }
+        >
+      >;
+    };
+
+    for (const path of SIGNED_SEQUENCE_PATHS) {
+      const schema = document.paths[path]?.post?.requestBody?.content['application/json'].schema;
+      const properties = schema?.properties as Record<string, JsonSchema> | undefined;
+      expect(properties?.sequence, path).toMatchObject({
+        type: 'integer',
+        minimum: 1,
+        description: signedDeviceSequenceSchema.description,
+      });
     }
   });
 });

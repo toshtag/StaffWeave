@@ -1,6 +1,12 @@
 import { ATTENDANCE_EVENT_TYPES, DEVICE_STATES } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
-import { codeSchema, nameSchema, timestampSchema, uuidSchema } from './common.js';
+import {
+  codeSchema,
+  nameSchema,
+  signedDeviceSequenceSchema,
+  timestampSchema,
+  uuidSchema,
+} from './common.js';
 
 export const deviceSchema = objectSchema({
   description: '打刻端末',
@@ -10,7 +16,11 @@ export const deviceSchema = objectSchema({
     name: nameSchema,
     state: { type: 'string', enum: [...DEVICE_STATES] },
     enrollments: { type: 'integer' },
-    lastSequence: { type: 'integer', description: '最後に受け取った連番' },
+    lastSequence: {
+      type: 'integer',
+      description:
+        'この端末から受理した署名要求の最終連番。打刻イベント・カード打刻・PC セッション観測で共有する',
+    },
     enrolledAt: { oneOf: [timestampSchema, { type: 'null' }] },
     revokedAt: { oneOf: [timestampSchema, { type: 'null' }] },
     lastSeenAt: { oneOf: [timestampSchema, { type: 'null' }] },
@@ -84,7 +94,7 @@ export const enrollDeviceResponseSchema = objectSchema({
 export const deviceEventRequestSchema = objectSchema({
   description: '端末が署名して送る打刻イベント',
   properties: {
-    sequence: { type: 'integer', minimum: 1 },
+    sequence: signedDeviceSequenceSchema,
     requestId: { type: 'string', minLength: 8, maxLength: 128 },
     employeeNumber: codeSchema,
     eventType: { type: 'string', enum: [...ATTENDANCE_EVENT_TYPES] },

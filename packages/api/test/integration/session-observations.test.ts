@@ -1,4 +1,4 @@
-import { generateKeyPair, signMessage } from '@staffweave/agent';
+import { generateKeyPair, signMessage, signPayload } from '@staffweave/agent';
 import type {
   DiscrepancyReport,
   EnrollDeviceResponse,
@@ -100,10 +100,10 @@ async function sendObservations(
   fixture: Fixture,
   requestId: string,
   lines: readonly ObservationLine[],
-  overrides: { signature?: string } = {},
+  overrides: { signature?: string; sequence?: number } = {},
 ): Promise<Response> {
   const body = {
-    sequence: fixture.sequence,
+    sequence: overrides.sequence ?? fixture.sequence,
     requestId,
     workstationName: 'desk-01',
     observations: lines.map((line) => ({
@@ -112,7 +112,8 @@ async function sendObservations(
       occurredAt: line.occurredAt,
     })),
   };
-  fixture.sequence += 1;
+  // 連番を明示した送信は、続く自動採番へ影響させない。
+  if (overrides.sequence === undefined) fixture.sequence += 1;
 
   const signature =
     overrides.signature ??
@@ -130,6 +131,68 @@ async function sendObservations(
     },
     body: JSON.stringify(body),
   });
+}
+
+/** 同じ端末から署名して送る打刻イベント。PC 観測と連番を共有する。 */
+async function sendSignedEvent(
+  instance: App,
+  fixture: Fixture,
+  sequence: number,
+  requestId: string,
+  eventType: 'clock_in' | 'clock_out' = 'clock_in',
+): Promise<Response> {
+  const payload = {
+    sequence,
+    requestId,
+    employeeNumber: 'E001',
+    eventType,
+    occurredAt: CLOCK_IN_AT,
+    deviceTime: CLOCK_IN_AT,
+  };
+
+  return instance.request('/api/device-agent/events', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-staffweave-device': fixture.device.deviceId,
+      'x-staffweave-signature': signPayload(fixture.device.privateKeyPem, {
+        deviceId: fixture.device.deviceId,
+        ...payload,
+      }),
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+interface ReceiptRow {
+  sequence: number;
+  sequence_step: number;
+  outcome: string;
+  accepted: number;
+  skipped: number;
+  detail: Record<string, unknown>;
+}
+
+async function receiptsOf(requestId: string): Promise<ReceiptRow[]> {
+  return testDatabase().query<ReceiptRow>(
+    `SELECT sequence, sequence_step, outcome, accepted, skipped, detail
+       FROM workstation_session_receipts WHERE request_id = $1`,
+    [requestId],
+  );
+}
+
+async function observationCount(): Promise<number> {
+  const rows = await testDatabase().query<{ count: number }>(
+    'SELECT count(*)::int AS count FROM workstation_session_observations',
+  );
+  return rows[0]?.count ?? 0;
+}
+
+async function lastSequence(): Promise<number> {
+  const rows = await testDatabase().query<{ last_sequence: number }>(
+    'SELECT last_sequence FROM devices',
+  );
+  return rows[0]?.last_sequence ?? 0;
 }
 
 async function punch(
@@ -188,10 +251,13 @@ describe('PC セッションの観測', () => {
     const instance = app();
     const lines: ObservationLine[] = [{ observationType: 'sign_in', occurredAt: CLOCK_IN_AT }];
 
-    const first = await sendObservations(instance, fixture, 'session-idempotent', lines);
-    // 再送では連番も同じ値に戻す。
-    fixture.sequence -= 1;
-    const second = await sendObservations(instance, fixture, 'session-idempotent', lines);
+    // 再送は連番も同じ値で届く。
+    const first = await sendObservations(instance, fixture, 'session-idempotent', lines, {
+      sequence: 1,
+    });
+    const second = await sendObservations(instance, fixture, 'session-idempotent', lines, {
+      sequence: 1,
+    });
 
     expect(first.status).toBe(201);
     expect(second.status).toBe(200);
@@ -259,6 +325,126 @@ describe('PC セッションの観測', () => {
       authorized(fixture.employeeCookie),
     );
     expect(response.status).toBe(403);
+  });
+});
+
+describe('端末の連番', () => {
+  let fixture: Fixture;
+
+  beforeEach(async () => {
+    fixture = await setUp();
+  });
+
+  const line: ObservationLine = { observationType: 'sign_in', occurredAt: CLOCK_IN_AT };
+
+  it('受け取り済みの連番を別の冪等キーで送れば断る', async () => {
+    const instance = app();
+
+    const first = await sendObservations(instance, fixture, 'session-sequence-a', [line], {
+      sequence: 1,
+    });
+    const reused = await sendObservations(instance, fixture, 'session-sequence-b', [line], {
+      sequence: 1,
+    });
+
+    expect(first.status).toBe(201);
+    expect(reused.status).toBe(409);
+    expect(await observationCount()).toBe(1);
+    expect(await lastSequence()).toBe(1);
+  });
+
+  it('連番の巻き戻しを断り、断ったことを受領記録へ残す', async () => {
+    const instance = app();
+
+    await sendObservations(instance, fixture, 'session-sequence-5', [line], { sequence: 5 });
+    const rolledBack = await sendObservations(instance, fixture, 'session-sequence-3', [line], {
+      sequence: 3,
+    });
+
+    expect(rolledBack.status).toBe(409);
+    expect(await lastSequence()).toBe(5);
+
+    const receipts = await receiptsOf('session-sequence-3');
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.outcome).toBe('rejected');
+    expect(receipts[0]?.detail).toMatchObject({ reason: 'sequence_replay', lastSequence: 5 });
+  });
+
+  it('連番の欠落は受理し、欠落数を受領記録と監査へ残す', async () => {
+    const instance = app();
+
+    await sendObservations(instance, fixture, 'session-gap-first', [line], { sequence: 1 });
+    const response = await sendObservations(instance, fixture, 'session-gap-second', [line], {
+      sequence: 4,
+    });
+
+    expect(response.status).toBe(201);
+    expect(await lastSequence()).toBe(4);
+
+    const receipts = await receiptsOf('session-gap-second');
+    expect(receipts[0]?.sequence_step).toBe(3);
+    expect(receipts[0]?.detail).toMatchObject({ sequenceGap: 2 });
+
+    const audits = await testDatabase().query<{ detail: Record<string, unknown> }>(
+      "SELECT detail FROM audit_logs WHERE action = 'session_observation.recorded'",
+    );
+    expect(audits.map((row) => row.detail)).toContainEqual(
+      expect.objectContaining({ sequence: 4, sequenceStep: 3, sequenceGap: 2 }),
+    );
+  });
+
+  it('すべて対象外の要求でも受領記録を残し、再送は記録を増やさない', async () => {
+    const instance = app();
+    const unknown: ObservationLine[] = [
+      { employeeNumber: 'E998', observationType: 'sign_in', occurredAt: CLOCK_IN_AT },
+      { employeeNumber: 'E999', observationType: 'lock', occurredAt: CLOCK_OUT_AT },
+    ];
+
+    const first = await sendObservations(instance, fixture, 'session-all-skipped', unknown, {
+      sequence: 1,
+    });
+    const body = (await first.json()) as RecordSessionObservationsResponse;
+    const resent = await sendObservations(instance, fixture, 'session-all-skipped', unknown, {
+      sequence: 1,
+    });
+
+    expect(body).toEqual({ outcome: 'accepted', accepted: 0, skipped: 2 });
+    expect(resent.status).toBe(200);
+    expect(((await resent.json()) as RecordSessionObservationsResponse).outcome).toBe('duplicate');
+    expect(await observationCount()).toBe(0);
+    expect(await receiptsOf('session-all-skipped')).toHaveLength(1);
+    expect(await lastSequence()).toBe(1);
+  });
+
+  it('打刻イベントと PC 観測が同じ連番を交互に進める', async () => {
+    const instance = app();
+
+    const punchIn = await sendSignedEvent(instance, fixture, 1, 'device-event-1', 'clock_in');
+    const observed = await sendObservations(instance, fixture, 'session-cross-2', [line], {
+      sequence: 2,
+    });
+    const punchOut = await sendSignedEvent(instance, fixture, 3, 'device-event-3', 'clock_out');
+    const observedAgain = await sendObservations(instance, fixture, 'session-cross-4', [line], {
+      sequence: 4,
+    });
+
+    expect([punchIn.status, observed.status, punchOut.status, observedAgain.status]).toEqual([
+      201, 201, 201, 201,
+    ]);
+    expect(await lastSequence()).toBe(4);
+
+    // 経路が違っても連番は端末に一つである。使い切った番号は打刻でも観測でも断る。
+    const reusedByObservation = await sendObservations(
+      instance,
+      fixture,
+      'session-cross-reuse',
+      [line],
+      { sequence: 4 },
+    );
+    const reusedByEvent = await sendSignedEvent(instance, fixture, 4, 'device-event-reuse');
+
+    expect(reusedByObservation.status).toBe(409);
+    expect(reusedByEvent.status).toBe(409);
   });
 });
 

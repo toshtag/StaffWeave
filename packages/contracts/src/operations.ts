@@ -839,6 +839,11 @@ export const operations = {
       },
       invalidRequest,
       { status: 401, description: '端末を認証できません', schema: errorResponseSchema },
+      {
+        status: 409,
+        description: '同じ端末で受理済みの連番以下が、別の冪等キーで送られた',
+        schema: errorResponseSchema,
+      },
     ],
   },
   listSessionObservations: {
