@@ -5,7 +5,10 @@ import { buildOpenApiDocument } from './openapi.js';
 import { operationList, operations } from './operations.js';
 import { loginRequestSchema, sessionResponseSchema } from './schemas/auth.js';
 import { ORGANIZATION_SCOPE_DESCRIPTION } from './schemas/common.js';
-import { createWebhookEndpointRequestSchema } from './schemas/integration.js';
+import {
+  createWebhookEndpointRequestSchema,
+  webhookEndpointSchema,
+} from './schemas/integration.js';
 import { createEmployeeRequestSchema } from './schemas/organization.js';
 import type { CreateEmployeeRequest, LoginRequest, SessionResponse } from './types.js';
 import { validate } from './validation.js';
@@ -149,6 +152,16 @@ describe('Webhook 送信先の契約', () => {
   it('登録の失敗を 400 として定義している', () => {
     const statuses = operations.createWebhookEndpoint.responses.map((response) => response.status);
     expect(statuses).toContain(400);
+  });
+
+  // 署名鍵は署名を生成できる機密情報。契約へ現れた時点で外へ出せる状態になる。
+  it('署名鍵を公開する契約を持たない', () => {
+    const endpoint = webhookEndpointSchema.properties as Record<string, JsonSchema>;
+    const json = JSON.stringify(buildOpenApiDocument('1.2.3'));
+
+    expect(Object.keys(endpoint)).not.toContain('signingKey');
+    expect(json).not.toContain('signingKey');
+    expect(json).not.toContain('signing_key');
   });
 
   // format は検証器の目安でしかない。到達してよいネットワークかどうかは API 側で検査する。
