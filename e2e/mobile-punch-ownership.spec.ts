@@ -25,6 +25,15 @@ async function signIn(page: Page, account: SeededAccount): Promise<void> {
   await expect(page.locator('.work-state')).toBeVisible();
 }
 
+async function selectLocale(page: Page, locale: 'ja-JP' | 'en'): Promise<void> {
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/auth/preferences') && response.request().method() === 'PATCH',
+  );
+  await page.locator('.locale-switcher select').selectOption(locale);
+  await saved;
+}
+
 async function signOut(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.getByRole('button', { name: 'ログイン' })).toBeVisible();
@@ -192,5 +201,33 @@ test.describe('送信待ち打刻の所有者', () => {
     // 古い勤務日には打刻が入っていないが、画面は戻らない。
     await expect(page.locator('.work-state')).toHaveText('勤務中');
     await expect(page.locator('.punch-events li')).toHaveCount(1);
+  });
+
+  test('英語の画面では停止の理由も英語で出す', async ({ page }) => {
+    await signIn(page, E2E_PUNCH_BYSTANDER_EMPLOYEE);
+    await selectLocale(page, 'en');
+
+    const serverMessage = 'この操作を行う権限がありません';
+    await page.route('**/api/attendance/events', (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'forbidden', message: serverMessage } }),
+      }),
+    );
+
+    await page.getByRole('button', { name: 'Clock in', exact: true }).click();
+
+    const blocked = page.locator('.blocked-banner');
+    await expect(blocked).toContainText('Check your permissions');
+    // サーバーの文言は日本語のままなので、そのまま画面へ出さない。
+    await expect(blocked).not.toContainText(serverMessage);
+
+    await expect(page.locator('.pending-banner')).toContainText('waiting to be sent');
+    await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+
+    // 表示言語は利用者設定として保存されるため、後続のテストのために戻す。
+    await page.unroute('**/api/attendance/events');
+    await selectLocale(page, 'ja-JP');
   });
 });

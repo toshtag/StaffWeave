@@ -387,7 +387,6 @@ function EmployeeTodayAttendance({
       {snapshot.blocked !== null && (
         <p className="blocked-banner" role="status">
           {blockedLabel(snapshot.blocked.reason, messages)}
-          {snapshot.blocked.message !== '' && ` ${snapshot.blocked.message}`}
         </p>
       )}
 
