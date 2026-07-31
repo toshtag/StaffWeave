@@ -7,6 +7,7 @@ import { loginRequestSchema, sessionResponseSchema } from './schemas/auth.js';
 import { ORGANIZATION_SCOPE_DESCRIPTION } from './schemas/common.js';
 import {
   createWebhookEndpointRequestSchema,
+  createWebhookEndpointResponseSchema,
   webhookEndpointSchema,
 } from './schemas/integration.js';
 import { createEmployeeRequestSchema } from './schemas/organization.js';
@@ -152,6 +153,13 @@ describe('Webhook 送信先の契約', () => {
   it('登録の失敗を 400 として定義している', () => {
     const statuses = operations.createWebhookEndpoint.responses.map((response) => response.status);
     expect(statuses).toContain(400);
+  });
+
+  it('登録時の秘密の扱いを説明する', () => {
+    const response = createWebhookEndpointResponseSchema.properties as Record<string, JsonSchema>;
+
+    expect(response.secret?.description).toContain('一度だけ');
+    expect(response.secret?.description).toContain('connector');
   });
 
   // 署名鍵は署名を生成できる機密情報。契約へ現れた時点で外へ出せる状態になる。

@@ -80,8 +80,12 @@ export const createWebhookEndpointRequestSchema = objectSchema({
 export const createWebhookEndpointResponseSchema = objectSchema({
   properties: {
     endpoint: webhookEndpointSchema,
-    /** 署名の検証に使う秘密。この応答でしか返らない。 */
-    secret: { type: 'string' },
+    secret: {
+      type: 'string',
+      description:
+        '送信先の登録時に一度だけ返る Webhook 署名用の秘密。' +
+        '受け取り側は connector で署名鍵を導出して検証する',
+    },
   },
   required: ['endpoint', 'secret'],
 });
