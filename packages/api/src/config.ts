@@ -24,6 +24,8 @@ export interface ApiConfig {
   webDistPath: string | null;
   /** Webhook 送信先として許すネットワークの範囲。登録時の検査で使う。 */
   webhookNetworkPolicy: WebhookNetworkPolicyMode;
+  /** 送信先の登録時に、URL と名前解決を確かめる上限時間。 */
+  webhookTargetValidationTimeoutMs: number;
 }
 
 /** Webhook 送信ワーカーの動作設定。既定値と許容範囲はこの一箇所で決める。 */
@@ -46,6 +48,11 @@ interface IntegerSetting {
   min: number;
   max: number;
 }
+
+/** API が読む整数の設定。ワーカー側とは別に持ち、片方の設定ミスで両方を止めない。 */
+const API_SETTINGS = {
+  WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: { fallback: 3_000, min: 100, max: 30_000 },
+} as const satisfies Record<string, IntegerSetting>;
 
 const WEBHOOK_WORKER_SETTINGS = {
   WEBHOOK_WORKER_POLL_INTERVAL_MS: { fallback: 5_000, min: 100, max: 300_000 },
@@ -121,6 +128,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     cardFingerprintKey: env.CARD_FINGERPRINT_KEY ?? null,
     webDistPath: env.WEB_DIST_PATH ?? null,
     webhookNetworkPolicy: readWebhookNetworkPolicy(env.WEBHOOK_NETWORK_POLICY),
+    webhookTargetValidationTimeoutMs: readInteger(
+      'WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS',
+      env.WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS,
+      API_SETTINGS.WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS,
+    ),
   };
 }
 

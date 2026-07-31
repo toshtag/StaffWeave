@@ -8,7 +8,7 @@
  * 分類には Node.js 標準の `net.BlockList` を使い、外部の IP 解析ライブラリは足さない。
  */
 
-import { lookup } from 'node:dns/promises';
+import { Resolver } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import { MAXIMUM_WEBHOOK_URL_LENGTH, MINIMUM_WEBHOOK_URL_LENGTH } from '@staffweave/domain';
 
@@ -20,8 +20,16 @@ export interface ResolvedAddress {
   family: 4 | 6;
 }
 
-/** ホスト名から接続先候補を得る。テストから差し替えられるようにする。 */
-export type WebhookHostResolver = (hostname: string) => Promise<ResolvedAddress[]>;
+/**
+ * ホスト名から接続先候補を得る。テストから差し替えられるようにする。
+ *
+ * 中断信号を受け取り、上限時間を過ぎた解決を打ち切れるようにする。
+ * 打ち切れないと、遅い送信先を並べるだけで API の応答を滞留させられる。
+ */
+export type WebhookHostResolver = (
+  hostname: string,
+  signal: AbortSignal,
+) => Promise<ResolvedAddress[]>;
 
 /** 検査を通った送信先。HTTP はこのアドレスへ接続する。 */
 export interface ResolvedWebhookTarget {
@@ -223,8 +231,8 @@ export function parseWebhookUrl(rawUrl: string): URL {
 }
 
 export interface WebhookNetworkPolicy {
-  /** URL を検査し、名前解決した全アドレスを確かめて、接続先を一つ決める。 */
-  resolve(rawUrl: string): Promise<ResolvedWebhookTarget>;
+  /** URL を検査し、名前解決した全アドレスを確かめて、接続先の候補を決める。 */
+  resolve(rawUrl: string, signal?: AbortSignal): Promise<ResolvedWebhookTarget>;
 }
 
 export interface WebhookNetworkPolicyDependencies {
@@ -232,13 +240,58 @@ export interface WebhookNetworkPolicyDependencies {
   resolver?: WebhookHostResolver;
 }
 
-const defaultResolver: WebhookHostResolver = async (hostname) => {
-  const results = await lookup(hostname, { all: true, verbatim: true });
-  return results.map((result) => ({
-    address: result.address,
-    family: result.family === 6 ? 6 : 4,
-  }));
+/**
+ * 既定の名前解決。
+ *
+ * `dns.lookup()` は使わない。OS の `getaddrinfo()` を固定数のスレッドで動かすため
+ * 打ち切れず、遅い解決が溜まると同じプロセスの他の処理まで巻き込む。
+ * `Resolver` なら中断でき、問い合わせもイベントループ側で行われる。
+ *
+ * 代償として `hosts` ファイルだけにある別名は解決できない。ローカル宛の送信先は
+ * DNS で解決できる名前か IP リテラルで指定する。README に記載している。
+ */
+const defaultResolver: WebhookHostResolver = async (hostname, signal) => {
+  const resolver = new Resolver();
+  const cancel = (): void => resolver.cancel();
+  if (signal.aborted) cancel();
+  signal.addEventListener('abort', cancel, { once: true });
+
+  try {
+    // 片方の種別にレコードが無くても、他方が引けていれば送信先として使える。
+    const [ipv4, ipv6] = await Promise.allSettled([
+      resolver.resolve4(hostname),
+      resolver.resolve6(hostname),
+    ]);
+    if (ipv4.status === 'rejected' && ipv6.status === 'rejected') throw ipv4.reason;
+
+    // IPv4 を先に並べる。セルフホストでは IPv6 の経路が無いことが珍しくなく、
+    // 先頭から試す実装で無駄な待ちを作らないため。
+    return dedupeAddresses([
+      ...(ipv4.status === 'fulfilled'
+        ? ipv4.value.map((address) => ({ address, family: 4 as const }))
+        : []),
+      ...(ipv6.status === 'fulfilled'
+        ? ipv6.value.map((address) => ({ address, family: 6 as const }))
+        : []),
+    ]);
+  } finally {
+    signal.removeEventListener('abort', cancel);
+  }
 };
+
+/** 同じアドレスを繰り返し試さない。順序は入力のまま保つ。 */
+function dedupeAddresses(addresses: readonly ResolvedAddress[]): ResolvedAddress[] {
+  const seen = new Set<string>();
+  return addresses.filter((candidate) => {
+    const key = `${candidate.family}:${candidate.address}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** 中断されない信号。呼び出し側が上限時間を持たない場合に使う。 */
+const NEVER_ABORTED = new AbortController().signal;
 
 export function createWebhookNetworkPolicy(
   deps: WebhookNetworkPolicyDependencies,
@@ -246,7 +299,7 @@ export function createWebhookNetworkPolicy(
   const resolve = deps.resolver ?? defaultResolver;
 
   return {
-    async resolve(rawUrl) {
+    async resolve(rawUrl, signal) {
       const url = parseWebhookUrl(rawUrl);
       const hostname = bareHostname(url);
 
@@ -263,7 +316,7 @@ export function createWebhookNetworkPolicy(
 
       let addresses: ResolvedAddress[];
       try {
-        addresses = await resolve(hostname);
+        addresses = dedupeAddresses(await resolve(hostname, signal ?? NEVER_ABORTED));
       } catch {
         throw new WebhookTargetError('Webhook 送信先の名前を解決できません');
       }
@@ -297,6 +350,40 @@ export function createWebhookNetworkPolicy(
 /** 送信先を登録してよいかを判断する。API から使う。 */
 export type WebhookTargetValidator = (rawUrl: string) => Promise<{ canonicalUrl: string }>;
 
-export function createWebhookTargetValidator(policy: WebhookNetworkPolicy): WebhookTargetValidator {
-  return async (rawUrl) => ({ canonicalUrl: (await policy.resolve(rawUrl)).url.href });
+export interface WebhookTargetValidatorOptions {
+  /**
+   * 登録の検査を打ち切るまでの時間。
+   *
+   * 登録の応答はこの検査を待つ。上限が無いと、解決に時間のかかる送信先を並べるだけで
+   * API の応答を滞留させられる。ワーカー側は送信全体の上限時間を使う。
+   */
+  timeoutMs: number;
+}
+
+export function createWebhookTargetValidator(
+  policy: WebhookNetworkPolicy,
+  options: WebhookTargetValidatorOptions,
+): WebhookTargetValidator {
+  return async (rawUrl) => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    // 打ち切りは中断信号だけに任せない。信号を見ない解決器を渡されても上限を守るため。
+    const expired = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new WebhookTargetError('Webhook 送信先を制限時間内に確認できませんでした'));
+      }, options.timeoutMs);
+    });
+
+    const checked = policy
+      .resolve(rawUrl, controller.signal)
+      .then((target) => ({ canonicalUrl: target.url.href }));
+
+    try {
+      return await Promise.race([checked, expired]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 }

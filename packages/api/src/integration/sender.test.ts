@@ -161,6 +161,24 @@ describe('createWebhookSender', () => {
       expect(called).toBe(false);
     });
 
+    it('送信の中断信号を解決器へ渡す', async () => {
+      let aborted = false;
+      const send = sender({
+        timeoutMs: 20,
+        resolver: (_hostname, signal) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => {
+              aborted = true;
+              reject(new Error('中断しました'));
+            });
+          }),
+        transport: async () => responded(204),
+      });
+
+      await send(request);
+      expect(aborted).toBe(true);
+    });
+
     it('名前解決の失敗を利用者向けの文言へ変える', async () => {
       const send = sender({
         resolver: async () => {

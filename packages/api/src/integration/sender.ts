@@ -85,7 +85,8 @@ export function createWebhookSender(deps: WebhookSenderDependencies): WebhookSen
     });
 
     const attempt = (async () => {
-      const target = await policy.resolve(request.url);
+      // 名前解決も送信全体の上限時間へ含める。中断できないと打ち切りが効かない。
+      const target = await policy.resolve(request.url, controller.signal);
       // 名前解決に上限時間を使い切っていたら、新しい接続は開かない。
       if (controller.signal.aborted) {
         throw new Error(`送信が ${deps.timeoutMs} ミリ秒で完了しませんでした`);

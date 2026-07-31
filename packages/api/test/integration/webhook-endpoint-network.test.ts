@@ -25,11 +25,12 @@ let adminCookie: string;
 function app(
   resolver: WebhookHostResolver = fixedResolver(),
   mode: WebhookNetworkPolicyMode = 'public-only',
+  timeoutMs?: number,
 ) {
   return createApp({
     db: testDatabase(),
     defaultWorkspaceSlug: 'default',
-    webhookTargetValidator: testWebhookTargetValidator(resolver, mode),
+    webhookTargetValidator: testWebhookTargetValidator(resolver, mode, timeoutMs),
   });
 }
 
@@ -37,8 +38,9 @@ async function register(
   url: string,
   resolver?: WebhookHostResolver,
   mode?: WebhookNetworkPolicyMode,
+  timeoutMs?: number,
 ): Promise<Response> {
-  return app(resolver, mode).request(
+  return app(resolver, mode, timeoutMs).request(
     '/api/webhook-endpoints',
     authorized(adminCookie, {
       method: 'POST',
@@ -149,6 +151,44 @@ describe('Webhook 送信先の登録', () => {
       expect(await endpointCount()).toBe(0);
     },
   );
+
+  describe('名前解決の上限時間', () => {
+    it('解決が終わらなければ 400 を返し、送信先を作らない', async () => {
+      const response = await register(
+        'https://slow.example.test/hook',
+        () => new Promise(() => {}),
+        'public-only',
+        20,
+      );
+      const body = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(400);
+      expect(body.error.details?.[0]).toEqual({
+        field: 'url',
+        message: 'Webhook 送信先を制限時間内に確認できませんでした',
+      });
+      expect(await endpointCount()).toBe(0);
+    });
+
+    // 打ち切った後で解決が終わっても、遅れて登録されてはならない。
+    it('打ち切った後に解決が終わっても送信先を作らない', async () => {
+      let settle: ((addresses: { address: string; family: 4 | 6 }[]) => void) | undefined;
+      const response = await register(
+        'https://slow.example.test/hook',
+        () =>
+          new Promise((resolve) => {
+            settle = resolve;
+          }),
+        'public-only',
+        20,
+      );
+      expect(response.status).toBe(400);
+
+      settle?.([{ address: PUBLIC_TEST_ADDRESS, family: 4 }]);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(await endpointCount()).toBe(0);
+    });
+  });
 
   describe('URL の長さ', () => {
     const withPath = (length: number): string => {

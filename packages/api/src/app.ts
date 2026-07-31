@@ -66,6 +66,8 @@ export interface AppDependencies {
   webhookNetworkPolicy?: WebhookNetworkPolicyMode;
   /** 送信先の検査。テストから名前解決を伴わない実装へ差し替えるために開ける。 */
   webhookTargetValidator?: WebhookTargetValidator;
+  /** 送信先の登録時に、URL と名前解決を確かめる上限時間。 */
+  webhookTargetValidationTimeoutMs?: number;
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -99,6 +101,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       deps.webhookTargetValidator ??
       createWebhookTargetValidator(
         createWebhookNetworkPolicy({ mode: deps.webhookNetworkPolicy ?? 'public-only' }),
+        { timeoutMs: deps.webhookTargetValidationTimeoutMs ?? 3_000 },
       ),
   });
 

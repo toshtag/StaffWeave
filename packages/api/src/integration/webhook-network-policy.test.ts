@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { WebhookHostResolver, WebhookNetworkPolicyMode } from './webhook-network-policy.js';
 import {
   createWebhookNetworkPolicy,
+  createWebhookTargetValidator,
   isAllowedAddress,
   parseWebhookUrl,
   WebhookTargetError,
@@ -344,6 +345,62 @@ describe('createWebhookNetworkPolicy', () => {
           'https://example.test/hook',
         ),
       ).rejects.toThrow(/^(?!.*10\.1\.2\.3).*$/);
+    });
+  });
+
+  describe('createWebhookTargetValidator', () => {
+    const validator = (resolver: WebhookHostResolver, timeoutMs = 1_000) =>
+      createWebhookTargetValidator(createWebhookNetworkPolicy({ mode: 'public-only', resolver }), {
+        timeoutMs,
+      });
+
+    it('検査を通れば正規化した URL を返す', async () => {
+      const check = validator(async () => [{ address: PUBLIC_ADDRESS, family: 4 }]);
+      await expect(check('HTTPS://example.test:443/hook')).resolves.toEqual({
+        canonicalUrl: 'https://example.test/hook',
+      });
+    });
+
+    // 上限が無いと、解決に時間のかかる送信先を並べるだけで登録の応答を滞留させられる。
+    it('解決が終わらなければ上限時間で打ち切る', async () => {
+      const check = validator(() => new Promise(() => {}), 20);
+      await expect(check('https://slow.example.test/hook')).rejects.toThrow(
+        'Webhook 送信先を制限時間内に確認できませんでした',
+      );
+    });
+
+    it('打ち切るときに解決器へ中断を通知する', async () => {
+      let aborted = false;
+      const check = validator(
+        (_hostname, signal) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => {
+              aborted = true;
+              reject(new Error('中断しました'));
+            });
+          }),
+        20,
+      );
+
+      await expect(check('https://slow.example.test/hook')).rejects.toThrow(WebhookTargetError);
+      expect(aborted).toBe(true);
+    });
+
+    it('打ち切った後に解決が終わっても結果を返さない', async () => {
+      let settle: ((addresses: { address: string; family: 4 | 6 }[]) => void) | undefined;
+      const check = validator(
+        () =>
+          new Promise((resolve) => {
+            settle = resolve;
+          }),
+        20,
+      );
+
+      const checking = check('https://slow.example.test/hook');
+      await expect(checking).rejects.toThrow(WebhookTargetError);
+
+      settle?.([{ address: PUBLIC_ADDRESS, family: 4 }]);
+      await expect(checking).rejects.toThrow(WebhookTargetError);
     });
   });
 

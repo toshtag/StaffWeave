@@ -47,6 +47,7 @@ services:
       WEB_DIST_PATH: /app/packages/web/dist
       # 送信先の制限は API とワーカーで同じ値にする。片方だけ緩い状態を作らない。
       WEBHOOK_NETWORK_POLICY: ${WEBHOOK_NETWORK_POLICY:-public-only}
+      WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: ${WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS:-3000}
     ports:
       - '${APP_HOST_PORT:-8787}:8787'
 

@@ -35,8 +35,11 @@ export function fixedResolver(address = PUBLIC_TEST_ADDRESS): WebhookHostResolve
 export function testWebhookTargetValidator(
   resolver: WebhookHostResolver = fixedResolver(),
   mode: WebhookNetworkPolicyMode = 'public-only',
+  timeoutMs = 1_000,
 ): WebhookTargetValidator {
-  return createWebhookTargetValidator(createWebhookNetworkPolicy({ mode, resolver }));
+  return createWebhookTargetValidator(createWebhookNetworkPolicy({ mode, resolver }), {
+    timeoutMs,
+  });
 }
 
 export interface SentWebhook {

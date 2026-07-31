@@ -17,6 +17,7 @@ describe('loadApiConfig', () => {
       cardFingerprintKey: null,
       webDistPath: null,
       webhookNetworkPolicy: 'public-only',
+      webhookTargetValidationTimeoutMs: 3_000,
     });
   });
 
@@ -62,6 +63,24 @@ describe('loadApiConfig', () => {
       loadApiConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_NETWORK_POLICY: 'disabled' }),
     ).toThrow(ConfigurationError);
   });
+
+  it('登録時の検査の上限時間を読む', () => {
+    expect(
+      loadApiConfig({
+        DATABASE_URL: 'postgres://x',
+        WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: '5000',
+      }).webhookTargetValidationTimeoutMs,
+    ).toBe(5_000);
+  });
+
+  it.each(['99', '30001', '3.5', 'すぐ'])(
+    '登録時の検査の上限時間が %s なら設定エラーになる',
+    (raw) => {
+      expect(() =>
+        loadApiConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: raw }),
+      ).toThrow(ConfigurationError);
+    },
+  );
 });
 
 describe('loadWebhookWorkerConfig', () => {
@@ -121,6 +140,16 @@ describe('loadWebhookWorkerConfig', () => {
     expect(() =>
       loadWebhookWorkerConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_NETWORK_POLICY: 'invalid' }),
     ).toThrow(/public-only または allow-local/);
+  });
+
+  // 登録時の検査は API だけが行う。ワーカーは送信全体の上限時間を使う。
+  it('登録時の検査の上限時間が不正でもワーカーは起動できる', () => {
+    expect(
+      loadWebhookWorkerConfig({
+        DATABASE_URL: 'postgres://x',
+        WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: 'すぐ',
+      }).sendTimeoutMs,
+    ).toBe(10_000);
   });
 
   describe('占有時間と送信上限の関係', () => {

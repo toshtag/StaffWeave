@@ -12,6 +12,7 @@ const app = createApp({
   useSecureCookie: config.environment === 'production',
   cardFingerprintKey: config.cardFingerprintKey,
   webhookNetworkPolicy: config.webhookNetworkPolicy,
+  webhookTargetValidationTimeoutMs: config.webhookTargetValidationTimeoutMs,
 });
 
 // セルフホストでは、ビルド済みの Web を同じプロセスから配信できるようにする。
