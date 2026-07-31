@@ -47,7 +47,18 @@ export interface CardRepository {
     },
   ): Promise<void>;
   findRegistrationTokenByHash(tokenHash: string): Promise<CardRegistrationToken | null>;
-  markRegistrationTokenUsed(id: string, usedAt: Date): Promise<void>;
+  /**
+   * まだ使われておらず、有効期限内の登録トークンだけを使用済みにする。
+   *
+   * 一度きりを決めるのはこの更新であり、事前の検査ではない。
+   * 同じトークンで同時に届いた要求のうち、消費できるのは 1 件だけで、
+   * 残りは `false` を受け取る。
+   */
+  markRegistrationTokenUsedIfAvailable(
+    workspaceId: string,
+    id: string,
+    usedAt: Date,
+  ): Promise<boolean>;
 }
 
 interface CredentialRow {
@@ -182,11 +193,21 @@ export function createCardRepository(db: Queryable): CardRepository {
       };
     },
 
-    async markRegistrationTokenUsed(id, usedAt) {
-      await db.query('UPDATE card_registration_tokens SET used_at = $2 WHERE id = $1', [
-        id,
-        usedAt,
-      ]);
+    async markRegistrationTokenUsedIfAvailable(workspaceId, id, usedAt) {
+      const rows = await db.query<{ id: string }>(
+        `UPDATE card_registration_tokens
+            SET used_at = $3
+          WHERE workspace_id = $1
+            AND id = $2
+            -- 未使用であることと有効期限内であることを、更新の条件としても課す。
+            -- 先に読んだ結果ではなく、この条件に合致したことが消費の証跡になる。
+            AND used_at IS NULL
+            AND expires_at > $3
+          RETURNING id`,
+        [workspaceId, id, usedAt],
+      );
+      // 0 行なら、同じトークンを使う別の要求が先に消費している。
+      return rows.length > 0;
     },
   };
 }

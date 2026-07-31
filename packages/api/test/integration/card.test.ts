@@ -246,6 +246,33 @@ describe('カードの登録', () => {
     expect(second.status).toBe(401);
   });
 
+  it('登録に失敗した登録トークンは消費されず、別のカードで使い直せる', async () => {
+    const instance = app();
+    const firstToken = await issueRegistrationToken(instance, fixture, fixture.employeeId);
+    await registerCard(instance, fixture, {
+      registrationToken: firstToken,
+      rawCardId: 'TAKEN-CARD',
+    });
+
+    // すでに他人が使っているカードで登録し、失敗させる。
+    const secondToken = await issueRegistrationToken(instance, fixture, fixture.secondEmployeeId);
+    const rejected = await registerCard(instance, fixture, {
+      registrationToken: secondToken,
+      rawCardId: 'TAKEN-CARD',
+    });
+    expect(rejected.status).toBe(409);
+
+    const retried = await registerCard(instance, fixture, {
+      registrationToken: secondToken,
+      rawCardId: 'FREE-CARD',
+    });
+
+    expect(retried.status).toBe(201);
+    expect(((await retried.json()) as CardCredentialRecord).employeeId).toBe(
+      fixture.secondEmployeeId,
+    );
+  });
+
   it('有効期限が切れた登録トークンは使えない', async () => {
     const instance = app();
     const token = await issueRegistrationToken(instance, fixture, fixture.employeeId);
