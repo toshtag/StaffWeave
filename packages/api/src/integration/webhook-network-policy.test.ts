@@ -40,6 +40,7 @@ describe('isAllowedAddress', () => {
       '198.18.0.1',
       '198.51.100.1',
       '203.0.113.1',
+      '168.63.129.16',
       '224.0.0.1',
       '255.255.255.255',
     ])('IPv4 の %s を拒む', (address) => {
@@ -125,9 +126,18 @@ describe('isAllowedAddress', () => {
 
     // ユニークローカルの中にあるメタデータエンドポイント。fc00::/7 を許しても、
     // 常時拒否の判定を先に行うためここは通らない。
-    it('明示設定でも IPv6 のメタデータエンドポイントは拒む', () => {
-      expect(isAllowedAddress('fd00:ec2::254', 'allow-local')).toBe(false);
-      expect(isAllowedAddress('fd00:ec2::254', 'public-only')).toBe(false);
+    it.each(['fd00:ec2::254', 'fd20:ce::254'])(
+      '明示設定でも IPv6 のメタデータエンドポイント %s は拒む',
+      (address) => {
+        expect(isAllowedAddress(address, 'allow-local')).toBe(false);
+        expect(isAllowedAddress(address, 'public-only')).toBe(false);
+      },
+    );
+
+    // 公開空間にありながら、基盤の内部通信へ割り当てられている仮想アドレス。
+    it('明示設定でもプラットフォーム内部の仮想アドレスは拒む', () => {
+      expect(isAllowedAddress('168.63.129.16', 'allow-local')).toBe(false);
+      expect(isAllowedAddress('168.63.129.16', 'public-only')).toBe(false);
     });
   });
 });

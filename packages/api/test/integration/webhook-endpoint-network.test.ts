@@ -137,6 +137,19 @@ describe('Webhook 送信先の登録', () => {
     expect((await register(url)).status).toBe(400);
   });
 
+  it.each(['fd00:ec2::254', 'fd20:ce::254', '168.63.129.16'])(
+    '内部基盤の宛先 %s へ解決されるホストは allow-local でも拒む',
+    async (address) => {
+      const response = await register(
+        'https://internal.example.test/hook',
+        fixedResolver(address),
+        'allow-local',
+      );
+      expect(response.status).toBe(400);
+      expect(await endpointCount()).toBe(0);
+    },
+  );
+
   describe('URL の長さ', () => {
     const withPath = (length: number): string => {
       const prefix = 'https://hooks.example.test/';
