@@ -1,7 +1,8 @@
 import type { RecordAttendanceEventResponse } from '@staffweave/contracts';
 import { describe, expect, it, vi } from 'vitest';
+import { ApiRequestError } from '../api/client.ts';
 import type { PendingPunch, PunchQueueDependencies, PunchQueueOwner } from './punch-queue.ts';
-import { createPunchQueue, storageKeyOf } from './punch-queue.ts';
+import { classifyPunchFailure, createPunchQueue, storageKeyOf } from './punch-queue.ts';
 
 /**
  * 送信待ち行列の単体テスト。
@@ -197,6 +198,149 @@ describe('送信待ち行列の所有者境界', () => {
 
     expect(queue.snapshot().pending).toHaveLength(0);
     expect(harness.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('送信できなかったときの扱い', () => {
+  function harnessWithOnePunch(): Harness {
+    const storage = createFakeStorage({
+      [storageKeyOf(OWNER_A)]: storedQueue(OWNER_A, [punch('request-a')]),
+    });
+    return createHarness(storage);
+  }
+
+  it('取り除いてよい応答は 400 invalid_request と 409 conflict だけとする', () => {
+    expect(classifyPunchFailure(new ApiRequestError(400, 'invalid_request', ''))) //
+      .toBe('permanent_rejection');
+    expect(classifyPunchFailure(new ApiRequestError(409, 'conflict', ''))) //
+      .toBe('permanent_rejection');
+    expect(classifyPunchFailure(new ApiRequestError(401, 'unauthenticated', ''))) //
+      .toBe('authentication_required');
+    expect(classifyPunchFailure(new ApiRequestError(403, 'forbidden', ''))) //
+      .toBe('permission_blocked');
+    expect(classifyPunchFailure(new ApiRequestError(500, 'internal_error', ''))) //
+      .toBe('retry_later');
+    expect(classifyPunchFailure(new ApiRequestError(404, 'not_found', ''))) //
+      .toBe('retry_later');
+    expect(classifyPunchFailure(new ApiRequestError(418, 'unknown', ''))) //
+      .toBe('retry_later');
+    expect(classifyPunchFailure(new TypeError('offline'))).toBe('retry_later');
+  });
+
+  it('401 では打刻を残し、再ログインが必要だと伝える', async () => {
+    const harness = harnessWithOnePunch();
+    harness.send.mockRejectedValue(
+      new ApiRequestError(401, 'unauthenticated', 'セッションの有効期限が切れました'),
+    );
+    const onAuthenticationRequired = vi.fn();
+
+    const queue = createPunchQueue(
+      { ...noopOptions(OWNER_A), onAuthenticationRequired },
+      harness.dependencies,
+    );
+    await queue.flush();
+
+    expect(queue.snapshot().pending).toHaveLength(1);
+    expect(queue.snapshot().blocked).toEqual({
+      reason: 'authentication_required',
+      message: 'セッションの有効期限が切れました',
+    });
+    expect(onAuthenticationRequired).toHaveBeenCalledTimes(1);
+  });
+
+  it('401 では後続の打刻も送らない', async () => {
+    const storage = createFakeStorage({
+      [storageKeyOf(OWNER_A)]: storedQueue(OWNER_A, [punch('request-1'), punch('request-2')]),
+    });
+    const harness = createHarness(storage);
+    harness.send.mockRejectedValue(new ApiRequestError(401, 'unauthenticated', ''));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.flush();
+
+    expect(harness.send).toHaveBeenCalledTimes(1);
+    expect(queue.snapshot().pending).toHaveLength(2);
+  });
+
+  it('403 では打刻を残し、設定の確認が必要だと伝える', async () => {
+    const harness = harnessWithOnePunch();
+    harness.send.mockRejectedValue(
+      new ApiRequestError(403, 'forbidden', 'この操作を行う権限がありません'),
+    );
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.flush();
+
+    expect(queue.snapshot().pending).toHaveLength(1);
+    expect(queue.snapshot().blocked?.reason).toBe('permission_blocked');
+  });
+
+  it('500 では打刻を残す', async () => {
+    const harness = harnessWithOnePunch();
+    harness.send.mockRejectedValue(new ApiRequestError(500, 'internal_error', ''));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.flush();
+
+    expect(queue.snapshot().pending).toHaveLength(1);
+    expect(queue.snapshot().blocked?.reason).toBe('retry_later');
+  });
+
+  it('契約にない応答でも打刻を消さない', async () => {
+    const harness = harnessWithOnePunch();
+    harness.send.mockRejectedValue(new ApiRequestError(404, 'not_found', ''));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.flush();
+
+    expect(queue.snapshot().pending).toHaveLength(1);
+  });
+
+  it('400 invalid_request では対象の打刻だけを取り除く', async () => {
+    const storage = createFakeStorage({
+      [storageKeyOf(OWNER_A)]: storedQueue(OWNER_A, [punch('request-1'), punch('request-2')]),
+    });
+    const harness = createHarness(storage);
+    harness.send.mockRejectedValueOnce(
+      new ApiRequestError(400, 'invalid_request', '要求の内容が正しくありません'),
+    );
+    const onRejected = vi.fn();
+
+    const queue = createPunchQueue({ ...noopOptions(OWNER_A), onRejected }, harness.dependencies);
+    await queue.flush();
+
+    expect(onRejected).toHaveBeenCalledTimes(1);
+    expect(harness.send).toHaveBeenCalledTimes(2);
+    expect(queue.snapshot().pending).toHaveLength(0);
+    expect(queue.snapshot().blocked).toBeNull();
+  });
+
+  it('409 conflict では対象の打刻だけを取り除く', async () => {
+    const storage = createFakeStorage({
+      [storageKeyOf(OWNER_A)]: storedQueue(OWNER_A, [punch('request-1'), punch('request-2')]),
+    });
+    const harness = createHarness(storage);
+    harness.send.mockRejectedValueOnce(new ApiRequestError(409, 'conflict', 'すでに退勤済みです'));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.flush();
+
+    expect(harness.send).toHaveBeenCalledTimes(2);
+    expect(queue.snapshot().pending).toHaveLength(0);
+  });
+
+  it('送信できるようになれば停止の理由を消す', async () => {
+    const harness = harnessWithOnePunch();
+    harness.send.mockRejectedValueOnce(new ApiRequestError(401, 'unauthenticated', ''));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.flush();
+    expect(queue.snapshot().blocked?.reason).toBe('authentication_required');
+
+    await queue.flush();
+
+    expect(queue.snapshot().blocked).toBeNull();
+    expect(queue.snapshot().pending).toHaveLength(0);
   });
 });
 

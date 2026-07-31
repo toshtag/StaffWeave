@@ -1,12 +1,18 @@
 import type { LoginRequest, SessionResponse } from '@staffweave/contracts';
 import type { ReactNode } from 'react';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { ApiRequestError, api } from '../api/client.ts';
+import { api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
+
+/**
+ * ログイン画面へ戻った理由。
+ * 利用者の操作によるログアウトと、有効期限切れで戻された場合を区別する。
+ */
+export type SessionExpiryReason = 'pending_punches';
 
 type SessionState =
   | { status: 'loading' }
-  | { status: 'signed_out' }
+  | { status: 'signed_out'; expiry: SessionExpiryReason | null }
   | { status: 'signed_in'; session: SessionResponse };
 
 interface SessionContextValue {
@@ -14,6 +20,11 @@ interface SessionContextValue {
   signIn: (input: LoginRequest) => Promise<void>;
   signOut: () => Promise<void>;
   updateSession: (session: SessionResponse) => void;
+  /**
+   * 通信を伴わずに、この端末の上でだけセッションを期限切れにする。
+   * 認証が切れていると分かった時点でログイン画面へ戻すために使う。
+   */
+  markSessionExpired: (reason: SessionExpiryReason) => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -39,19 +50,18 @@ export function SessionProvider({ children }: { children: ReactNode }): React.JS
       .then((session) => {
         if (!cancelled) applySession(session);
       })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        if (error instanceof ApiRequestError && error.status === 401) {
-          setState({ status: 'signed_out' });
-          return;
-        }
-        setState({ status: 'signed_out' });
+      .catch(() => {
+        if (!cancelled) setState({ status: 'signed_out', expiry: null });
       });
 
     return () => {
       cancelled = true;
     };
   }, [applySession]);
+
+  const markSessionExpired = useCallback((reason: SessionExpiryReason) => {
+    setState({ status: 'signed_out', expiry: reason });
+  }, []);
 
   const value = useMemo<SessionContextValue>(
     () => ({
@@ -61,11 +71,12 @@ export function SessionProvider({ children }: { children: ReactNode }): React.JS
       },
       signOut: async () => {
         await api.logout();
-        setState({ status: 'signed_out' });
+        setState({ status: 'signed_out', expiry: null });
       },
       updateSession: applySession,
+      markSessionExpired,
     }),
-    [state, applySession],
+    [state, applySession, markSessionExpired],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

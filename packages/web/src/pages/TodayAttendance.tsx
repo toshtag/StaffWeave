@@ -15,8 +15,9 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
-import type { PunchQueue, PunchQueueSnapshot } from '../offline/punch-queue.ts';
+import type { PunchBlockedReason, PunchQueue, PunchQueueSnapshot } from '../offline/punch-queue.ts';
 import { createPunchQueue } from '../offline/punch-queue.ts';
+import { useSession } from '../session/SessionProvider.tsx';
 
 type LoadState =
   | { status: 'loading' }
@@ -57,6 +58,17 @@ function actionLabel(action: CorrectionAction, messages: Messages): string {
       return messages.actionVoid;
     case 'add':
       return messages.actionAdd;
+  }
+}
+
+function blockedLabel(reason: PunchBlockedReason, messages: Messages): string {
+  switch (reason) {
+    case 'authentication_required':
+      return messages.punchBlockedAuthentication;
+    case 'permission_blocked':
+      return messages.punchBlockedPermission;
+    case 'retry_later':
+      return messages.punchBlockedRetry;
   }
 }
 
@@ -132,12 +144,14 @@ function EmployeeTodayAttendance({
   employee: EmployeeSummary;
 }): React.JSX.Element {
   const { locale, messages } = useLocale();
+  const { markSessionExpired } = useSession();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<CorrectionDraft | null>(null);
   const [snapshot, setSnapshot] = useState<PunchQueueSnapshot>(() => ({
     pending: [],
+    blocked: null,
     hasLegacyEntries: false,
   }));
   const [online, setOnline] = useState(() => window.navigator.onLine);
@@ -167,17 +181,20 @@ function EmployeeTodayAttendance({
       owner: { workspaceId, userId, employeeId },
       onAccepted: (result) => setState({ status: 'ready', day: result.day }),
       onRejected: (_entry, message) => setError(message),
+      onAuthenticationRequired: () => markSessionExpired('pending_punches'),
     });
     const unsubscribe = created.subscribe(setSnapshot);
     setQueue(created);
+    // 認証が切れて残った打刻は online が起きないため、画面を開いた時点で送り直す。
+    void created.flush();
 
     return () => {
       unsubscribe();
       created.dispose();
       setQueue(null);
-      setSnapshot({ pending: [], hasLegacyEntries: false });
+      setSnapshot({ pending: [], blocked: null, hasLegacyEntries: false });
     };
-  }, [workspaceId, userId, employeeId]);
+  }, [workspaceId, userId, employeeId, markSessionExpired]);
 
   useEffect(() => {
     const update = (): void => setOnline(window.navigator.onLine);
@@ -324,10 +341,30 @@ function EmployeeTodayAttendance({
         </p>
       )}
 
+      {snapshot.blocked !== null && (
+        <p className="blocked-banner" role="status">
+          {blockedLabel(snapshot.blocked.reason, messages)}
+          {snapshot.blocked.message !== '' && ` ${snapshot.blocked.message}`}
+        </p>
+      )}
+
       {snapshot.hasLegacyEntries && (
         <p className="legacy-banner" role="status">
           {messages.legacyPendingPunches}
         </p>
+      )}
+
+      {online && snapshot.pending.length > 0 && (
+        <button
+          type="button"
+          className="retry-button"
+          onClick={() => {
+            setError(null);
+            void queue?.flush();
+          }}
+        >
+          {messages.retryPendingPunches}
+        </button>
       )}
 
       {punchDisabled && <p className="notice">{messages.editingLocked}</p>}

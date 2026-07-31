@@ -91,6 +91,11 @@ export interface Messages {
   offlineNotice: string;
   pendingPunches: (count: number) => string;
   legacyPendingPunches: string;
+  punchBlockedAuthentication: string;
+  punchBlockedPermission: string;
+  punchBlockedRetry: string;
+  retryPendingPunches: string;
+  sessionExpiredWithPendingPunches: string;
   skipToMain: string;
   discrepancies: string;
   noDiscrepancies: string;
@@ -193,6 +198,14 @@ const ja: Messages = {
   pendingPunches: (count) => `送信待ちの打刻が ${count} 件あります`,
   legacyPendingPunches:
     '以前の形式で保存された送信待ち打刻があります。所有者を確認できないため、自動送信していません。',
+  punchBlockedAuthentication:
+    '再ログインが必要です。送信待ちの打刻はこの端末に残しています。削除されていません。',
+  punchBlockedPermission:
+    '権限または従業員の設定を確認してください。送信待ちの打刻はこの端末に残しています。',
+  punchBlockedRetry: 'いま送信できません。送信待ちの打刻はこの端末に残しています。',
+  retryPendingPunches: '再送する',
+  sessionExpiredWithPendingPunches:
+    'セッションの有効期限が切れました。送信待ちの打刻はこの端末に残っています。同じ利用者でログインすると再送します。',
   skipToMain: '本文へ移動',
   discrepancies: 'PC の利用記録との食い違い',
   noDiscrepancies: '打刻と PC の利用記録に食い違いはありません',
@@ -295,6 +308,15 @@ const en: Messages = {
   pendingPunches: (count) => `${count} punch(es) waiting to be sent`,
   legacyPendingPunches:
     'Some punches are stored in an older format. Their owner cannot be confirmed, so they are not sent automatically.',
+  punchBlockedAuthentication:
+    'Signing in again is required. Punches waiting to be sent remain on this device and have not been deleted.',
+  punchBlockedPermission:
+    'Check your permissions or employee record. Punches waiting to be sent remain on this device.',
+  punchBlockedRetry:
+    'Punches cannot be sent right now. They remain on this device waiting to be sent.',
+  retryPendingPunches: 'Retry',
+  sessionExpiredWithPendingPunches:
+    'Your session has expired. Punches waiting to be sent remain on this device and are sent once you sign in as the same user.',
   skipToMain: 'Skip to main content',
   discrepancies: 'Differences from workstation activity',
   noDiscrepancies: 'No differences between punches and workstation activity',

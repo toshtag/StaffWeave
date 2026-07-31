@@ -48,8 +48,35 @@ interface StoredPunchQueue {
   entries: PendingPunch[];
 }
 
+/**
+ * 送信できなかった打刻の扱い。
+ *
+ * 行列から取り除いてよいのは、同じ要求をそのまま送り直しても結果が変わらないと
+ * API の契約で決まっているものだけとする。
+ * 判断できない失敗は残す側へ倒す。消してしまえば打刻は取り戻せない。
+ */
+export type PunchFailureDisposition =
+  | 'authentication_required'
+  | 'permission_blocked'
+  | 'permanent_rejection'
+  | 'retry_later';
+
+export function classifyPunchFailure(error: unknown): PunchFailureDisposition {
+  if (!(error instanceof ApiRequestError)) return 'retry_later';
+  if (error.status === 401 && error.code === 'unauthenticated') return 'authentication_required';
+  if (error.status === 403 && error.code === 'forbidden') return 'permission_blocked';
+  if (error.status === 400 && error.code === 'invalid_request') return 'permanent_rejection';
+  if (error.status === 409 && error.code === 'conflict') return 'permanent_rejection';
+  return 'retry_later';
+}
+
+/** 行列が止まっている理由。利用者へ次に何をすればよいかを伝えるために使う。 */
+export type PunchBlockedReason = Exclude<PunchFailureDisposition, 'permanent_rejection'>;
+
 export interface PunchQueueSnapshot {
   pending: PendingPunch[];
+  /** 送信を止めている理由。送れている間は null。 */
+  blocked: { reason: PunchBlockedReason; message: string } | null;
   /** 所有者が分からない旧形式の保存内容が残っているか。 */
   hasLegacyEntries: boolean;
 }
@@ -159,6 +186,8 @@ export interface PunchQueueOptions {
   onAccepted: (result: RecordAttendanceEventResponse) => void;
   /** 送信できたが受け付けられなかったときの通知。 */
   onRejected: (pending: PendingPunch, message: string) => void;
+  /** 認証が切れていたときの通知。打刻は残したまま、再ログインへ導くために使う。 */
+  onAuthenticationRequired?: () => void;
 }
 
 export function createPunchQueue(
@@ -171,6 +200,7 @@ export function createPunchQueue(
 
   const listeners = new Set<QueueListener>();
   let pending: PendingPunch[] = [];
+  let blocked: PunchQueueSnapshot['blocked'] = null;
   let flushing = false;
   let disposed = false;
 
@@ -200,7 +230,7 @@ export function createPunchQueue(
   }
 
   function currentSnapshot(): PunchQueueSnapshot {
-    return { pending: [...pending], hasLegacyEntries: hasLegacyEntries() };
+    return { pending: [...pending], blocked, hasLegacyEntries: hasLegacyEntries() };
   }
 
   function persist(): void {
@@ -234,24 +264,34 @@ export function createPunchQueue(
             source: 'mobile',
           });
           pending = pending.slice(1);
+          blocked = null;
           persist();
           notify();
           if (disposed) break;
           options.onAccepted(result);
         } catch (error) {
-          if (error instanceof ApiRequestError) {
-            // サーバーが受け取ったうえで断った打刻は、何度送っても結果は変わらない。
+          const disposition = classifyPunchFailure(error);
+          const message = error instanceof ApiRequestError ? error.message : '';
+
+          if (disposition === 'permanent_rejection') {
+            // 同じ要求をそのまま送り直しても成立しないと契約で決まっている応答だけを取り除く。
             pending = pending.slice(1);
+            blocked = null;
             persist();
             notify();
             if (disposed) break;
-            options.onRejected(entry, error.message);
+            options.onRejected(entry, message);
             continue;
           }
-          // 通信できない場合は行列に残し、次の機会に送る。
-          entry.attempts += 1;
+
+          // 送れなかった打刻は残す。後続も送らず、順番を保ったまま次の機会を待つ。
+          if (disposition === 'retry_later') entry.attempts += 1;
+          blocked = { reason: disposition, message };
           persist();
           notify();
+          if (disposition === 'authentication_required' && !disposed) {
+            options.onAuthenticationRequired?.();
+          }
           break;
         }
       }
