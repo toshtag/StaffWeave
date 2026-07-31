@@ -32,6 +32,20 @@ export const codeSchema: JsonSchema = {
 export const nameSchema: JsonSchema = { type: 'string', minLength: 1, maxLength: 200 };
 
 /**
+ * 端末が署名して送る要求の連番の正本。
+ *
+ * 連番は API の経路ごとではなく、登録端末ごとに一つである。打刻イベント・カード打刻・
+ * PC セッション観測は同じ連番を共有し、受理するたびに端末の最終連番が進む。
+ * 同じ説明を経路ごとに書き分けると、片方だけが古くなる。
+ */
+export const signedDeviceSequenceSchema: JsonSchema = {
+  type: 'integer',
+  minimum: 1,
+  description:
+    '登録端末ごとに単調増加する連番。打刻イベント・カード打刻・PC セッション観測で共有する',
+};
+
+/**
  * 閲覧範囲の説明の正本。
  *
  * 閲覧範囲は勤怠だけでなく、従業員一覧・勤務予定・配属・IC カードの資格情報・

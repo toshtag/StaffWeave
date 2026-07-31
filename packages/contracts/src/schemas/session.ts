@@ -1,6 +1,12 @@
 import { DISCREPANCY_KINDS, SESSION_OBSERVATION_TYPES } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
-import { businessDateSchema, codeSchema, timestampSchema, uuidSchema } from './common.js';
+import {
+  businessDateSchema,
+  codeSchema,
+  signedDeviceSequenceSchema,
+  timestampSchema,
+  uuidSchema,
+} from './common.js';
 
 export const sessionObservationSchema = objectSchema({
   description: 'PC セッションの観測。勤務時間そのものではなく、確認のための記録',
@@ -32,7 +38,7 @@ export const sessionObservationListSchema = objectSchema({
 export const recordSessionObservationsRequestSchema = objectSchema({
   description: '端末がまとめて送る PC セッションの観測',
   properties: {
-    sequence: { type: 'integer', minimum: 1 },
+    sequence: signedDeviceSequenceSchema,
     requestId: { type: 'string', minLength: 8, maxLength: 128 },
     workstationName: { type: 'string', minLength: 1, maxLength: 200 },
     observations: arraySchema(

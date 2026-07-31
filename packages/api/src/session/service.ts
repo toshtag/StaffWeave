@@ -9,6 +9,7 @@ import {
   businessDateOf,
   canonicalSessionObservations,
   detectDiscrepancies,
+  evaluateSequence,
   hasPermission,
   isBusinessDate,
 } from '@staffweave/domain';
@@ -19,9 +20,11 @@ import type { AuditRepository } from '../audit/repository.js';
 import type { DeviceRepository } from '../device/repository.js';
 import { verifySignature } from '../device/signature.js';
 import type { AuthenticatedContext } from '../identity/service.js';
+import { isUniqueViolation } from '../shared/database-errors.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
-import { ApiError, forbidden, invalidRequest } from '../shared/errors.js';
-import type { SessionObservationRepository } from './repository.js';
+import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.js';
+import type { SessionObservationReceipt, SessionObservationRepository } from './repository.js';
+import { SESSION_RECEIPT_REQUEST_CONSTRAINT } from './repository.js';
 
 export interface SessionRepositories extends DayRepositories {
   observations: SessionObservationRepository;
@@ -53,6 +56,156 @@ export interface SessionService {
     businessDate: string,
     employeeId?: string,
   ): Promise<DiscrepancyReport>;
+}
+
+const SEQUENCE_REPLAY_MESSAGE = '連番がすでに受け取った値以下です';
+
+/** 受け取り済みの要求への応答。断った要求も記録として残すため、例外は結果として持ち回る。 */
+type RequestOutcome =
+  | { kind: 'ok'; result: RecordSessionObservationsResponse; created: boolean }
+  | { kind: 'rejected'; error: ApiError };
+
+const DUPLICATE: RequestOutcome = {
+  kind: 'ok',
+  result: { outcome: 'duplicate', accepted: 0, skipped: 0 },
+  created: false,
+};
+
+/**
+ * すでに受領記録のある要求へ返す応答。
+ *
+ * 受理していれば再送として duplicate を返し、断っていれば同じ理由で断る。
+ * 元の件数は返さない。応答の意味は「この要求はすでに扱った」であり、
+ * 何件記録できたかを再送のたびに数え直すことではない。
+ */
+function replayOf(receipt: SessionObservationReceipt): RequestOutcome {
+  if (receipt.outcome === 'rejected') {
+    return { kind: 'rejected', error: new ApiError('conflict', SEQUENCE_REPLAY_MESSAGE) };
+  }
+  return DUPLICATE;
+}
+
+/**
+ * まとめ送り 1 回分を受け取る。
+ *
+ * 端末の行をロックし、同じ端末から届く署名要求を打刻イベントと合わせて直列化する。
+ * 連番は API の経路ごとではなく端末ごとに一つであり、devices.last_sequence が正本になる。
+ */
+async function runRequest(
+  deps: SessionServiceDependencies,
+  workspaceId: string,
+  deviceId: string,
+  input: RecordSessionObservationsRequest,
+  now: Date,
+): Promise<RequestOutcome> {
+  try {
+    return await deps.transaction(async (repositories) => {
+      const { observations, devices, attendance, audit } = repositories;
+      if (!(await devices.lock(workspaceId, deviceId))) throw notFound('端末');
+
+      // 再送の判定は連番より先に行う。最初の受理で連番が進んでいても、
+      // 同じ冪等キーで届いた要求は連番の再利用ではない。
+      const receipt = await observations.findReceiptByRequestId(workspaceId, input.requestId);
+      if (receipt) return replayOf(receipt);
+      // 0016 より前に受け取った要求には受領記録がないため、観測そのものを見る。
+      if (await observations.existsLegacyRequest(workspaceId, input.requestId)) return DUPLICATE;
+
+      const device = await devices.findById(workspaceId, deviceId);
+      if (!device) throw notFound('端末');
+
+      const sequenceStep = input.sequence - device.lastSequence;
+      if (evaluateSequence(device.lastSequence, input.sequence) === 'replay') {
+        // 冪等キーが違うのに連番が戻っている。記録として残したうえで断る。
+        await observations.insertReceipt(workspaceId, {
+          deviceId,
+          requestId: input.requestId,
+          sequence: input.sequence,
+          receivedAt: now,
+          sequenceStep,
+          outcome: 'rejected',
+          accepted: 0,
+          skipped: 0,
+          detail: { reason: 'sequence_replay', lastSequence: device.lastSequence },
+        });
+        return { kind: 'rejected', error: new ApiError('conflict', SEQUENCE_REPLAY_MESSAGE) };
+      }
+
+      let accepted = 0;
+      let skipped = 0;
+
+      for (const line of input.observations) {
+        const employee = await attendance.findEmployeeByNumber(workspaceId, line.employeeNumber);
+        if (!employee) {
+          // 従業員が見つからない観測は捨てるが、件数として返して気付けるようにする。
+          skipped += 1;
+          continue;
+        }
+
+        const timeZone = await resolveTimeZoneForEmployee(attendance, workspaceId, employee.id);
+        const occurredAt = new Date(line.occurredAt);
+
+        await observations.insert(workspaceId, {
+          employeeId: employee.id,
+          deviceId,
+          observationType: line.observationType,
+          occurredAt,
+          businessDate: businessDateOf(occurredAt, timeZone),
+          requestId: input.requestId,
+          workstationName: input.workstationName,
+        });
+        accepted += 1;
+      }
+
+      // 連番の欠落は受理する。届かなかった要求を待っても観測は戻らないため、
+      // 欠落した数を受領記録と監査へ残し、後から気付けるようにする。
+      const gap = sequenceStep > 1 ? { sequenceGap: sequenceStep - 1 } : {};
+
+      await observations.insertReceipt(workspaceId, {
+        deviceId,
+        requestId: input.requestId,
+        sequence: input.sequence,
+        receivedAt: now,
+        sequenceStep,
+        outcome: 'accepted',
+        accepted,
+        skipped,
+        detail: gap,
+      });
+
+      await audit.record(workspaceId, {
+        actorKind: 'device',
+        actorUserId: null,
+        action: 'session_observation.recorded',
+        targetType: 'workstation_session_observation',
+        targetId: null,
+        summary: `${input.workstationName} から PC の利用記録を ${accepted} 件受け取りました`,
+        detail: {
+          deviceId,
+          requestId: input.requestId,
+          sequence: input.sequence,
+          sequenceStep,
+          ...gap,
+          accepted,
+          skipped,
+          receivedAt: now,
+        },
+      });
+
+      await devices.updateSequence(workspaceId, deviceId, {
+        lastSequence: input.sequence,
+        lastSeenAt: now,
+      });
+
+      return { kind: 'ok', result: { outcome: 'accepted', accepted, skipped }, created: true };
+    });
+  } catch (error) {
+    // 同じ要求を別のトランザクションが先に確定させた。こちらが記録した観測・監査・連番は
+    // 受領記録と一緒に巻き戻っているため、先に確定した記録を読み直して同じ応答を返す。
+    if (!isUniqueViolation(error, SESSION_RECEIPT_REQUEST_CONSTRAINT)) throw error;
+    const receipt = await deps.observations.findReceiptByRequestId(workspaceId, input.requestId);
+    if (!receipt) throw error;
+    return replayOf(receipt);
+  }
 }
 
 /** 自分以外の従業員を対象にできるのは、閲覧権限を持つ利用者だけ。 */
@@ -102,57 +255,12 @@ export function createSessionService(deps: SessionServiceDependencies): SessionS
         }
       }
 
-      return deps.transaction(async (repositories) => {
-        const { observations, attendance, audit } = repositories;
+      // 断った要求も受領記録として残すため、トランザクションの中では例外を投げず、
+      // 結果を返してからコミット後に例外へ変換する。
+      const outcome = await runRequest(deps, workspaceId, deviceId, input, now);
 
-        if ((await observations.countByRequestId(workspaceId, input.requestId)) > 0) {
-          return {
-            result: { outcome: 'duplicate' as const, accepted: 0, skipped: 0 },
-            created: false,
-          };
-        }
-
-        let accepted = 0;
-        let skipped = 0;
-
-        for (const line of input.observations) {
-          const employee = await attendance.findEmployeeByNumber(workspaceId, line.employeeNumber);
-          if (!employee) {
-            // 従業員が見つからない観測は捨てるが、件数として返して気付けるようにする。
-            skipped += 1;
-            continue;
-          }
-
-          const timeZone = await resolveTimeZoneForEmployee(attendance, workspaceId, employee.id);
-          const occurredAt = new Date(line.occurredAt);
-
-          await observations.insert(workspaceId, {
-            employeeId: employee.id,
-            deviceId,
-            observationType: line.observationType,
-            occurredAt,
-            businessDate: businessDateOf(occurredAt, timeZone),
-            requestId: input.requestId,
-            workstationName: input.workstationName,
-          });
-          accepted += 1;
-        }
-
-        await audit.record(workspaceId, {
-          actorKind: 'device',
-          actorUserId: null,
-          action: 'session_observation.recorded',
-          targetType: 'workstation_session_observation',
-          targetId: null,
-          summary: `${input.workstationName} から PC の利用記録を ${accepted} 件受け取りました`,
-          detail: { deviceId, requestId: input.requestId, accepted, skipped, receivedAt: now },
-        });
-
-        return {
-          result: { outcome: 'accepted' as const, accepted, skipped },
-          created: true,
-        };
-      });
+      if (outcome.kind === 'rejected') throw outcome.error;
+      return { result: outcome.result, created: outcome.created };
     },
 
     async listObservations(context, query) {

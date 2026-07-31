@@ -1,6 +1,6 @@
 import { ATTENDANCE_EVENT_TYPES } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
-import { timestampSchema, uuidSchema } from './common.js';
+import { signedDeviceSequenceSchema, timestampSchema, uuidSchema } from './common.js';
 
 /** 一方向の指紋。生のカード識別子はここへ現れない。 */
 export const cardFingerprintSchema = {
@@ -57,7 +57,7 @@ export const registerCardRequestSchema = objectSchema({
 export const cardEventRequestSchema = objectSchema({
   description: '端末がカードの読み取りから作る打刻イベント',
   properties: {
-    sequence: { type: 'integer', minimum: 1 },
+    sequence: signedDeviceSequenceSchema,
     requestId: { type: 'string', minLength: 8, maxLength: 128 },
     cardFingerprint: cardFingerprintSchema,
     eventType: {

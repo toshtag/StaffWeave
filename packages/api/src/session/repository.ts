@@ -28,8 +28,6 @@ export interface SessionObservationReceipt {
 export const SESSION_RECEIPT_REQUEST_CONSTRAINT = 'workstation_session_receipts_request_key';
 
 export interface SessionObservationRepository {
-  /** 同じ冪等キーで記録済みかどうか。まとめ送りの再送を判定する。 */
-  countByRequestId(workspaceId: string, requestId: string): Promise<number>;
   /** 同じ冪等キーで受け取り済みかどうか。受理と拒否のどちらも残る。 */
   findReceiptByRequestId(
     workspaceId: string,
@@ -136,15 +134,6 @@ function toReceipt(row: ReceiptRow): SessionObservationReceipt {
 
 export function createSessionObservationRepository(db: Queryable): SessionObservationRepository {
   return {
-    async countByRequestId(workspaceId, requestId) {
-      const rows = await db.query<{ count: number }>(
-        `SELECT count(*)::int AS count FROM workstation_session_observations
-          WHERE workspace_id = $1 AND request_id = $2`,
-        [workspaceId, requestId],
-      );
-      return rows[0]?.count ?? 0;
-    },
-
     async findReceiptByRequestId(workspaceId, requestId) {
       const rows = await db.query<ReceiptRow>(
         `SELECT ${RECEIPT_COLUMNS} FROM workstation_session_receipts
