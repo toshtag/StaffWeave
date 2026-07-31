@@ -331,9 +331,9 @@ describe('複数の送信待ちがあるときのワーカー', () => {
   it('取得は 1 件ずつで、繰り返すと別の行が返る', async () => {
     const outbox = createWebhookOutboxRepository(testDatabase());
 
-    const first = await outbox.claimNext({ now: NOW, leaseMs: 60_000 });
-    const second = await outbox.claimNext({ now: NOW, leaseMs: 60_000 });
-    const third = await outbox.claimNext({ now: NOW, leaseMs: 60_000 });
+    const first = await outbox.claimNext({ leaseMs: 60_000 });
+    const second = await outbox.claimNext({ leaseMs: 60_000 });
+    const third = await outbox.claimNext({ leaseMs: 60_000 });
 
     expect(first).not.toBeNull();
     expect(second).not.toBeNull();
@@ -398,6 +398,24 @@ describe('複数の送信待ちがあるときのワーカー', () => {
 describe('送信待ちの取得と回復', () => {
   const LEASE_MS = 60_000;
 
+  /** DB の現在時刻。取得の判定はすべてこの時計で行われる。 */
+  async function databaseNow(): Promise<Date> {
+    const rows = await testDatabase().query<{ at: Date }>('SELECT statement_timestamp() AS at');
+    const at = rows[0]?.at;
+    if (!at) throw new Error('DB の時刻を取得できませんでした');
+    return at;
+  }
+
+  /** ワーカーが取得後に停止し、占有期限を過ぎた状態を作る。実時間は待たない。 */
+  async function expireClaim(id: string): Promise<void> {
+    await testDatabase().query(
+      `UPDATE webhook_outbox
+          SET claim_expires_at = statement_timestamp() - interval '1 millisecond'
+        WHERE id = $1`,
+      [id],
+    );
+  }
+
   beforeEach(async () => {
     await submitAndApprove(await setUp());
   });
@@ -405,35 +423,116 @@ describe('送信待ちの取得と回復', () => {
   it('取得中の送信待ちは他のワーカーが取れない', async () => {
     const outbox = createWebhookOutboxRepository(testDatabase());
 
-    const first = await outbox.claimNext({ now: NOW, leaseMs: LEASE_MS });
-    const second = await outbox.claimNext({ now: NOW, leaseMs: LEASE_MS });
+    const first = await outbox.claimNext({ leaseMs: LEASE_MS });
+    const second = await outbox.claimNext({ leaseMs: LEASE_MS });
 
     expect(first).not.toBeNull();
     expect(second).toBeNull();
+  });
+
+  it('取得の時刻と期限は DB が決める', async () => {
+    const outbox = createWebhookOutboxRepository(testDatabase());
+
+    const before = await databaseNow();
+    const entry = await outbox.claimNext({ leaseMs: LEASE_MS });
+    const after = await databaseNow();
+    if (!entry) throw new Error('送信待ちがありません');
+
+    const rows = await testDatabase().query<{ claimed_at: Date; claim_expires_at: Date }>(
+      'SELECT claimed_at, claim_expires_at FROM webhook_outbox WHERE id = $1',
+      [entry.id],
+    );
+    const claimedAt = rows[0]?.claimed_at;
+    const expiresAt = rows[0]?.claim_expires_at;
+    if (!claimedAt || !expiresAt) throw new Error('取得の印がありません');
+
+    // 呼び出しの前後で挟む。プロセス側から基準時刻を注入する余地がないことを示す。
+    expect(claimedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(claimedAt.getTime()).toBeLessThanOrEqual(after.getTime());
+    expect(expiresAt.getTime() - claimedAt.getTime()).toBe(LEASE_MS);
   });
 
   it('取得の期限が切れれば別のワーカーが同じ識別子で引き取れる', async () => {
     const outbox = createWebhookOutboxRepository(testDatabase());
 
     // 取得した後、完了を記録する前に停止した状態にあたる。
-    const first = await outbox.claimNext({ now: NOW, leaseMs: LEASE_MS });
-    const afterLease = new Date(NOW.getTime() + LEASE_MS + 1);
-    const second = await outbox.claimNext({ now: afterLease, leaseMs: LEASE_MS });
+    const first = await outbox.claimNext({ leaseMs: LEASE_MS });
+    if (!first) throw new Error('送信待ちがありません');
+    await expireClaim(first.id);
+    const second = await outbox.claimNext({ leaseMs: LEASE_MS });
 
     expect(second).not.toBeNull();
-    expect(second?.id).toBe(first?.id);
-    expect(second?.eventId).toBe(first?.eventId);
-    expect(second?.claimToken).not.toBe(first?.claimToken);
+    expect(second?.id).toBe(first.id);
+    expect(second?.eventId).toBe(first.eventId);
+    expect(second?.claimToken).not.toBe(first.claimToken);
   });
 
   it('取得の印が一致しなければ完了できない', async () => {
     const outbox = createWebhookOutboxRepository(testDatabase());
-    const entry = await outbox.claimNext({ now: NOW, leaseMs: LEASE_MS });
+    const entry = await outbox.claimNext({ leaseMs: LEASE_MS });
     if (!entry) throw new Error('送信待ちがありません');
 
-    expect(await outbox.complete(entry.id, randomUUID(), NOW)).toBe(false);
-    expect(await outbox.complete(entry.id, entry.claimToken, NOW)).toBe(true);
+    expect(await outbox.complete(entry.id, randomUUID())).toBe(false);
+    expect(await outbox.complete(entry.id, entry.claimToken)).toBe(true);
     // 完了した行はもう一度完了させられない。
-    expect(await outbox.complete(entry.id, entry.claimToken, NOW)).toBe(false);
+    expect(await outbox.complete(entry.id, entry.claimToken)).toBe(false);
+  });
+
+  it('完了した行には取得の印を残さない', async () => {
+    const outbox = createWebhookOutboxRepository(testDatabase());
+    const entry = await outbox.claimNext({ leaseMs: LEASE_MS });
+    if (!entry) throw new Error('送信待ちがありません');
+    await outbox.complete(entry.id, entry.claimToken);
+
+    const rows = await testDatabase().query<{
+      completed_at: Date | null;
+      claimed_at: Date | null;
+      claim_expires_at: Date | null;
+      claim_token: string | null;
+    }>(
+      `SELECT completed_at, claimed_at, claim_expires_at, claim_token
+         FROM webhook_outbox WHERE id = $1`,
+      [entry.id],
+    );
+
+    expect(rows[0]?.completed_at).not.toBeNull();
+    expect(rows[0]?.claimed_at).toBeNull();
+    expect(rows[0]?.claim_expires_at).toBeNull();
+    expect(rows[0]?.claim_token).toBeNull();
+    // 完了した行は再び取得されない。
+    expect(await outbox.claimNext({ leaseMs: LEASE_MS })).toBeNull();
+  });
+
+  it('発生時刻が未来でも送信待ちは直ちに取得できる', async () => {
+    const outbox = createWebhookOutboxRepository(testDatabase());
+    const rows = await testDatabase().query<{ workspace_id: string; endpoint_id: string }>(
+      'SELECT workspace_id, endpoint_id FROM webhook_outbox',
+    );
+    const row = rows[0];
+    if (!row) throw new Error('送信待ちがありません');
+
+    const tomorrow = new Date((await databaseNow()).getTime() + 24 * 60 * 60 * 1000);
+    await outbox.enqueue(row.workspace_id, {
+      endpointId: row.endpoint_id,
+      eventType: 'monthly_closing.closed',
+      eventId: 'future-1',
+      payload: {},
+      occurredAt: tomorrow,
+    });
+
+    // occurredAt は本文へ入れる業務時刻であって、送信の予定を決めない。
+    const claimedIds: string[] = [];
+    for (;;) {
+      const entry = await outbox.claimNext({ leaseMs: LEASE_MS });
+      if (!entry) break;
+      claimedIds.push(entry.eventId);
+    }
+    expect(claimedIds).toContain('future-1');
+
+    const stored = await testDatabase().query<{ occurred_at: Date; available_at: Date }>(
+      "SELECT occurred_at, available_at FROM webhook_outbox WHERE event_id = 'future-1'",
+    );
+    expect(stored[0]?.occurred_at.getTime()).toBe(tomorrow.getTime());
+    expect(stored[0]?.available_at.getTime()).toBeLessThan(tomorrow.getTime());
   });
 });

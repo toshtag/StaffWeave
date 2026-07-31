@@ -26,6 +26,10 @@ export interface WebhookDeliveryProcessorDependencies {
   outbox: WebhookOutboxRepository;
   deliveries: Pick<IntegrationRepository, 'recordDelivery'>;
   send: WebhookSender;
+  /**
+   * 送信を試みた時刻。署名の timestamp と送信履歴に使う。
+   * ワーカー同士の排他には使わない。そちらは PostgreSQL の時刻で決める。
+   */
   now: () => Date;
   claimLeaseMs: number;
   logger?: StructuredLogger;
@@ -100,14 +104,15 @@ export function createWebhookDeliveryProcessor(
       errorMessage: result.errorMessage,
     });
 
-    const completed = await deps.outbox.complete(entry.id, entry.claimToken, deps.now());
+    const completed = await deps.outbox.complete(entry.id, entry.claimToken);
     if (!completed) {
       // 送信が占有期限を超え、別のワーカーが引き取った後だと起こり得る。
       logger.error('outbox.complete_rejected', { outboxId: entry.id, eventId: entry.eventId });
       return;
     }
 
-    logger.info('webhook.delivered', {
+    // 送信の成否は outcome で表す。イベント名からは成功と読み取れないようにする。
+    logger.info('webhook.delivery_completed', {
       outboxId: entry.id,
       eventId: entry.eventId,
       eventType: entry.eventType,
@@ -118,17 +123,15 @@ export function createWebhookDeliveryProcessor(
 
   return {
     async processNext() {
-      const entry = await deps.outbox.claimNext({
-        now: deps.now(),
-        leaseMs: deps.claimLeaseMs,
-      });
+      const entry = await deps.outbox.claimNext({ leaseMs: deps.claimLeaseMs });
       if (entry === null) return false;
 
       // 1 件の失敗でループを止めない。処理できなかった行は取得の期限切れ後に拾い直す。
+      // HTTP の失敗とは別物なので、イベント名も分ける。
       try {
         await deliver(entry);
       } catch (error) {
-        logger.error('webhook.delivery_failed', {
+        logger.error('webhook.delivery_processing_failed', {
           outboxId: entry.id,
           eventId: entry.eventId,
           reason: error instanceof Error ? error.message : String(error),

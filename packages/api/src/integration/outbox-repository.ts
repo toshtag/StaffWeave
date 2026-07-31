@@ -10,6 +10,10 @@ import type { Queryable } from '@staffweave/db';
  * まだ手を付けていない行を別のワーカーが引き取って同時送信してしまう。
  * 占有期限が守るのは「送信中の 1 件」だけにする。
  *
+ * 取り出し可否と占有期限は、すべて PostgreSQL の時刻で決める。ワーカー同士の排他を
+ * 各プロセスの時計に任せると、時計がずれたワーカーが他のワーカーの占有を期限切れと
+ * 判断して同じ行を送ってしまう。呼び出し側から基準時刻は渡せないようにする。
+ *
  * `claimNext` は Workspace をまたいで走査する。利用者の要求ではなく背景処理であるため、
  * 他の Repository のように `workspaceId` で絞らない。取り出した行は `workspaceId` を保持し、
  * 以後の問い合わせではそれを境界として使う。
@@ -37,8 +41,7 @@ export interface ClaimedWebhookDelivery {
 }
 
 export interface ClaimNextInput {
-  now: Date;
-  /** 取得の有効期限。この時間を過ぎた取得は他のワーカーが引き取れる。 */
+  /** 占有する時間。この時間を過ぎた取得は他のワーカーが引き取れる。 */
   leaseMs: number;
 }
 
@@ -47,7 +50,7 @@ export interface WebhookOutboxRepository {
   /** 送信待ちを 1 件だけ取得する。無ければ null を返す。 */
   claimNext(input: ClaimNextInput): Promise<ClaimedWebhookDelivery | null>;
   /** 取得したワーカーだけが完了させられる。印が一致しなければ false を返す。 */
-  complete(id: string, claimToken: string, completedAt: Date): Promise<boolean>;
+  complete(id: string, claimToken: string): Promise<boolean>;
 }
 
 interface ClaimedRow {
@@ -67,10 +70,12 @@ interface ClaimedRow {
 export function createWebhookOutboxRepository(db: Queryable): WebhookOutboxRepository {
   return {
     async enqueue(workspaceId, entry) {
+      // available_at は指定しない。取り出せるようになる時刻は業務上の発生時刻とは別で、
+      // 行を登録した時点として DB の既定値に任せる。
       await db.query(
         `INSERT INTO webhook_outbox
-           (workspace_id, endpoint_id, event_type, event_id, payload, occurred_at, available_at)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $6)`,
+           (workspace_id, endpoint_id, event_type, event_id, payload, occurred_at)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
         [
           workspaceId,
           entry.endpointId,
@@ -83,30 +88,35 @@ export function createWebhookOutboxRepository(db: Queryable): WebhookOutboxRepos
     },
 
     async claimNext(input) {
-      const expiresAt = new Date(input.now.getTime() + input.leaseMs);
       // SKIP LOCKED で、他のワーカーが処理中の行を待たずに次の行へ進む。
+      // 時刻はすべて statement_timestamp()。1 つの文の中では同じ値になる。
       const rows = await db.query<ClaimedRow>(
-        `WITH claimed AS (
-           UPDATE webhook_outbox
-              SET claimed_at = $1, claim_expires_at = $2, claim_token = gen_random_uuid()
-            WHERE id = (
-              SELECT id FROM webhook_outbox
-               WHERE completed_at IS NULL
-                 AND available_at <= $1
-                 AND (claim_expires_at IS NULL OR claim_expires_at <= $1)
-               ORDER BY available_at, created_at
-               LIMIT 1
-               FOR UPDATE SKIP LOCKED
-            )
-            RETURNING id, workspace_id, endpoint_id, event_type, event_id, payload,
-                      occurred_at, claim_token
+        `WITH candidate AS (
+           SELECT id FROM webhook_outbox
+            WHERE completed_at IS NULL
+              AND available_at <= statement_timestamp()
+              AND (claim_expires_at IS NULL OR claim_expires_at <= statement_timestamp())
+            ORDER BY available_at, created_at
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+         ),
+         claimed AS (
+           UPDATE webhook_outbox AS outbox
+              SET claimed_at = statement_timestamp(),
+                  claim_expires_at =
+                    statement_timestamp() + ($1::double precision * interval '1 millisecond'),
+                  claim_token = gen_random_uuid()
+             FROM candidate
+            WHERE outbox.id = candidate.id
+            RETURNING outbox.id, outbox.workspace_id, outbox.endpoint_id, outbox.event_type,
+                      outbox.event_id, outbox.payload, outbox.occurred_at, outbox.claim_token
          )
          SELECT claimed.*, endpoints.url, endpoints.secret_hash, endpoints.active
            FROM claimed
            LEFT JOIN webhook_endpoints AS endpoints
              ON endpoints.id = claimed.endpoint_id
             AND endpoints.workspace_id = claimed.workspace_id`,
-        [input.now, expiresAt],
+        [input.leaseMs],
       );
 
       const row = rows[0];
@@ -128,12 +138,15 @@ export function createWebhookOutboxRepository(db: Queryable): WebhookOutboxRepos
       };
     },
 
-    async complete(id, claimToken, completedAt) {
+    async complete(id, claimToken) {
+      // 完了した行に占有の印を残さない。3 列をまとめて外す。
       const rows = await db.query<{ id: string }>(
-        `UPDATE webhook_outbox SET completed_at = $3
+        `UPDATE webhook_outbox
+            SET completed_at = statement_timestamp(),
+                claimed_at = NULL, claim_expires_at = NULL, claim_token = NULL
           WHERE id = $1 AND claim_token = $2 AND completed_at IS NULL
           RETURNING id`,
-        [id, claimToken, completedAt],
+        [id, claimToken],
       );
       return rows.length === 1;
     },

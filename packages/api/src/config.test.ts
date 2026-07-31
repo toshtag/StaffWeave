@@ -91,13 +91,33 @@ describe('loadWebhookWorkerConfig', () => {
     ).toThrow(ConfigurationError);
   });
 
-  it('占有時間が送信の上限以下なら設定エラーになる', () => {
-    expect(() =>
+  describe('占有時間と送信上限の関係', () => {
+    const lease = (sendTimeoutMs: string, claimLeaseMs: string) =>
       loadWebhookWorkerConfig({
         DATABASE_URL: 'postgres://x',
-        WEBHOOK_SEND_TIMEOUT_MS: '10000',
-        WEBHOOK_CLAIM_LEASE_MS: '10000',
-      }),
-    ).toThrow(ConfigurationError);
+        WEBHOOK_SEND_TIMEOUT_MS: sendTimeoutMs,
+        WEBHOOK_CLAIM_LEASE_MS: claimLeaseMs,
+      });
+
+    // 送信の後には結果の記録と完了更新が続く。その猶予が無い設定は受け付けない。
+    it('送信上限と同じなら設定エラーになる', () => {
+      expect(() => lease('10000', '10000')).toThrow(ConfigurationError);
+    });
+
+    it('猶予が 1 ミリ秒しかなければ設定エラーになる', () => {
+      expect(() => lease('10000', '10001')).toThrow(ConfigurationError);
+    });
+
+    it('猶予が 5000 ミリ秒に足りなければ設定エラーになる', () => {
+      expect(() => lease('10000', '14999')).toThrow(ConfigurationError);
+    });
+
+    it('猶予がちょうど 5000 ミリ秒なら受け付ける', () => {
+      expect(lease('10000', '15000').claimLeaseMs).toBe(15_000);
+    });
+
+    it('必要な最小値をエラーへ含める', () => {
+      expect(() => lease('10000', '10001')).toThrow(/15000/);
+    });
   });
 });

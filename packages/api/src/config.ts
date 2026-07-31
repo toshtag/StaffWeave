@@ -47,6 +47,14 @@ const WEBHOOK_WORKER_SETTINGS = {
   WEBHOOK_CLAIM_LEASE_MS: { fallback: 60_000, min: 1_000, max: 3_600_000 },
 } as const satisfies Record<string, IntegerSetting>;
 
+/**
+ * 送信を終えてから結果を記録し、送信待ちを完了させるまでに要する時間の見込み。
+ * 占有時間が送信の上限にこの猶予を足した値より短いと、正常に送れた場合でも
+ * 記録の途中で占有期限が切れ、別のワーカーが同じ行を送り直しやすくなる。
+ * これは重複送信を無くす保証ではなく、起こりやすい設定を拒むための下限。
+ */
+const MIN_WEBHOOK_COMPLETION_GRACE_MS = 5_000;
+
 function readDatabaseUrl(env: NodeJS.ProcessEnv): string {
   const databaseUrl = env.DATABASE_URL;
   if (!databaseUrl) {
@@ -106,10 +114,11 @@ export function loadWebhookWorkerConfig(env: NodeJS.ProcessEnv = process.env): W
     claimLeaseMs: read('WEBHOOK_CLAIM_LEASE_MS'),
   };
 
-  // 占有時間が送信の上限以下だと、まだ送信中の 1 件を別のワーカーが引き取ってしまう。
-  if (config.claimLeaseMs <= config.sendTimeoutMs) {
+  const required = config.sendTimeoutMs + MIN_WEBHOOK_COMPLETION_GRACE_MS;
+  if (config.claimLeaseMs < required) {
     throw new ConfigurationError(
-      'WEBHOOK_CLAIM_LEASE_MS は WEBHOOK_SEND_TIMEOUT_MS より大きくしてください',
+      `WEBHOOK_CLAIM_LEASE_MS は、WEBHOOK_SEND_TIMEOUT_MS に ` +
+        `${MIN_WEBHOOK_COMPLETION_GRACE_MS} ミリ秒を加えた値（${required}）以上にしてください`,
     );
   }
 

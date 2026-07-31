@@ -16,11 +16,12 @@ CREATE TABLE webhook_outbox (
   -- 出来事の識別子。再処理しても変わらない。受け取り側の重複排除に使う。
   event_id         text        NOT NULL,
   payload          jsonb       NOT NULL,
-  -- 出来事が起きた時刻。送信を試みた時刻とは別に持つ。
+  -- 業務上の出来事が起きた時刻。通知の本文へ入れる値で、送信の予定は決めない。
   occurred_at      timestamptz NOT NULL,
-  -- この時刻を過ぎた行だけを取り出す。
+  -- ワーカーが取り出せるようになる時刻。行を登録した時点とし、occurred_at とは連動させない。
   available_at     timestamptz NOT NULL DEFAULT now(),
   -- 取得中の印。期限を過ぎた取得は他のワーカーが引き取れる。
+  -- これらの時刻はワーカー同士の排他に使うため、必ず PostgreSQL の時刻で設定する。
   claimed_at       timestamptz,
   claim_expires_at timestamptz,
   claim_token      uuid,
