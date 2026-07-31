@@ -26,23 +26,35 @@ const LEGACY_STORAGE_KEY = 'staffweave.pendingPunches';
 
 const ACCEPTED = { duplicate: false } as unknown as RecordAttendanceEventResponse;
 
-function createFakeStorage(initial: Record<string, string> = {}): {
+interface FakeStorage {
   entries: Map<string, string>;
+  /** 保存領域の失敗を試すための差し込み口。既定では成功する。 */
+  failGetItem: (key: string) => boolean;
+  failSetItem: (key: string) => boolean;
   getItem: (key: string) => string | null;
   setItem: (key: string, value: string) => void;
   removeItem: (key: string) => void;
-} {
+}
+
+function createFakeStorage(initial: Record<string, string> = {}): FakeStorage {
   const entries = new Map(Object.entries(initial));
-  return {
+  const storage: FakeStorage = {
     entries,
-    getItem: (key) => entries.get(key) ?? null,
+    failGetItem: () => false,
+    failSetItem: () => false,
+    getItem: (key) => {
+      if (storage.failGetItem(key)) throw new Error('読み取れません');
+      return entries.get(key) ?? null;
+    },
     setItem: (key, value) => {
+      if (storage.failSetItem(key)) throw new Error('保存できません');
       entries.set(key, value);
     },
     removeItem: (key) => {
       entries.delete(key);
     },
   };
+  return storage;
 }
 
 function createFakeOnline(): {
@@ -650,8 +662,75 @@ describe('読み取れない保存内容', () => {
     expect(two.snapshot().hasUnreadableEntries).toBe(true);
   });
 
-  it('退避先が読めない場合は、元の内容を上書きしない', async () => {
+  it('控えが読めない場合も、退避を進めて打刻を保存できる', async () => {
     const storage = createFakeStorage({ [key]: '{壊れた内容', [archiveKey]: '{壊れた控え' });
+    const harness = createHarness(storage);
+    harness.send.mockRejectedValue(new TypeError('offline'));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    // 読めない控えは捨てず、生の内容として新しい控えへ包み直す。
+    const archive = JSON.parse(storage.entries.get(archiveKey) ?? 'null');
+    expect(archive.entries.map((entry: { raw: string }) => entry.raw)) //
+      .toEqual(['{壊れた控え', '{壊れた内容']);
+    expect(queue.snapshot().pending).toHaveLength(1);
+    expect(queue.snapshot().hasUnreadableEntries).toBe(true);
+  });
+});
+
+describe('端末へ保存できないとき', () => {
+  const key = storageKeyOf(OWNER_A);
+  const archiveKey = `${key}.unreadable`;
+
+  it('保存できない打刻を受理せず、API へも送らない', async () => {
+    const storage = createFakeStorage();
+    storage.failSetItem = () => true;
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await expect(
+      queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z')),
+    ).resolves.toBeUndefined();
+
+    // 送信待ちとして見せた打刻が再読み込みで消えると、失われたことに気付けない。
+    expect(queue.snapshot().pending).toHaveLength(0);
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
+  it('保存できた打刻は再び読み込める', async () => {
+    const storage = createFakeStorage({ [key]: '{壊れた内容', [archiveKey]: '{壊れた控え' });
+    const first = createHarness(storage);
+    first.send.mockRejectedValue(new TypeError('offline'));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), first.dependencies);
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+    expect(queue.snapshot().pending).toHaveLength(1);
+    queue.dispose();
+
+    const second = createHarness(storage);
+    const restored = createPunchQueue(noopOptions(OWNER_A), second.dependencies);
+
+    expect(restored.snapshot().pending).toHaveLength(1);
+  });
+
+  it('読み取れない控えも、生の内容として新しい控えへ包み直す', async () => {
+    const storage = createFakeStorage({ [key]: '{壊れた内容', [archiveKey]: '{壊れた控え' });
+    const harness = createHarness(storage);
+    harness.send.mockRejectedValue(new TypeError('offline'));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    const archive = JSON.parse(storage.entries.get(archiveKey) ?? 'null');
+    expect(archive.entries.map((entry: { raw: string }) => entry.raw)) //
+      .toEqual(['{壊れた控え', '{壊れた内容']);
+  });
+
+  it('控えを書けない場合は、元の保存内容も控えも上書きしない', async () => {
+    const storage = createFakeStorage({ [key]: '{壊れた内容', [archiveKey]: '{壊れた控え' });
+    storage.failSetItem = (target) => target === archiveKey;
     const harness = createHarness(storage);
 
     const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
@@ -659,7 +738,116 @@ describe('読み取れない保存内容', () => {
 
     expect(storage.entries.get(key)).toBe('{壊れた内容');
     expect(storage.entries.get(archiveKey)).toBe('{壊れた控え');
-    expect(queue.snapshot().hasUnreadableEntries).toBe(true);
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
+  it('読み取れない場合は、内容を書き換えず送信もしない', async () => {
+    const storage = createFakeStorage({
+      [key]: storedQueue(OWNER_A, [punch('request-a')]),
+    });
+    storage.failGetItem = (target) => target === key;
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(harness.send).not.toHaveBeenCalled();
+    expect(storage.entries.get(key)).toBe(storedQueue(OWNER_A, [punch('request-a')]));
+  });
+
+  it('API が受理しても保存できなければ、冪等キーを保って再試行できる', async () => {
+    const storage = createFakeStorage({ [key]: storedQueue(OWNER_A, [punch('request-a')]) });
+    const harness = createHarness(storage);
+    const onAccepted = vi.fn();
+
+    const queue = createPunchQueue({ ...noopOptions(OWNER_A), onAccepted }, harness.dependencies);
+
+    storage.failSetItem = () => true;
+    await queue.flush();
+
+    // 先に取り除くと、保存に失敗したときに冪等キーごと失う。
+    expect(harness.send).toHaveBeenCalledTimes(1);
+    expect(onAccepted).not.toHaveBeenCalled();
+    expect(queue.snapshot().pending.map((entry) => entry.requestId)).toEqual(['request-a']);
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+
+    storage.failSetItem = () => false;
+    await queue.flush();
+
+    // 同じ冪等キーで送り直すため、サーバー側の記録は 1 件に収まる。
+    expect(harness.send).toHaveBeenCalledTimes(2);
+    expect(harness.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ requestId: 'request-a' }),
+    );
+    expect(queue.snapshot().pending).toHaveLength(0);
+    expect(queue.snapshot().blocked).toBeNull();
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it('恒久的な拒否も、保存できてから取り除く', async () => {
+    const storage = createFakeStorage({ [key]: storedQueue(OWNER_A, [punch('request-a')]) });
+    const harness = createHarness(storage);
+    const onRejected = vi.fn();
+    harness.send.mockRejectedValue(new ApiRequestError(409, 'conflict', 'すでに退勤済みです'));
+
+    const queue = createPunchQueue({ ...noopOptions(OWNER_A), onRejected }, harness.dependencies);
+
+    storage.failSetItem = () => true;
+    await queue.flush();
+
+    expect(onRejected).not.toHaveBeenCalled();
+    expect(queue.snapshot().pending).toHaveLength(1);
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+
+    storage.failSetItem = () => false;
+    await queue.flush();
+
+    expect(onRejected).toHaveBeenCalledTimes(1);
+    expect(queue.snapshot().pending).toHaveLength(0);
+  });
+
+  it('試行回数も、保存できてから数える', async () => {
+    const storage = createFakeStorage({ [key]: storedQueue(OWNER_A, [punch('request-a')]) });
+    const harness = createHarness(storage);
+    harness.send.mockRejectedValue(new TypeError('offline'));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    storage.failSetItem = () => true;
+    await queue.flush();
+
+    expect(queue.snapshot().pending[0]?.attempts).toBe(0);
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+  });
+
+  it('保存の失敗を送信の失敗として扱わない', async () => {
+    const storage = createFakeStorage({ [key]: storedQueue(OWNER_A, [punch('request-a')]) });
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    storage.failSetItem = () => true;
+    await queue.flush();
+
+    // 通信は成功しているため、一時的な送信失敗として見せてはいけない。
+    expect(queue.snapshot().blocked?.reason).not.toBe('retry_later');
+  });
+
+  it('認証切れでは端末へ書き込まない', async () => {
+    const storage = createFakeStorage({ [key]: storedQueue(OWNER_A, [punch('request-a')]) });
+    const harness = createHarness(storage);
+    harness.send.mockRejectedValue(new ApiRequestError(401, 'unauthenticated', ''));
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    storage.failSetItem = () => true;
+    await queue.flush();
+
+    // 行列の中身が変わらないため、保存に失敗しても影響を受けない。
+    expect(queue.snapshot().blocked?.reason).toBe('authentication_required');
+    expect(queue.snapshot().pending).toHaveLength(1);
   });
 });
 

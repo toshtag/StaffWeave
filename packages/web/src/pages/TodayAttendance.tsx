@@ -61,7 +61,11 @@ function actionLabel(action: CorrectionAction, messages: Messages): string {
   }
 }
 
-function blockedLabel(reason: PunchBlockedReason, messages: Messages): string {
+function blockedLabel(
+  reason: PunchBlockedReason,
+  pendingCount: number,
+  messages: Messages,
+): string {
   switch (reason) {
     case 'authentication_required':
       return messages.punchBlockedAuthentication;
@@ -69,6 +73,11 @@ function blockedLabel(reason: PunchBlockedReason, messages: Messages): string {
       return messages.punchBlockedPermission;
     case 'retry_later':
       return messages.punchBlockedRetry;
+    case 'storage_unavailable':
+      // 保存できなかった打刻は受理していない。残っている打刻がある場合とは伝えることが違う。
+      return pendingCount === 0
+        ? messages.punchBlockedStorageNotRecorded
+        : messages.punchBlockedStorageRetained;
   }
 }
 
@@ -386,7 +395,7 @@ function EmployeeTodayAttendance({
 
       {snapshot.blocked !== null && (
         <p className="blocked-banner" role="status">
-          {blockedLabel(snapshot.blocked.reason, messages)}
+          {blockedLabel(snapshot.blocked.reason, snapshot.pending.length, messages)}
         </p>
       )}
 

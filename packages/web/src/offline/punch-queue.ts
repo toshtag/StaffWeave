@@ -89,8 +89,14 @@ export function classifyPunchFailure(error: unknown): PunchFailureDisposition {
   return 'retry_later';
 }
 
-/** 行列が止まっている理由。利用者へ次に何をすればよいかを伝えるために使う。 */
-export type PunchBlockedReason = Exclude<PunchFailureDisposition, 'permanent_rejection'>;
+/**
+ * 行列が止まっている理由。利用者へ次に何をすればよいかを伝えるために使う。
+ *
+ * 端末へ保存できないことは API の失敗ではないため、応答の分類とは別に持つ。
+ */
+export type PunchBlockedReason =
+  | Exclude<PunchFailureDisposition, 'permanent_rejection'>
+  | 'storage_unavailable';
 
 export interface PunchQueueSnapshot {
   pending: PendingPunch[];
@@ -220,10 +226,18 @@ export interface PunchQueueDependencies {
   subscribeOnline: (listener: () => void) => () => void;
 }
 
-/** ブラウザで使う依存。単体テストからは偽の実装へ差し替える。 */
+/**
+ * ブラウザで使う依存。単体テストからは偽の実装へ差し替える。
+ *
+ * localStorage は取り出す時点でも例外を投げ得るため、呼び出しのたびに評価する。
+ */
 export function browserPunchQueueDependencies(): PunchQueueDependencies {
   return {
-    storage: window.localStorage,
+    storage: {
+      getItem: (key) => window.localStorage.getItem(key),
+      setItem: (key, value) => window.localStorage.setItem(key, value),
+      removeItem: (key) => window.localStorage.removeItem(key),
+    },
     send: (input) => api.recordAttendanceEvent(input),
     createRequestId: () => crypto.randomUUID(),
     subscribeOnline: (listener) => {
@@ -231,6 +245,48 @@ export function browserPunchQueueDependencies(): PunchQueueDependencies {
       return () => window.removeEventListener('online', listener);
     },
   };
+}
+
+/**
+ * 端末保存の読み書き。
+ *
+ * 保存領域は容量や設定によって例外を投げる。
+ * 失敗を戻り値にして、API の失敗と混ざらないようにする。
+ * 例外の中身は利用者の役に立たないため、画面へは持ち出さない。
+ */
+function readStorage(
+  storage: PunchQueueDependencies['storage'],
+  key: string,
+): { ok: true; value: string | null } | { ok: false } {
+  try {
+    return { ok: true, value: storage.getItem(key) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function writeStorage(
+  storage: PunchQueueDependencies['storage'],
+  key: string,
+  value: string,
+): boolean {
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 旧形式の保存内容が残っているか。読めない場合も残っているものとして扱う。 */
+function containsLegacyEntries(raw: string | null): boolean {
+  if (raw === null || raw.trim() === '') return false;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.length > 0 : true;
+  } catch {
+    return true;
+  }
 }
 
 export interface PunchQueue {
@@ -269,91 +325,154 @@ export function createPunchQueue(
   let flushing = false;
   let disposed = false;
 
+  const unreadableKey = `${key}${UNREADABLE_SUFFIX}`;
+
   /** 読めなかった保存内容。空で上書きして消さないよう、書き込む前に退避する。 */
   let unreadable: string | null = null;
 
-  const stored = storage.getItem(key);
-  if (stored !== null) {
-    const loaded = parseStored(stored, owner);
+  /**
+   * 保存内容を読めたかどうか。
+   * 読めないまま書くと、その所有者の打刻を退避もできずに消してしまう。
+   */
+  let readable = true;
+
+  let hasLegacy = false;
+  let hasUnreadable = false;
+
+  const stored = readStorage(storage, key);
+  if (!stored.ok) {
+    readable = false;
+    blocked = { reason: 'storage_unavailable', message: '' };
+  } else if (stored.value !== null) {
+    const loaded = parseStored(stored.value, owner);
     if (loaded === null) {
-      unreadable = stored;
+      unreadable = stored.value;
+      hasUnreadable = true;
     } else {
       pending = loaded;
     }
   }
 
-  const unreadableKey = `${key}${UNREADABLE_SUFFIX}`;
+  const legacy = readStorage(storage, LEGACY_STORAGE_KEY);
+  // 旧形式の保存内容は所有者が分からないため、件数も中身も現在の利用者へ結びつけない。
+  hasLegacy = legacy.ok && containsLegacyEntries(legacy.value);
 
-  /**
-   * 旧形式の保存内容は所有者が分からないため、件数も中身も現在の利用者へ結びつけない。
-   * 読めない内容も「無い」とは扱わない。誰のものか分からない打刻が残っていることに変わりはない。
-   */
-  function hasLegacyEntries(): boolean {
-    const legacy = storage.getItem(LEGACY_STORAGE_KEY);
-    if (legacy === null || legacy.trim() === '') return false;
-    try {
-      const parsed: unknown = JSON.parse(legacy);
-      return Array.isArray(parsed) ? parsed.length > 0 : true;
-    } catch {
-      return true;
+  if (!hasUnreadable) {
+    const archived = readStorage(storage, unreadableKey);
+    if (archived.ok && archived.value !== null) {
+      const entries = parseUnreadableArchive(archived.value);
+      // 控えそのものが読めない場合も、読めない内容が残っていることに変わりはない。
+      hasUnreadable = entries === null || entries.length > 0;
     }
-  }
-
-  function hasUnreadableEntries(): boolean {
-    if (unreadable !== null) return true;
-    const archived = storage.getItem(unreadableKey);
-    if (archived === null) return false;
-    const entries = parseUnreadableArchive(archived);
-    // 退避先そのものが読めない場合も、読めない内容が残っていることに変わりはない。
-    return entries === null ? true : entries.length > 0;
   }
 
   function currentSnapshot(): PunchQueueSnapshot {
     return {
       pending: [...pending],
       blocked,
-      hasLegacyEntries: hasLegacyEntries(),
-      hasUnreadableEntries: hasUnreadableEntries(),
+      hasLegacyEntries: hasLegacy,
+      hasUnreadableEntries: hasUnreadable,
     };
   }
 
   /**
    * 読めなかった内容を控えへ足す。
-   * 控え自体が読めない場合は、それも失わないよう何も書かない。
+   * 控え自体が読めない場合は、その生の内容も 1 件として包み直し、どちらも失わない。
    */
   function archiveUnreadable(raw: string): boolean {
-    const archived = storage.getItem(unreadableKey);
+    const archived = readStorage(storage, unreadableKey);
+    if (!archived.ok) return false;
+
     let entries: UnreadablePunchArchive['entries'] = [];
-    if (archived !== null) {
-      const parsed = parseUnreadableArchive(archived);
-      if (parsed === null) return false;
-      entries = parsed;
+    if (archived.value !== null) {
+      entries = parseUnreadableArchive(archived.value) ?? [
+        { capturedAt: new Date().toISOString(), raw: archived.value },
+      ];
     }
     if (!entries.some((entry) => entry.raw === raw)) {
       entries = [...entries, { capturedAt: new Date().toISOString(), raw }];
     }
+
     const archive: UnreadablePunchArchive = {
       schemaVersion: UNREADABLE_SCHEMA_VERSION,
       entries,
     };
-    storage.setItem(unreadableKey, JSON.stringify(archive));
+    if (!writeStorage(storage, unreadableKey, JSON.stringify(archive))) return false;
+
+    hasUnreadable = true;
     return true;
   }
 
-  function persist(): void {
+  /**
+   * 提案された行列を端末へ保存する。
+   * 成功した場合だけ true を返す。呼び出し側は、成功してから内部の状態を進める。
+   */
+  function persistEntries(entries: readonly PendingPunch[]): boolean {
+    if (!readable) return false;
     if (unreadable !== null) {
       // 退避できないうちは、読めない内容を上書きしない。
-      if (!archiveUnreadable(unreadable)) return;
+      if (!archiveUnreadable(unreadable)) return false;
       unreadable = null;
     }
-    const next: StoredPunchQueue = { schemaVersion: SCHEMA_VERSION, owner, entries: pending };
-    storage.setItem(key, JSON.stringify(next));
+    const next: StoredPunchQueue = {
+      schemaVersion: SCHEMA_VERSION,
+      owner,
+      entries: [...entries],
+    };
+    return writeStorage(storage, key, JSON.stringify(next));
   }
 
   function notify(): void {
     if (disposed) return;
     const snapshot = currentSnapshot();
     for (const listener of listeners) listener(snapshot);
+  }
+
+  function blockOnStorage(): void {
+    blocked = { reason: 'storage_unavailable', message: '' };
+    notify();
+  }
+
+  /**
+   * 送信に失敗したときの後始末。
+   * 次の打刻へ進んでよい場合だけ true を返す。
+   */
+  function handleSendFailure(entry: PendingPunch, error: unknown): boolean {
+    const disposition = classifyPunchFailure(error);
+    const message = error instanceof ApiRequestError ? error.message : '';
+
+    if (disposition === 'permanent_rejection') {
+      // 同じ要求をそのまま送り直しても成立しないと契約で決まっている応答だけを取り除く。
+      const next = pending.slice(1);
+      if (!persistEntries(next)) {
+        blockOnStorage();
+        return false;
+      }
+      pending = next;
+      blocked = null;
+      notify();
+      if (disposed) return false;
+      options.onRejected(entry, message);
+      return true;
+    }
+
+    if (disposition === 'retry_later') {
+      // 試行回数も保存できた場合だけ数える。
+      const next = [{ ...entry, attempts: entry.attempts + 1 }, ...pending.slice(1)];
+      if (!persistEntries(next)) {
+        blockOnStorage();
+        return false;
+      }
+      pending = next;
+    }
+
+    // 認証と権限の失敗では行列の中身が変わらないため、端末へは書かない。
+    blocked = { reason: disposition, message };
+    notify();
+    if (disposition === 'authentication_required' && !disposed) {
+      options.onAuthenticationRequired?.();
+    }
+    return false;
   }
 
   async function flush(): Promise<void> {
@@ -364,44 +483,33 @@ export function createPunchQueue(
         const entry = pending[0];
         if (entry === undefined) break;
 
+        let result: RecordAttendanceEventResponse;
         try {
-          const result = await send({
+          // 例外として扱うのは通信だけにする。
+          // 端末保存や画面への通知まで囲むと、その失敗を API の失敗として分類してしまう。
+          result = await send({
             eventType: entry.eventType,
             occurredAt: entry.occurredAt,
             requestId: entry.requestId,
             source: 'mobile',
           });
-          pending = pending.slice(1);
-          blocked = null;
-          persist();
-          notify();
-          if (disposed) break;
-          options.onAccepted(result);
         } catch (error) {
-          const disposition = classifyPunchFailure(error);
-          const message = error instanceof ApiRequestError ? error.message : '';
-
-          if (disposition === 'permanent_rejection') {
-            // 同じ要求をそのまま送り直しても成立しないと契約で決まっている応答だけを取り除く。
-            pending = pending.slice(1);
-            blocked = null;
-            persist();
-            notify();
-            if (disposed) break;
-            options.onRejected(entry, message);
-            continue;
-          }
-
-          // 送れなかった打刻は残す。後続も送らず、順番を保ったまま次の機会を待つ。
-          if (disposition === 'retry_later') entry.attempts += 1;
-          blocked = { reason: disposition, message };
-          persist();
-          notify();
-          if (disposition === 'authentication_required' && !disposed) {
-            options.onAuthenticationRequired?.();
-          }
+          if (handleSendFailure(entry, error)) continue;
           break;
         }
+
+        // 受理された打刻は、行列から外した状態を保存できてから取り除く。
+        // 先に取り除くと、保存に失敗したときに冪等キーごと失う。
+        const next = pending.slice(1);
+        if (!persistEntries(next)) {
+          blockOnStorage();
+          break;
+        }
+        pending = next;
+        blocked = null;
+        notify();
+        if (disposed) break;
+        options.onAccepted(result);
       }
     } finally {
       flushing = false;
@@ -415,16 +523,23 @@ export function createPunchQueue(
   return {
     async enqueue(eventType, occurredAt) {
       if (disposed) return;
-      pending = [
-        ...pending,
-        {
-          requestId: createRequestId(),
-          eventType,
-          occurredAt: occurredAt.toISOString(),
-          attempts: 0,
-        },
-      ];
-      persist();
+      const entry: PendingPunch = {
+        requestId: createRequestId(),
+        eventType,
+        occurredAt: occurredAt.toISOString(),
+        attempts: 0,
+      };
+      const next = [...pending, entry];
+
+      // 端末へ保存できない打刻は受理しない。
+      // 送信待ちとして見せた打刻が再読み込みで消えると、利用者は失われたことに気付けない。
+      if (!persistEntries(next)) {
+        blockOnStorage();
+        return;
+      }
+
+      pending = next;
+      blocked = null;
       notify();
       await flush();
     },

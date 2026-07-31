@@ -67,6 +67,14 @@ export const E2E_STALE_DAY_EMPLOYEE: SeededAccount = {
   displayName: '検証 六郎',
 };
 
+/** 端末へ保存できない状況を確かめるための従業員。 */
+export const E2E_STORAGE_FAILURE_EMPLOYEE: SeededAccount = {
+  email: 'storage-failure@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E007',
+  displayName: '検証 七郎',
+};
+
 const SEEDED_ACCOUNTS = [
   E2E_EMPLOYEE,
   E2E_MOBILE_EMPLOYEE,
@@ -74,6 +82,7 @@ const SEEDED_ACCOUNTS = [
   E2E_PUNCH_OWNER_EMPLOYEE,
   E2E_PUNCH_BYSTANDER_EMPLOYEE,
   E2E_STALE_DAY_EMPLOYEE,
+  E2E_STORAGE_FAILURE_EMPLOYEE,
 ];
 
 export function e2eDatabaseUrl(): string {

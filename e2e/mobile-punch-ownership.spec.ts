@@ -8,6 +8,7 @@ import {
   E2E_PUNCH_BYSTANDER_EMPLOYEE,
   E2E_PUNCH_OWNER_EMPLOYEE,
   E2E_STALE_DAY_EMPLOYEE,
+  E2E_STORAGE_FAILURE_EMPLOYEE,
 } from './setup/prepare-database.js';
 
 /** 携帯電話の画面幅で確認する。 */
@@ -228,6 +229,45 @@ test.describe('送信待ち打刻の所有者', () => {
 
     // 表示言語は利用者設定として保存されるため、後続のテストのために戻す。
     await page.unroute('**/api/attendance/events');
+    await selectLocale(page, 'ja-JP');
+  });
+
+  test('端末に保存できない打刻は受理せず、API へも送らない', async ({ page }) => {
+    const sent: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/api/attendance/events')) {
+        sent.push(request.url());
+      }
+    });
+
+    await signIn(page, E2E_STORAGE_FAILURE_EMPLOYEE);
+    const owner = await ownerOf(page);
+
+    // 送信待ち打刻の保存先だけを失敗させる。保存先の名前は画面と同じ実装で組み立てる。
+    await page.addInitScript((key) => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function setItem(name: string, value: string) {
+        if (name === key) throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        return original.call(this, name, value);
+      };
+    }, storageKeyOf(owner));
+    await page.reload();
+    await expect(page.locator('.work-state')).toHaveText('出勤前');
+
+    await page.getByRole('button', { name: '出勤', exact: true }).click();
+
+    const blocked = page.locator('.blocked-banner');
+    await expect(blocked).toContainText('打刻は記録されていません');
+    // 保存できていない打刻を、送信待ちとして見せない。
+    await expect(page.locator('.pending-banner')).toHaveCount(0);
+    await expect(page.locator('.work-state')).toHaveText('出勤前');
+    expect(sent).toHaveLength(0);
+    // 例外の中身は利用者の役に立たないため、画面へ出さない。
+    await expect(blocked).not.toContainText('Quota');
+
+    await selectLocale(page, 'en');
+    await expect(page.locator('.blocked-banner')).toContainText('was not recorded');
+
     await selectLocale(page, 'ja-JP');
   });
 });
