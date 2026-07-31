@@ -97,6 +97,7 @@ export interface Messages {
   punchBlockedRetry: string;
   punchBlockedStorageNotRecorded: string;
   punchBlockedStorageRetained: string;
+  punchOwnerUnverified: string;
   retryPendingPunches: string;
   sessionExpiredWithPendingPunches: string;
   skipToMain: string;
@@ -212,6 +213,8 @@ const ja: Messages = {
     'この端末に打刻を安全に保存できなかったため、打刻は記録されていません。ブラウザの保存設定と空き容量を確認して、もう一度操作してください。',
   punchBlockedStorageRetained:
     '端末の送信待ち情報を更新できませんでした。同じ打刻を安全に再送できるよう保持しています。保存設定を確認して再送してください。',
+  punchOwnerUnverified:
+    '打刻に必要な利用者情報を確認できません。再ログインしても解消しない場合は、管理者へ連絡してください。',
   retryPendingPunches: '再送する',
   sessionExpiredWithPendingPunches:
     'セッションの有効期限が切れました。送信待ちの打刻はこの端末に残っています。同じ利用者でログインすると再送します。',
@@ -329,6 +332,8 @@ const en: Messages = {
     'The punch was not recorded because it could not be stored safely on this device. Check the browser storage settings and available space, then try again.',
   punchBlockedStorageRetained:
     'The pending-punch data could not be updated on this device. The same punch is being kept for a safe retry. Check the storage settings and retry.',
+  punchOwnerUnverified:
+    'The user information required for punching could not be verified. Sign in again, or contact an administrator if the problem continues.',
   retryPendingPunches: 'Retry',
   sessionExpiredWithPendingPunches:
     'Your session has expired. Punches waiting to be sent remain on this device and are sent once you sign in as the same user.',

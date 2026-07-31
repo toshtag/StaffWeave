@@ -134,7 +134,12 @@ function isIdentifier(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
 }
 
-function isOwner(value: unknown): value is PunchQueueOwner {
+/**
+ * 送信待ち打刻の持ち主として使える値か。
+ *
+ * 所有者の 3 値がこの機能の安全性の根拠なので、保存内容にも現在の利用者にも同じ判定を使う。
+ */
+export function isPunchQueueOwner(value: unknown): value is PunchQueueOwner {
   if (typeof value !== 'object' || value === null) return false;
   const owner = value as Partial<PunchQueueOwner>;
   return (
@@ -180,11 +185,11 @@ function parseStored(raw: string, owner: PunchQueueOwner): PendingPunch[] | null
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
-  if (!isOwner(owner)) return null;
+  if (!isPunchQueueOwner(owner)) return null;
 
   const stored = parsed as Partial<StoredPunchQueue>;
   if (stored.schemaVersion !== SCHEMA_VERSION) return null;
-  if (!isOwner(stored.owner) || !sameOwner(stored.owner, owner)) return null;
+  if (!isPunchQueueOwner(stored.owner) || !sameOwner(stored.owner, owner)) return null;
   if (!Array.isArray(stored.entries)) return null;
   // 1 件でも読めなければ、まとめて読まない。
   // 読める分だけ送ると、利用者が把握できない形で打刻の順序が変わる。
@@ -316,6 +321,13 @@ export function createPunchQueue(
   dependencies: PunchQueueDependencies = browserPunchQueueDependencies(),
 ): PunchQueue {
   const { owner } = options;
+
+  // 所有者を特定できないまま保存先を作ると、誰のものとも言えない打刻が残る。
+  // 保存も購読も送信も始める前に断る。
+  if (!isPunchQueueOwner(owner)) {
+    throw new Error('送信待ち打刻の持ち主を特定できません');
+  }
+
   const { storage, send, createRequestId, subscribeOnline } = dependencies;
   const key = storageKeyOf(owner);
 

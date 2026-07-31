@@ -16,7 +16,7 @@ import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
 import type { PunchBlockedReason, PunchQueue, PunchQueueSnapshot } from '../offline/punch-queue.ts';
-import { createPunchQueue } from '../offline/punch-queue.ts';
+import { createPunchQueue, isPunchQueueOwner } from '../offline/punch-queue.ts';
 import { useSession } from '../session/SessionProvider.tsx';
 
 type LoadState =
@@ -131,6 +131,22 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
       <section className="card">
         <h2>{messages.today}</h2>
         <p>{messages.employeeRequiredForPunch}</p>
+      </section>
+    );
+  }
+
+  const owner = {
+    workspaceId: session.workspace.id,
+    userId: session.user.id,
+    employeeId: employee.id,
+  };
+
+  // 持ち主を特定できない打刻は、後から誰のものか決められない。
+  if (!isPunchQueueOwner(owner)) {
+    return (
+      <section className="card">
+        <h2>{messages.today}</h2>
+        <p>{messages.punchOwnerUnverified}</p>
       </section>
     );
   }

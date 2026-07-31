@@ -2,7 +2,12 @@ import type { RecordAttendanceEventResponse } from '@staffweave/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiRequestError } from '../api/client.ts';
 import type { PendingPunch, PunchQueueDependencies, PunchQueueOwner } from './punch-queue.ts';
-import { classifyPunchFailure, createPunchQueue, storageKeyOf } from './punch-queue.ts';
+import {
+  classifyPunchFailure,
+  createPunchQueue,
+  isPunchQueueOwner,
+  storageKeyOf,
+} from './punch-queue.ts';
 
 /**
  * 送信待ち行列の単体テスト。
@@ -215,6 +220,41 @@ describe('送信待ち行列の所有者境界', () => {
 
     expect(queue.snapshot().pending).toHaveLength(0);
     expect(harness.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('現在の所有者の検証', () => {
+  const blanks: [string, PunchQueueOwner][] = [
+    ['workspaceId が空', { ...OWNER_A, workspaceId: '' }],
+    ['userId が空白だけ', { ...OWNER_A, userId: '   ' }],
+    ['employeeId が空', { ...OWNER_A, employeeId: '' }],
+  ];
+
+  for (const [name, owner] of blanks) {
+    it(`${name}であれば行列を作らない`, () => {
+      const harness = createHarness();
+
+      expect(() => createPunchQueue(noopOptions(owner), harness.dependencies)).toThrow();
+    });
+  }
+
+  it('所有者を特定できない場合は、保存も購読も送信も始めない', () => {
+    const storage = createFakeStorage();
+    const harness = createHarness(storage);
+    const blank: PunchQueueOwner = { workspaceId: ' ', userId: ' ', employeeId: ' ' };
+
+    expect(() => createPunchQueue(noopOptions(blank), harness.dependencies)).toThrow();
+
+    expect(storage.entries.size).toBe(0);
+    expect(harness.online.listenerCount()).toBe(0);
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
+  it('保存先の名前を作る前に断る', () => {
+    expect(isPunchQueueOwner(OWNER_A)).toBe(true);
+    expect(isPunchQueueOwner({ ...OWNER_A, userId: '' })).toBe(false);
+    expect(isPunchQueueOwner(null)).toBe(false);
+    expect(isPunchQueueOwner({})).toBe(false);
   });
 });
 
@@ -568,14 +608,14 @@ describe('保存内容の検証', () => {
     expect(queue.snapshot().pending).toHaveLength(0);
   });
 
-  it('所有者の識別子が空の保存内容を読み込まない', () => {
-    const empty: PunchQueueOwner = { ...OWNER_A, employeeId: '   ' };
+  it('保存された所有者の識別子が空であれば読み込まない', () => {
+    const blank = { ...OWNER_A, employeeId: '   ' };
     const storage = createFakeStorage({
-      [storageKeyOf(empty)]: storedRaw(empty, [punch('request-1')]),
+      [storageKeyOf(OWNER_A)]: storedRaw(blank, [punch('request-1')]),
     });
     const harness = createHarness(storage);
 
-    const queue = createPunchQueue(noopOptions(empty), harness.dependencies);
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
 
     expect(queue.snapshot().pending).toHaveLength(0);
   });
