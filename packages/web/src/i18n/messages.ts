@@ -90,6 +90,7 @@ export interface Messages {
   requestHistory: string;
   offlineNotice: string;
   pendingPunches: (count: number) => string;
+  legacyPendingPunches: string;
   skipToMain: string;
   discrepancies: string;
   noDiscrepancies: string;
@@ -190,6 +191,8 @@ const ja: Messages = {
   requestHistory: '申請の履歴',
   offlineNotice: 'オフラインです。打刻は端末に残し、接続が戻ったら送ります。',
   pendingPunches: (count) => `送信待ちの打刻が ${count} 件あります`,
+  legacyPendingPunches:
+    '以前の形式で保存された送信待ち打刻があります。所有者を確認できないため、自動送信していません。',
   skipToMain: '本文へ移動',
   discrepancies: 'PC の利用記録との食い違い',
   noDiscrepancies: '打刻と PC の利用記録に食い違いはありません',
@@ -290,6 +293,8 @@ const en: Messages = {
   requestHistory: 'Request history',
   offlineNotice: 'You are offline. Punches stay on this device and are sent once you reconnect.',
   pendingPunches: (count) => `${count} punch(es) waiting to be sent`,
+  legacyPendingPunches:
+    'Some punches are stored in an older format. Their owner cannot be confirmed, so they are not sent automatically.',
   skipToMain: 'Skip to main content',
   discrepancies: 'Differences from workstation activity',
   noDiscrepancies: 'No differences between punches and workstation activity',

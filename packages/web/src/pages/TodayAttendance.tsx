@@ -1,4 +1,9 @@
-import type { AttendanceEventRecord, SessionResponse, WorkDay } from '@staffweave/contracts';
+import type {
+  AttendanceEventRecord,
+  EmployeeSummary,
+  SessionResponse,
+  WorkDay,
+} from '@staffweave/contracts';
 import type {
   AttendanceEventType,
   CorrectionAction,
@@ -6,11 +11,11 @@ import type {
   WorkDayState,
 } from '@staffweave/domain';
 import { summarizeWorkDay } from '@staffweave/domain';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
-import type { PendingPunch } from '../offline/punch-queue.ts';
+import type { PunchQueue, PunchQueueSnapshot } from '../offline/punch-queue.ts';
 import { createPunchQueue } from '../offline/punch-queue.ts';
 
 type LoadState =
@@ -93,42 +98,86 @@ interface CorrectionDraft {
 /**
  * 本日の勤怠。
  *
+ * 打刻は従業員に対して記録するため、従業員が紐づいていない利用者には案内だけを出す。
+ * 送信待ち行列は従業員が確定してから作り、代わりの識別子で保存先を作らない。
+ */
+export function TodayAttendance({ session }: { session: SessionResponse }): React.JSX.Element {
+  const { messages } = useLocale();
+  const { employee } = session;
+
+  if (employee === null) {
+    return (
+      <section className="card">
+        <h2>{messages.today}</h2>
+        <p>{messages.employeeRequiredForPunch}</p>
+      </section>
+    );
+  }
+
+  return <EmployeeTodayAttendance session={session} employee={employee} />;
+}
+
+/**
+ * 従業員が確定している場合の本日の勤怠。
+ *
  * 携帯電話で片手で使えることを最優先にする。
  * 現在の状態と「次に押すべきボタン」を画面の上へ大きく出し、修正や履歴はその下に置く。
  * 通信できないときも打刻は受け付け、送信待ちとして見せてから後で送る。
  */
-export function TodayAttendance({ session }: { session: SessionResponse }): React.JSX.Element {
+function EmployeeTodayAttendance({
+  session,
+  employee,
+}: {
+  session: SessionResponse;
+  employee: EmployeeSummary;
+}): React.JSX.Element {
   const { locale, messages } = useLocale();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<CorrectionDraft | null>(null);
-  const [pending, setPending] = useState<PendingPunch[]>([]);
+  const [snapshot, setSnapshot] = useState<PunchQueueSnapshot>(() => ({
+    pending: [],
+    hasLegacyEntries: false,
+  }));
   const [online, setOnline] = useState(() => window.navigator.onLine);
   const reasonId = useId();
   const timeId = useId();
   const typeId = useId();
 
-  const queue = useMemo(
-    () =>
-      createPunchQueue({
-        onAccepted: (result) => setState({ status: 'ready', day: result.day }),
-        onRejected: (_entry, message) => setError(message),
-      }),
-    [],
-  );
+  const [queue, setQueue] = useState<PunchQueue | null>(null);
+  const workspaceId = session.workspace.id;
+  const userId = session.user.id;
+  const employeeId = employee.id;
 
   const load = useCallback(() => {
     api
       .getTodayAttendance()
       .then((day) => setState({ status: 'ready', day }))
-      // 従業員が紐づいていない場合も通信に失敗した場合も、打刻できないことに変わりはない。
+      // 勤務日を取得できない間は、打刻の操作を出さない。
       .catch(() => setState({ status: 'unavailable' }));
   }, []);
 
   useEffect(load, [load]);
 
-  useEffect(() => queue.subscribe(setPending), [queue]);
+  // 行列の寿命はこの画面と同じにする。
+  // 利用者・Workspace・従業員のいずれかが変われば、前の行列を破棄して別の行列を作る。
+  useEffect(() => {
+    const created = createPunchQueue({
+      owner: { workspaceId, userId, employeeId },
+      onAccepted: (result) => setState({ status: 'ready', day: result.day }),
+      onRejected: (_entry, message) => setError(message),
+    });
+    const unsubscribe = created.subscribe(setSnapshot);
+    setQueue(created);
+
+    return () => {
+      unsubscribe();
+      created.dispose();
+      setQueue(null);
+      setSnapshot({ pending: [], hasLegacyEntries: false });
+    };
+  }, [workspaceId, userId, employeeId]);
 
   useEffect(() => {
     const update = (): void => setOnline(window.navigator.onLine);
@@ -144,7 +193,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
     return (
       <section className="card">
         <h2>{messages.today}</h2>
-        <p>{messages.employeeRequiredForPunch}</p>
+        <p>{messages.networkError}</p>
       </section>
     );
   }
@@ -166,7 +215,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
       eventType: event.eventType,
       occurredAt: new Date(event.occurredAt),
     })),
-    ...pending.map((entry) => ({
+    ...snapshot.pending.map((entry) => ({
       eventType: entry.eventType,
       occurredAt: new Date(entry.occurredAt),
     })),
@@ -188,6 +237,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
   }
 
   function punch(eventType: AttendanceEventType): void {
+    if (queue === null) return;
     setError(null);
     void queue.enqueue(eventType, new Date());
   }
@@ -268,9 +318,15 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
         </p>
       )}
 
-      {pending.length > 0 && (
+      {snapshot.pending.length > 0 && (
         <p className="pending-banner" role="status">
-          {messages.pendingPunches(pending.length)}
+          {messages.pendingPunches(snapshot.pending.length)}
+        </p>
+      )}
+
+      {snapshot.hasLegacyEntries && (
+        <p className="legacy-banner" role="status">
+          {messages.legacyPendingPunches}
         </p>
       )}
 
@@ -556,7 +612,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
       </details>
 
       <p className="notice">
-        {session.employee?.employeeNumber} / {day.businessDate}
+        {employee.employeeNumber} / {day.businessDate}
       </p>
     </section>
   );

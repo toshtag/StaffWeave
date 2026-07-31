@@ -337,7 +337,8 @@ h3 {
 }
 
 .offline-banner,
-.pending-banner {
+.pending-banner,
+.legacy-banner {
   margin: 0 0 1rem;
   padding: 0.625rem 0.875rem;
   border-radius: 0.5rem;
