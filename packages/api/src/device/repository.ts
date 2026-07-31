@@ -21,11 +21,23 @@ export interface DeviceRepository {
     workspaceId: string,
     input: { name: string; siteId: string | null; enrollmentTokenHash: string },
   ): Promise<DeviceRecord>;
-  markEnrolled(
+  /**
+   * 登録待ちの端末だけを有効にする。
+   *
+   * 一度きりの登録トークンを消費するのはこの更新であり、事前の検索ではない。
+   * 同じトークンで同時に届いた要求のうち、条件に合致した 1 件だけが更新でき、
+   * 残りは `null` を受け取る。
+   */
+  markEnrolledIfPending(
     workspaceId: string,
     deviceId: string,
-    input: { publicKey: string; enrollments: number; enrolledAt: Date },
-  ): Promise<DeviceRecord>;
+    input: {
+      enrollmentTokenHash: string;
+      publicKey: string;
+      enrollments: number;
+      enrolledAt: Date;
+    },
+  ): Promise<DeviceRecord | null>;
   markRevoked(workspaceId: string, deviceId: string, revokedAt: Date): Promise<DeviceRecord>;
   updateSequence(
     workspaceId: string,
@@ -192,23 +204,36 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
       return toDevice(row);
     },
 
-    async markEnrolled(workspaceId, deviceId, input) {
+    async markEnrolledIfPending(workspaceId, deviceId, input) {
       const rows = await db.query<DeviceRow>(
         `UPDATE devices
             SET state = 'active',
-                public_key = $3,
-                enrollments = $4,
-                enrolled_at = $5,
+                public_key = $4,
+                enrollments = $5,
+                enrolled_at = $6,
                 -- 登録が済んだトークンは二度と使えないようにする。
                 enrollment_token_hash = NULL,
                 updated_at = now()
-          WHERE workspace_id = $1 AND id = $2
+          WHERE workspace_id = $1
+            AND id = $2
+            -- 登録できる状態と、渡されたトークンであることを更新の条件にする。
+            -- 先に読んだ結果ではなく、この条件に合致したことが消費の証跡になる。
+            AND state = 'pending'
+            AND public_key IS NULL
+            AND enrollment_token_hash = $3
           RETURNING ${DEVICE_COLUMNS}`,
-        [workspaceId, deviceId, input.publicKey, input.enrollments, input.enrolledAt],
+        [
+          workspaceId,
+          deviceId,
+          input.enrollmentTokenHash,
+          input.publicKey,
+          input.enrollments,
+          input.enrolledAt,
+        ],
       );
       const row = rows[0];
-      if (!row) throw new Error('端末を有効化できませんでした');
-      return toDevice(row);
+      // 0 行なら、同じトークンを使う別の要求が先に消費している。
+      return row ? toDevice(row) : null;
     },
 
     async markRevoked(workspaceId, deviceId, revokedAt) {

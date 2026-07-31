@@ -122,27 +122,33 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
         ]);
       }
 
-      const found = await deps.repository.findByEnrollmentTokenHash(
-        hashToken(input.enrollmentToken),
-      );
-      if (!found) {
-        throw new ApiError('unauthenticated', '登録トークンが一致しません');
-      }
-
-      const next = applyDeviceEvent(
-        { state: found.state, context: { enrollments: found.enrollments } },
-        'ENROLL',
-      );
-      if (!next) {
-        throw new ApiError('conflict', 'この端末は登録できる状態ではありません');
-      }
+      // 登録トークンの照合から消費までを一つのトランザクションに収める。
+      // 先に読んだ結果は判断材料にすぎず、一度きりを決めるのは条件付きの更新である。
+      const enrollmentTokenHash = hashToken(input.enrollmentToken);
 
       return deps.transaction(async ({ devices, audit }) => {
-        const device = await devices.markEnrolled(found.workspaceId, found.id, {
+        const found = await devices.findByEnrollmentTokenHash(enrollmentTokenHash);
+        if (!found) {
+          throw new ApiError('unauthenticated', '登録トークンが一致しません');
+        }
+
+        const next = applyDeviceEvent(
+          { state: found.state, context: { enrollments: found.enrollments } },
+          'ENROLL',
+        );
+        if (!next) {
+          throw new ApiError('conflict', 'この端末は登録できる状態ではありません');
+        }
+
+        const device = await devices.markEnrolledIfPending(found.workspaceId, found.id, {
+          enrollmentTokenHash,
           publicKey: input.publicKey,
           enrollments: next.context.enrollments,
           enrolledAt: deps.now(),
         });
+        if (!device) {
+          throw new ApiError('conflict', 'この登録トークンはすでに使用されています');
+        }
 
         await audit.record(found.workspaceId, {
           actorKind: 'device',

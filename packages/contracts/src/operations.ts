@@ -693,7 +693,7 @@ export const operations = {
       { status: 401, description: '登録トークンが一致しない', schema: errorResponseSchema },
       {
         status: 409,
-        description: 'すでに登録済み、または失効している',
+        description: 'すでに登録済み、失効している、または登録トークンが同時に使われた',
         schema: errorResponseSchema,
       },
     ],
