@@ -8,7 +8,7 @@
  * 既定のパスワードは分かりやすい値にしてあるため、公開された場所では使わないこと。
  */
 import { createDatabase } from '@staffweave/db';
-import { loadConfig } from '../config.js';
+import { loadApiConfig } from '../config.js';
 import { createOrganizationRepository } from '../organization/repository.js';
 import { hashPassword } from '../shared/security/password.js';
 
@@ -24,7 +24,7 @@ function hasFlag(name: string): boolean {
 }
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const config = loadApiConfig();
   const slug = option('slug') ?? 'demo';
   const db = createDatabase({ connectionString: config.databaseUrl });
 

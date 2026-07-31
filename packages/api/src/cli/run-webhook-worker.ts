@@ -5,10 +5,12 @@
  *
  * API サーバーは送信待ちを記録するだけで、HTTP 送信は行わない。
  * このプロセスを動かさない限り、Webhook は届かない。
+ *
+ * 設定は API と分けて読む。ここでの設定ミスは API の起動を妨げない。
  */
 
 import { createDatabase } from '@staffweave/db';
-import { loadConfig } from '../config.js';
+import { loadWebhookWorkerConfig } from '../config.js';
 import { createWebhookDeliveryProcessor } from '../integration/delivery-processor.js';
 import { createWebhookDeliveryWorker } from '../integration/delivery-worker.js';
 import { createWebhookOutboxRepository } from '../integration/outbox-repository.js';
@@ -16,7 +18,7 @@ import { createIntegrationRepository } from '../integration/repository.js';
 import { createWebhookSender } from '../integration/sender.js';
 import { createConsoleLogger } from '../shared/logger.js';
 
-const config = loadConfig();
+const config = loadWebhookWorkerConfig();
 const logger = createConsoleLogger('webhook-worker');
 const db = createDatabase({ connectionString: config.databaseUrl });
 
@@ -24,13 +26,12 @@ const worker = createWebhookDeliveryWorker({
   processor: createWebhookDeliveryProcessor({
     outbox: createWebhookOutboxRepository(db),
     deliveries: createIntegrationRepository(db),
-    send: createWebhookSender({ timeoutMs: config.webhookWorker.sendTimeoutMs }),
+    send: createWebhookSender({ timeoutMs: config.sendTimeoutMs }),
     now: () => new Date(),
-    batchSize: config.webhookWorker.batchSize,
-    claimLeaseMs: config.webhookWorker.claimLeaseMs,
+    claimLeaseMs: config.claimLeaseMs,
     logger,
   }),
-  pollIntervalMs: config.webhookWorker.pollIntervalMs,
+  pollIntervalMs: config.pollIntervalMs,
   logger,
 });
 

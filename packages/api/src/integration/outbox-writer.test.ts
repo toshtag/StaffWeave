@@ -20,7 +20,7 @@ function writerOver(endpoints: Endpoint[]): {
     enqueue: async (workspaceId, entry) => {
       enqueued.push({ ...entry, workspaceId });
     },
-    claimPending: async () => [],
+    claimNext: async () => null,
     complete: async () => true,
   };
 

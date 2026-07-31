@@ -11,7 +11,7 @@
 import { randomBytes } from 'node:crypto';
 import { createDatabase } from '@staffweave/db';
 import { isValidEmail, normalizeEmail, validatePassword } from '@staffweave/domain';
-import { loadConfig } from '../config.js';
+import { loadApiConfig } from '../config.js';
 import { createOrganizationRepository } from '../organization/repository.js';
 import { hashPassword } from '../shared/security/password.js';
 
@@ -26,7 +26,7 @@ function generatePassword(): string {
 }
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const config = loadApiConfig();
   const slug = readOption('slug') ?? config.defaultWorkspaceSlug;
   const name = readOption('name') ?? '既定のワークスペース';
   const timeZone = readOption('time-zone') ?? 'Asia/Tokyo';

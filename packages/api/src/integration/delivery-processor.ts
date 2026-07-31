@@ -9,14 +9,17 @@ import type { WebhookSender } from './sender.js';
 /**
  * 送信待ちを取り出して送る処理。
  *
- * 1 回分の処理を関数として切り出し、常駐ループとは別にテストできるようにする。
+ * 1 件分の処理を関数として切り出し、常駐ループとは別にテストできるようにする。
+ * 取り出しは送信の直前に 1 件だけ行う。先に何件もまとめて取ると、まだ送っていない行の
+ * 占有期限が切れ、別のワーカーが引き取って同時に送ってしまう。
+ *
  * HTTP の失敗やタイムアウトは自動で再試行しない。結果を記録して送信待ちを完了扱いにする。
  * 再試行と指数バックオフは P20 で扱う。
  */
 
 export interface WebhookDeliveryProcessor {
-  /** 未処理の送信待ちを 1 回分だけ処理し、取り出した件数を返す。 */
-  processBatch(): Promise<number>;
+  /** 送信待ちを 1 件だけ処理する。処理する行があれば true を返す。 */
+  processNext(): Promise<boolean>;
 }
 
 export interface WebhookDeliveryProcessorDependencies {
@@ -24,7 +27,6 @@ export interface WebhookDeliveryProcessorDependencies {
   deliveries: Pick<IntegrationRepository, 'recordDelivery'>;
   send: WebhookSender;
   now: () => Date;
-  batchSize: number;
   claimLeaseMs: number;
   logger?: StructuredLogger;
 }
@@ -100,7 +102,7 @@ export function createWebhookDeliveryProcessor(
 
     const completed = await deps.outbox.complete(entry.id, entry.claimToken, deps.now());
     if (!completed) {
-      // 取得の期限が切れ、別のワーカーが引き取った後だと起こり得る。
+      // 送信が占有期限を超え、別のワーカーが引き取った後だと起こり得る。
       logger.error('outbox.complete_rejected', { outboxId: entry.id, eventId: entry.eventId });
       return;
     }
@@ -115,27 +117,25 @@ export function createWebhookDeliveryProcessor(
   };
 
   return {
-    async processBatch() {
-      const claimed = await deps.outbox.claimPending({
+    async processNext() {
+      const entry = await deps.outbox.claimNext({
         now: deps.now(),
         leaseMs: deps.claimLeaseMs,
-        limit: deps.batchSize,
       });
+      if (entry === null) return false;
 
-      for (const entry of claimed) {
-        // 1 件の失敗で残りを止めない。処理できなかった行は取得の期限切れ後に拾い直す。
-        try {
-          await deliver(entry);
-        } catch (error) {
-          logger.error('webhook.delivery_failed', {
-            outboxId: entry.id,
-            eventId: entry.eventId,
-            reason: error instanceof Error ? error.message : String(error),
-          });
-        }
+      // 1 件の失敗でループを止めない。処理できなかった行は取得の期限切れ後に拾い直す。
+      try {
+        await deliver(entry);
+      } catch (error) {
+        logger.error('webhook.delivery_failed', {
+          outboxId: entry.id,
+          eventId: entry.eventId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
       }
 
-      return claimed.length;
+      return true;
     },
   };
 }

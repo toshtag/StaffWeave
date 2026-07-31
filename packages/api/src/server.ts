@@ -2,9 +2,9 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { createDatabase } from '@staffweave/db';
 import { createApp } from './app.js';
-import { loadConfig } from './config.js';
+import { loadApiConfig } from './config.js';
 
-const config = loadConfig();
+const config = loadApiConfig();
 const db = createDatabase({ connectionString: config.databaseUrl });
 const app = createApp({
   db,

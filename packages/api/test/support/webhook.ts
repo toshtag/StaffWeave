@@ -34,7 +34,6 @@ export function recordingTransport(
 export interface TestDeliveryOptions {
   now: Date;
   transport: WebhookTransport;
-  batchSize?: number;
   claimLeaseMs?: number;
   sendTimeoutMs?: number;
 }
@@ -51,7 +50,13 @@ export function createTestDeliveryProcessor(
       timeoutMs: options.sendTimeoutMs ?? 1_000,
     }),
     now: () => options.now,
-    batchSize: options.batchSize ?? 20,
     claimLeaseMs: options.claimLeaseMs ?? 60_000,
   });
+}
+
+/** 送信待ちが無くなるまで 1 件ずつ処理する。 */
+export async function drain(processor: WebhookDeliveryProcessor): Promise<number> {
+  let processed = 0;
+  while (await processor.processNext()) processed += 1;
+  return processed;
 }

@@ -20,7 +20,7 @@ import {
   loginAndGetCookie,
 } from '../support/fixtures.js';
 import type { SentWebhook } from '../support/webhook.js';
-import { createTestDeliveryProcessor, recordingTransport } from '../support/webhook.js';
+import { createTestDeliveryProcessor, drain, recordingTransport } from '../support/webhook.js';
 
 const CLOCK_IN_AT = '2026-04-01T00:00:00.000Z';
 const CLOCK_OUT_AT = '2026-04-01T09:00:00.000Z';
@@ -36,13 +36,14 @@ function app(now: string = CLOCK_OUT_AT) {
   });
 }
 
-/** 送信ワーカーを 1 回分だけ動かす。API 自身は HTTP 送信を行わない。 */
+/** 送信待ちが無くなるまでワーカーを動かす。API 自身は HTTP 送信を行わない。 */
 async function runDeliveryWorker(status = 204): Promise<void> {
-  const processor = createTestDeliveryProcessor(testDatabase(), {
-    now: new Date(CLOCK_OUT_AT),
-    transport: recordingTransport(sent, () => new Response(null, { status })),
-  });
-  await processor.processBatch();
+  await drain(
+    createTestDeliveryProcessor(testDatabase(), {
+      now: new Date(CLOCK_OUT_AT),
+      transport: recordingTransport(sent, () => new Response(null, { status })),
+    }),
+  );
 }
 
 type App = ReturnType<typeof app>;
