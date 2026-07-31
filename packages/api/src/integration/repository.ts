@@ -5,7 +5,11 @@ import type { Queryable } from '@staffweave/db';
  *
  * API キーは生の値を保存せず、照合できるハッシュだけを持つ。
  * Webhook の `signing_key` は照合用のハッシュではなく、署名を生成できる鍵そのものである。
- * 送信の経路以外へは持ち出さない。一覧や API 応答には含めない。
+ *
+ * この Repository が `signing_key` を扱うのは登録時の保存だけで、
+ * 送信先の一覧でも、送信待ちを積むための問い合わせでも取得しない。
+ * 署名生成のための取得は、ワーカーが使う
+ * `WebhookOutboxRepository.claimNext()` だけで行う。
  */
 
 export interface ApiKeyRecord {
@@ -61,10 +65,8 @@ export interface IntegrationRepository {
   touchApiKey(apiKeyId: string, usedAt: Date): Promise<void>;
 
   listEndpoints(workspaceId: string): Promise<WebhookEndpointRecord[]>;
-  listActiveEndpointsFor(
-    workspaceId: string,
-    eventType: string,
-  ): Promise<{ id: string; url: string; signingKey: string }[]>;
+  /** 送信待ちを積む先の識別子だけを返す。送信そのものはワーカーが行うため、鍵も URL も要らない。 */
+  listActiveEndpointIdsFor(workspaceId: string, eventType: string): Promise<string[]>;
   createEndpoint(
     workspaceId: string,
     input: { name: string; url: string; signingKey: string; eventTypes: readonly string[] },
@@ -193,13 +195,13 @@ export function createIntegrationRepository(db: Queryable): IntegrationRepositor
       return rows.map(toEndpoint);
     },
 
-    async listActiveEndpointsFor(workspaceId, eventType) {
-      const rows = await db.query<{ id: string; url: string; signing_key: string }>(
-        `SELECT id, url, signing_key FROM webhook_endpoints
+    async listActiveEndpointIdsFor(workspaceId, eventType) {
+      const rows = await db.query<{ id: string }>(
+        `SELECT id FROM webhook_endpoints
           WHERE workspace_id = $1 AND active AND $2 = ANY(event_types)`,
         [workspaceId, eventType],
       );
-      return rows.map((row) => ({ id: row.id, url: row.url, signingKey: row.signing_key }));
+      return rows.map((row) => row.id);
     },
 
     async createEndpoint(workspaceId, input) {
