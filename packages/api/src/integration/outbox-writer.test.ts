@@ -7,7 +7,7 @@ const OCCURRED_AT = new Date('2026-04-01T09:00:00.000Z');
 interface Endpoint {
   id: string;
   url: string;
-  secretHash: string;
+  signingKey: string;
   eventTypes: string[];
 }
 
@@ -30,7 +30,7 @@ function writerOver(endpoints: Endpoint[]): {
       listActiveEndpointsFor: async (_workspaceId, eventType) =>
         endpoints
           .filter((endpoint) => endpoint.eventTypes.includes(eventType))
-          .map(({ id, url, secretHash }) => ({ id, url, secretHash })),
+          .map(({ id, url, signingKey }) => ({ id, url, signingKey })),
     },
     outbox,
     newEventId: () => `event-${++counter}`,
@@ -42,7 +42,7 @@ function writerOver(endpoints: Endpoint[]): {
 const endpoint = (id: string, eventTypes: string[]): Endpoint => ({
   id,
   url: `https://example.test/${id}`,
-  secretHash: `hash-${id}`,
+  signingKey: `hash-${id}`,
   eventTypes,
 });
 

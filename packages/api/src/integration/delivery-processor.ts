@@ -73,7 +73,7 @@ export function createWebhookDeliveryProcessor(
               'x-staffweave-timestamp': timestamp,
               // 署名鍵は署名を生成できる機密情報。データベースを読める者は正当な署名を
               // 作れるため、通常の秘密鍵と同じ扱いにする。ログにも残さない。
-              'x-staffweave-signature': signWebhookMessage(entry.endpoint.secretHash, {
+              'x-staffweave-signature': signWebhookMessage(entry.endpoint.signingKey, {
                 eventId: entry.eventId,
                 eventType: entry.eventType,
                 timestamp,

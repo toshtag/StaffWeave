@@ -405,10 +405,10 @@ describe('Webhook', () => {
     const delivery = sent[0];
     if (!delivery) throw new Error('通知が送られていません');
 
-    const rows = await testDatabase().query<{ secret_hash: string }>(
-      'SELECT secret_hash FROM webhook_endpoints',
+    const rows = await testDatabase().query<{ signing_key: string }>(
+      'SELECT signing_key FROM webhook_endpoints',
     );
-    const stored = rows[0]?.secret_hash;
+    const stored = rows[0]?.signing_key;
     if (!stored) throw new Error('送信先が登録されていません');
 
     // 保存値は照合用のハッシュではなく、そのまま HMAC の鍵になる。

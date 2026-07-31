@@ -131,7 +131,7 @@ export function createIntegrationService(deps: IntegrationServiceDependencies): 
       const endpoint = await deps.repository.createEndpoint(workspaceId, {
         name: input.name,
         url: canonicalUrl,
-        secretHash: deriveWebhookSigningKey(signingSecret),
+        signingKey: deriveWebhookSigningKey(signingSecret),
         eventTypes,
       });
 

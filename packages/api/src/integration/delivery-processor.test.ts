@@ -19,7 +19,7 @@ const claimed = (overrides: Partial<ClaimedWebhookDelivery> = {}): ClaimedWebhoo
   payload: { requestId: 'r1' },
   occurredAt: '2026-04-01T08:00:00.000Z',
   claimToken: 'token-1',
-  endpoint: { url: 'https://example.test/hooks', secretHash: 'hash-1' },
+  endpoint: { url: 'https://example.test/hooks', signingKey: 'hash-1' },
   ...overrides,
 });
 
