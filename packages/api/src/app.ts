@@ -27,6 +27,14 @@ import { createWebhookOutboxWriter } from './integration/outbox-writer.js';
 import { createIntegrationRepository } from './integration/repository.js';
 import { createIntegrationRoutes } from './integration/routes.js';
 import { createIntegrationService } from './integration/service.js';
+import type {
+  WebhookNetworkPolicyMode,
+  WebhookTargetValidator,
+} from './integration/webhook-network-policy.js';
+import {
+  createWebhookNetworkPolicy,
+  createWebhookTargetValidator,
+} from './integration/webhook-network-policy.js';
 import { createAssignmentRepository } from './organization/assignment-repository.js';
 import { createAssignmentRoutes } from './organization/assignment-routes.js';
 import { createAssignmentService } from './organization/assignment-service.js';
@@ -54,6 +62,10 @@ export interface AppDependencies {
   useSecureCookie?: boolean;
   /** IC カードの指紋を計算するための鍵。未設定ならカード機能は使えない。 */
   cardFingerprintKey?: string | null;
+  /** Webhook 送信先として許すネットワークの範囲。既定は公開ネットワークだけ。 */
+  webhookNetworkPolicy?: WebhookNetworkPolicyMode;
+  /** 送信先の検査。テストから名前解決を伴わない実装へ差し替えるために開ける。 */
+  webhookTargetValidator?: WebhookTargetValidator;
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -83,6 +95,11 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const integrationService = createIntegrationService({
     repository: createIntegrationRepository(deps.db),
     now,
+    webhookTarget:
+      deps.webhookTargetValidator ??
+      createWebhookTargetValidator(
+        createWebhookNetworkPolicy({ mode: deps.webhookNetworkPolicy ?? 'public-only' }),
+      ),
   });
 
   const anomalyService = createAnomalyService({

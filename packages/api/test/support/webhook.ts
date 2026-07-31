@@ -5,12 +5,39 @@ import { createWebhookOutboxRepository } from '../../src/integration/outbox-repo
 import { createIntegrationRepository } from '../../src/integration/repository.js';
 import type { WebhookTransport } from '../../src/integration/sender.js';
 import { createWebhookSender } from '../../src/integration/sender.js';
+import type {
+  WebhookHostResolver,
+  WebhookNetworkPolicyMode,
+  WebhookTargetValidator,
+} from '../../src/integration/webhook-network-policy.js';
+import {
+  createWebhookNetworkPolicy,
+  createWebhookTargetValidator,
+} from '../../src/integration/webhook-network-policy.js';
 
 /**
  * 統合テストから Webhook の送信ワーカーを 1 回分だけ動かすための組み立て。
  *
  * API は送信待ちを記録するだけなので、送信の結果を確かめるテストはこれを使う。
+ * 名前解決は必ず偽の解決器へ差し替える。テストを外部の DNS に依存させない。
  */
+
+/** 公開ネットワークとして扱えるアドレス。テストの送信先はすべてここへ解決させる。 */
+export const PUBLIC_TEST_ADDRESS = '93.184.216.34';
+
+/** どのホスト名でも同じアドレスを返す解決器。 */
+export function fixedResolver(address = PUBLIC_TEST_ADDRESS): WebhookHostResolver {
+  const family = address.includes(':') ? (6 as const) : (4 as const);
+  return async () => [{ address, family }];
+}
+
+/** 登録時の検査。外部 DNS を引かずに、実際のポリシー判定だけを通す。 */
+export function testWebhookTargetValidator(
+  resolver: WebhookHostResolver = fixedResolver(),
+  mode: WebhookNetworkPolicyMode = 'public-only',
+): WebhookTargetValidator {
+  return createWebhookTargetValidator(createWebhookNetworkPolicy({ mode, resolver }));
+}
 
 export interface SentWebhook {
   url: string;

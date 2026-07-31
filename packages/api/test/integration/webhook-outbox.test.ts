@@ -17,7 +17,11 @@ import {
   loginAndGetCookie,
 } from '../support/fixtures.js';
 import type { SentWebhook } from '../support/webhook.js';
-import { createTestDeliveryProcessor, recordingTransport } from '../support/webhook.js';
+import {
+  createTestDeliveryProcessor,
+  recordingTransport,
+  testWebhookTargetValidator,
+} from '../support/webhook.js';
 
 /**
  * 承認と Webhook 送信の境界。
@@ -34,7 +38,12 @@ const NOW = new Date(CLOCK_OUT_AT);
 const sent: SentWebhook[] = [];
 
 function app(db: Database = testDatabase()) {
-  return createApp({ db, defaultWorkspaceSlug: 'default', now: () => NOW });
+  return createApp({
+    db,
+    defaultWorkspaceSlug: 'default',
+    now: () => NOW,
+    webhookTargetValidator: testWebhookTargetValidator(),
+  });
 }
 
 /** 業務処理を必ずロールバックさせるデータベース。書き込みの不可分性を確かめるために使う。 */

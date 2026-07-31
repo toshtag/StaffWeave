@@ -20,7 +20,12 @@ import {
   loginAndGetCookie,
 } from '../support/fixtures.js';
 import type { SentWebhook } from '../support/webhook.js';
-import { createTestDeliveryProcessor, drain, recordingTransport } from '../support/webhook.js';
+import {
+  createTestDeliveryProcessor,
+  drain,
+  recordingTransport,
+  testWebhookTargetValidator,
+} from '../support/webhook.js';
 
 const CLOCK_IN_AT = '2026-04-01T00:00:00.000Z';
 const CLOCK_OUT_AT = '2026-04-01T09:00:00.000Z';
@@ -33,6 +38,7 @@ function app(now: string = CLOCK_OUT_AT) {
     db: testDatabase(),
     defaultWorkspaceSlug: 'default',
     now: () => new Date(now),
+    webhookTargetValidator: testWebhookTargetValidator(),
   });
 }
 
