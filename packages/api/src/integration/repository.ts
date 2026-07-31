@@ -2,7 +2,14 @@ import type { Queryable } from '@staffweave/db';
 
 /**
  * API キーと Webhook の永続化。
- * 鍵と秘密は生の値を保存せず、照合できるハッシュだけを持つ。
+ *
+ * API キーは生の値を保存せず、照合できるハッシュだけを持つ。
+ * Webhook の `signing_key` は照合用のハッシュではなく、署名を生成できる鍵そのものである。
+ *
+ * この Repository が `signing_key` を扱うのは登録時の保存だけで、
+ * 送信先の一覧でも、送信待ちを積むための問い合わせでも取得しない。
+ * 署名生成のための取得は、ワーカーが使う
+ * `WebhookOutboxRepository.claimNext()` だけで行う。
  */
 
 export interface ApiKeyRecord {
@@ -58,13 +65,11 @@ export interface IntegrationRepository {
   touchApiKey(apiKeyId: string, usedAt: Date): Promise<void>;
 
   listEndpoints(workspaceId: string): Promise<WebhookEndpointRecord[]>;
-  listActiveEndpointsFor(
-    workspaceId: string,
-    eventType: string,
-  ): Promise<{ id: string; url: string; secretHash: string }[]>;
+  /** 送信待ちを積む先の識別子だけを返す。送信そのものはワーカーが行うため、鍵も URL も要らない。 */
+  listActiveEndpointIdsFor(workspaceId: string, eventType: string): Promise<string[]>;
   createEndpoint(
     workspaceId: string,
-    input: { name: string; url: string; secretHash: string; eventTypes: readonly string[] },
+    input: { name: string; url: string; signingKey: string; eventTypes: readonly string[] },
   ): Promise<WebhookEndpointRecord>;
   recordDelivery(
     workspaceId: string,
@@ -190,21 +195,21 @@ export function createIntegrationRepository(db: Queryable): IntegrationRepositor
       return rows.map(toEndpoint);
     },
 
-    async listActiveEndpointsFor(workspaceId, eventType) {
-      const rows = await db.query<{ id: string; url: string; secret_hash: string }>(
-        `SELECT id, url, secret_hash FROM webhook_endpoints
+    async listActiveEndpointIdsFor(workspaceId, eventType) {
+      const rows = await db.query<{ id: string }>(
+        `SELECT id FROM webhook_endpoints
           WHERE workspace_id = $1 AND active AND $2 = ANY(event_types)`,
         [workspaceId, eventType],
       );
-      return rows.map((row) => ({ id: row.id, url: row.url, secretHash: row.secret_hash }));
+      return rows.map((row) => row.id);
     },
 
     async createEndpoint(workspaceId, input) {
       const rows = await db.query<EndpointRow>(
-        `INSERT INTO webhook_endpoints (workspace_id, name, url, secret_hash, event_types)
+        `INSERT INTO webhook_endpoints (workspace_id, name, url, signing_key, event_types)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING ${ENDPOINT_COLUMNS}`,
-        [workspaceId, input.name, input.url, input.secretHash, [...input.eventTypes]],
+        [workspaceId, input.name, input.url, input.signingKey, [...input.eventTypes]],
       );
       const row = rows[0];
       if (!row) throw new Error('Webhook を登録できませんでした');

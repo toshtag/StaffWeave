@@ -6,8 +6,6 @@ const OCCURRED_AT = new Date('2026-04-01T09:00:00.000Z');
 
 interface Endpoint {
   id: string;
-  url: string;
-  secretHash: string;
   eventTypes: string[];
 }
 
@@ -27,10 +25,10 @@ function writerOver(endpoints: Endpoint[]): {
   let counter = 0;
   const writer = createWebhookOutboxWriter({
     endpoints: {
-      listActiveEndpointsFor: async (_workspaceId, eventType) =>
+      listActiveEndpointIdsFor: async (_workspaceId, eventType) =>
         endpoints
           .filter((endpoint) => endpoint.eventTypes.includes(eventType))
-          .map(({ id, url, secretHash }) => ({ id, url, secretHash })),
+          .map((endpoint) => endpoint.id),
     },
     outbox,
     newEventId: () => `event-${++counter}`,
@@ -39,12 +37,7 @@ function writerOver(endpoints: Endpoint[]): {
   return { enqueued, writer };
 }
 
-const endpoint = (id: string, eventTypes: string[]): Endpoint => ({
-  id,
-  url: `https://example.test/${id}`,
-  secretHash: `hash-${id}`,
-  eventTypes,
-});
+const endpoint = (id: string, eventTypes: string[]): Endpoint => ({ id, eventTypes });
 
 describe('createWebhookOutboxWriter', () => {
   it('出来事の種別に一致する送信先だけを積む', async () => {

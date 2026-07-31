@@ -37,7 +37,7 @@ export interface ClaimedWebhookDelivery {
   occurredAt: string;
   claimToken: string;
   /** 送信先。登録が止められている場合は null。 */
-  endpoint: { url: string; secretHash: string } | null;
+  endpoint: { url: string; signingKey: string } | null;
 }
 
 export interface ClaimNextInput {
@@ -63,7 +63,7 @@ interface ClaimedRow {
   occurred_at: Date;
   claim_token: string;
   url: string | null;
-  secret_hash: string | null;
+  signing_key: string | null;
   active: boolean | null;
 }
 
@@ -111,7 +111,7 @@ export function createWebhookOutboxRepository(db: Queryable): WebhookOutboxRepos
             RETURNING outbox.id, outbox.workspace_id, outbox.endpoint_id, outbox.event_type,
                       outbox.event_id, outbox.payload, outbox.occurred_at, outbox.claim_token
          )
-         SELECT claimed.*, endpoints.url, endpoints.secret_hash, endpoints.active
+         SELECT claimed.*, endpoints.url, endpoints.signing_key, endpoints.active
            FROM claimed
            LEFT JOIN webhook_endpoints AS endpoints
              ON endpoints.id = claimed.endpoint_id
@@ -132,8 +132,8 @@ export function createWebhookOutboxRepository(db: Queryable): WebhookOutboxRepos
         occurredAt: row.occurred_at.toISOString(),
         claimToken: row.claim_token,
         endpoint:
-          row.active === true && row.url !== null && row.secret_hash !== null
-            ? { url: row.url, secretHash: row.secret_hash }
+          row.active === true && row.url !== null && row.signing_key !== null
+            ? { url: row.url, signingKey: row.signing_key }
             : null,
       };
     },

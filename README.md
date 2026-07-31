@@ -163,6 +163,14 @@ Webhook は承認・差し戻し・締め・締め解除で送られます。
 受け取り側の署名検証は `@staffweave/connector` の `verifyWebhook` を使ってください。
 署名用の秘密は送信先の登録時にしか返りません。
 
+署名は対称鍵の HMAC-SHA256 です。データベースに保存している
+`webhook_endpoints.signing_key` は照合用のハッシュではなく、**そのまま正当な署名を作れる鍵**です。
+
+- データベースを読める者は、任意の本文へ正当な署名を付けられます。
+- データベースのバックアップ、ダンプ、スナップショットにも署名鍵が含まれます。
+- データベースとバックアップは機密情報として扱い、読み取り権限を最小限にしてください。
+- 詳細は [docs/security/webhook-signing.md](docs/security/webhook-signing.md) を参照してください。
+
 送信は API サーバーではなく、専用のワーカーが行います。
 
 ```sh
@@ -228,6 +236,11 @@ pnpm restore backups/staffweave-<日時>.dump         # 復元（既存データ
 ```
 
 バックアップには業務データがすべて含まれます。保管場所の扱いに注意してください。
+
+バックアップには Webhook の署名鍵も含まれます。
+バックアップを読める者は Webhook の署名を生成できるため、
+暗号化とアクセス制限を行ってください。
+
 `CARD_FINGERPRINT_KEY` はバックアップに含まれません。
 復元後に IC カード機能を使うには、同じ鍵を環境変数へ設定する必要があります。
 
@@ -294,6 +307,7 @@ staffweave は不正打刻の完全な防止や、特定の国・地域の労働
 | [docs/glossary.md](docs/glossary.md) | 日英用語集（識別子・API・DB 名の基準） |
 | [docs/roadmap.md](docs/roadmap.md) | P0〜P22 のロードマップ |
 | [docs/security/webhook-target-policy.md](docs/security/webhook-target-policy.md) | Webhook 送信先のネットワーク方針 |
+| [docs/security/webhook-signing.md](docs/security/webhook-signing.md) | Webhook 署名鍵の保存と検証手順 |
 
 ## ライセンス
 

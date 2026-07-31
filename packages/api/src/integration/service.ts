@@ -11,6 +11,7 @@ import type {
 } from './repository.js';
 import type { WebhookTargetValidator } from './webhook-network-policy.js';
 import { WebhookTargetError } from './webhook-network-policy.js';
+import { deriveWebhookSigningKey } from './webhook-signature.js';
 
 export interface IntegrationServiceDependencies {
   repository: IntegrationRepository;
@@ -124,16 +125,18 @@ export function createIntegrationService(deps: IntegrationServiceDependencies): 
       // 拒んだ登録の痕跡を残さないようにする。
       const { canonicalUrl } = await validateWebhookTarget(input.url);
 
-      const secret = randomBytes(24).toString('base64url');
+      // 保存するのは照合用のハッシュではなく、署名を生成できる鍵そのもの。
+      // 対称鍵の HMAC である以上、送信側は署名を作れる値を持たざるを得ない。
+      const signingSecret = randomBytes(24).toString('base64url');
       const endpoint = await deps.repository.createEndpoint(workspaceId, {
         name: input.name,
         url: canonicalUrl,
-        secretHash: hashToken(secret),
+        signingKey: deriveWebhookSigningKey(signingSecret),
         eventTypes,
       });
 
       // 署名用の秘密はこの応答でしか返さない。
-      return { endpoint, secret };
+      return { endpoint, secret: signingSecret };
     },
 
     listDeliveries: (workspaceId) => deps.repository.listDeliveries(workspaceId, 200),

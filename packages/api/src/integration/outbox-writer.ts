@@ -11,7 +11,7 @@ import type { IntegrationRepository } from './repository.js';
  */
 
 export interface WebhookOutboxWriterDependencies {
-  endpoints: Pick<IntegrationRepository, 'listActiveEndpointsFor'>;
+  endpoints: Pick<IntegrationRepository, 'listActiveEndpointIdsFor'>;
   outbox: WebhookOutboxRepository;
   /** 出来事の識別子。再処理しても変わらないよう、積むときに一度だけ決める。 */
   newEventId?: () => string;
@@ -24,14 +24,18 @@ export function createWebhookOutboxWriter(
 
   return {
     async enqueue(workspaceId, event) {
-      const endpoints = await deps.endpoints.listActiveEndpointsFor(workspaceId, event.eventType);
-      if (endpoints.length === 0) return;
+      // 積むのに要るのは送信先の識別子だけ。URL と署名鍵は送信の直前にワーカーが読む。
+      const endpointIds = await deps.endpoints.listActiveEndpointIdsFor(
+        workspaceId,
+        event.eventType,
+      );
+      if (endpointIds.length === 0) return;
 
       // 送信先が複数あっても出来事は 1 つ。同じ識別子を配って重複排除の単位をそろえる。
       const eventId = newEventId();
-      for (const endpoint of endpoints) {
+      for (const endpointId of endpointIds) {
         await deps.outbox.enqueue(workspaceId, {
-          endpointId: endpoint.id,
+          endpointId,
           eventType: event.eventType,
           eventId,
           payload: event.payload,

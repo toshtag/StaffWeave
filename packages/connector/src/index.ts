@@ -81,13 +81,29 @@ export interface VerifiedWebhook {
 }
 
 /**
+ * 登録時に受け取った秘密から Webhook の署名鍵を導出する。
+ *
+ * 秘密をそのまま HMAC の鍵にはしない。SHA-256 の小文字 16 進数 64 文字へ変換し、
+ * その文字列を UTF-8 のまま鍵として使う。ダイジェストの生の 32 バイトではない。
+ *
+ * 導出した値は Webhook の署名を生成できる機密情報である。
+ * ログ、データベース、画面へ不用意に保存・表示してはならない。
+ *
+ * 通常は `verifyWebhook()` を使えばよい。この関数は、自前で署名を組み立てる場合や、
+ * 送信側との計算の一致を確かめる場合のために公開している。
+ */
+export function deriveWebhookSigningKey(signingSecret: string): string {
+  return createHash('sha256').update(signingSecret, 'utf8').digest('hex');
+}
+
+/**
  * Webhook の署名を検証する。
  *
- * 署名の鍵は、登録時に受け取った秘密のハッシュ。
+ * 受け取るのは登録時に返された秘密そのもの。署名鍵はここで導出する。
  * 検証は定数時間で行い、一致・不一致の差から情報が漏れないようにする。
  */
 export function verifyWebhook(
-  secret: string,
+  signingSecret: string,
   request: WebhookRequest,
   options: { toleranceSeconds?: number; now?: Date } = {},
 ): VerifiedWebhook {
@@ -110,8 +126,8 @@ export function verifyWebhook(
     throw new ConnectorError(400, '送信時刻が許容範囲を超えています');
   }
 
-  const key = createHash('sha256').update(secret, 'utf8').digest('hex');
-  const expected = createHmac('sha256', key)
+  const signingKey = deriveWebhookSigningKey(signingSecret);
+  const expected = createHmac('sha256', signingKey)
     .update(canonicalWebhookMessage({ eventId, eventType, timestamp, body: request.body }), 'utf8')
     .digest('base64');
 

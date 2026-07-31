@@ -6,9 +6,12 @@ import type {
   ClaimNextInput,
   WebhookOutboxRepository,
 } from './outbox-repository.js';
-import type { WebhookSendResult } from './sender.js';
+import type { WebhookRequest, WebhookSendResult } from './sender.js';
 
 const NOW = new Date('2026-04-01T09:00:00.000Z');
+
+/** 送信先の署名鍵。ログや送信内容へ現れないことを確かめるために、見分けの付く値にする。 */
+const SIGNING_KEY = '9f28328480464f5f1f78f0ae6caa0a0fa60a1320682be36d787a7cb1eede40fd';
 
 const claimed = (overrides: Partial<ClaimedWebhookDelivery> = {}): ClaimedWebhookDelivery => ({
   id: 'outbox-1',
@@ -19,7 +22,7 @@ const claimed = (overrides: Partial<ClaimedWebhookDelivery> = {}): ClaimedWebhoo
   payload: { requestId: 'r1' },
   occurredAt: '2026-04-01T08:00:00.000Z',
   claimToken: 'token-1',
-  endpoint: { url: 'https://example.test/hooks', secretHash: 'hash-1' },
+  endpoint: { url: 'https://example.test/hooks', signingKey: SIGNING_KEY },
   ...overrides,
 });
 
@@ -35,6 +38,7 @@ interface Harness {
   logged: LoggedEvent[];
   processor: ReturnType<typeof createWebhookDeliveryProcessor>;
   sentBodies: string[];
+  sentRequests: WebhookRequest[];
 }
 
 function harness(
@@ -50,6 +54,7 @@ function harness(
   const claimInputs: ClaimNextInput[] = [];
   const logged: LoggedEvent[] = [];
   const sentBodies: string[] = [];
+  const sentRequests: WebhookRequest[] = [];
   const queue = [...entries];
 
   const logger: StructuredLogger = {
@@ -88,6 +93,7 @@ function harness(
       options.send ??
       (async (request) => {
         sentBodies.push(request.body);
+        sentRequests.push(request);
         return { outcome: 'delivered', statusCode: 204, errorMessage: null };
       }),
     now: () => NOW,
@@ -95,7 +101,7 @@ function harness(
     logger,
   });
 
-  return { recorded, completed, claimInputs, logged, sentBodies, processor };
+  return { recorded, completed, claimInputs, logged, sentBodies, sentRequests, processor };
 }
 
 describe('createWebhookDeliveryProcessor', () => {
@@ -179,6 +185,31 @@ describe('createWebhookDeliveryProcessor', () => {
     expect(await processor.processNext()).toBe(true);
     expect(await processor.processNext()).toBe(true);
     expect(recorded.map((entry) => entry.eventId)).toEqual(['event-2']);
+  });
+});
+
+describe('署名鍵の扱い', () => {
+  it('署名は鍵そのものを含まない', async () => {
+    const { sentRequests, processor } = harness([claimed()]);
+
+    await processor.processNext();
+    const request = sentRequests[0];
+    if (!request) throw new Error('送信していません');
+
+    expect(request.headers['x-staffweave-signature']).toBeTruthy();
+    expect(JSON.stringify(request)).not.toContain(SIGNING_KEY);
+  });
+
+  it('ログへ署名鍵を残さない', async () => {
+    // 通常のログと、処理そのものが失敗したときのログのどちらにも出さない。
+    const delivered = harness([claimed()]);
+    await delivered.processor.processNext();
+
+    const failed = harness([claimed()], { recordFails: () => true });
+    await failed.processor.processNext();
+
+    expect(JSON.stringify(delivered.logged)).not.toContain(SIGNING_KEY);
+    expect(JSON.stringify(failed.logged)).not.toContain(SIGNING_KEY);
   });
 });
 

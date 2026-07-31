@@ -1,4 +1,5 @@
-import { createConnector, verifyWebhook } from '@staffweave/connector';
+import { createHmac } from 'node:crypto';
+import { createConnector, deriveWebhookSigningKey, verifyWebhook } from '@staffweave/connector';
 import type {
   ApiKeyList,
   CreateApiKeyResponse,
@@ -6,7 +7,7 @@ import type {
   DailyRequestRecord,
   ImportResult,
 } from '@staffweave/contracts';
-import { parseCsv } from '@staffweave/domain';
+import { canonicalWebhookMessage, parseCsv } from '@staffweave/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
 import { createApp } from '../../src/app.js';
@@ -393,6 +394,80 @@ describe('Webhook', () => {
     );
 
     expect(verified.eventType).toBe('attendance_request.approved');
+  });
+
+  it('保存された値だけで Webhook 署名を生成できる', async () => {
+    const instance = app();
+    await registerEndpoint(instance);
+    await approve(instance);
+    await runDeliveryWorker();
+
+    const delivery = sent[0];
+    if (!delivery) throw new Error('通知が送られていません');
+
+    const rows = await testDatabase().query<{ signing_key: string }>(
+      'SELECT signing_key FROM webhook_endpoints',
+    );
+    const stored = rows[0]?.signing_key;
+    if (!stored) throw new Error('送信先が登録されていません');
+
+    // 保存値は照合用のハッシュではなく、そのまま HMAC の鍵になる。
+    // データベースを読める者は正当な署名を作れる、という事実をここで固定する。
+    const forged = createHmac('sha256', stored)
+      .update(
+        canonicalWebhookMessage({
+          eventId: delivery.headers['x-staffweave-event-id'] ?? '',
+          eventType: delivery.headers['x-staffweave-event'] ?? '',
+          timestamp: delivery.headers['x-staffweave-timestamp'] ?? '',
+          body: delivery.body,
+        }),
+        'utf8',
+      )
+      .digest('base64');
+
+    expect(forged).toBe(delivery.headers['x-staffweave-signature']);
+  });
+
+  it('保存する署名鍵は登録時の秘密から導いた値になる', async () => {
+    const instance = app();
+    const endpoint = await registerEndpoint(instance);
+
+    const rows = await testDatabase().query<{ signing_key: string }>(
+      'SELECT signing_key FROM webhook_endpoints',
+    );
+    const stored = rows[0]?.signing_key;
+
+    // 送信側と受け取り側が同じ手順で鍵を導いている、という前提をここで固定する。
+    expect(stored).toBe(deriveWebhookSigningKey(endpoint.secret));
+    expect(stored).toMatch(/^[0-9a-f]{64}$/);
+    // 応答で返す秘密と保存値は別の文字列。保存値をそのまま返してはいない。
+    expect(stored).not.toBe(endpoint.secret);
+  });
+
+  it('署名鍵は API の応答へ現れない', async () => {
+    const instance = app();
+    const endpoint = await registerEndpoint(instance);
+    await approve(instance);
+    await runDeliveryWorker();
+
+    const rows = await testDatabase().query<{ signing_key: string }>(
+      'SELECT signing_key FROM webhook_endpoints',
+    );
+    const signingKey = rows[0]?.signing_key;
+    if (!signingKey) throw new Error('送信先が登録されていません');
+
+    const listed = await instance.request(
+      '/api/webhook-endpoints',
+      authorized(fixture.adminCookie),
+    );
+    const deliveries = await instance.request(
+      '/api/webhook-deliveries',
+      authorized(fixture.adminCookie),
+    );
+
+    expect(JSON.stringify(endpoint.endpoint)).not.toContain(signingKey);
+    expect(await listed.text()).not.toContain(signingKey);
+    expect(await deliveries.text()).not.toContain(signingKey);
   });
 
   it('別の秘密では署名が一致しない', async () => {
