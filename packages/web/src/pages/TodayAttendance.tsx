@@ -11,7 +11,7 @@ import type {
   WorkDayState,
 } from '@staffweave/domain';
 import { summarizeWorkDay } from '@staffweave/domain';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
@@ -164,13 +164,45 @@ function EmployeeTodayAttendance({
   const userId = session.user.id;
   const employeeId = employee.id;
 
-  const load = useCallback(() => {
-    api
-      .getTodayAttendance()
-      .then((day) => setState({ status: 'ready', day }))
-      // 勤務日を取得できない間は、打刻の操作を出さない。
-      .catch(() => setState({ status: 'unavailable' }));
+  // 勤務日の版。読み込みの応答が、その後に確定した勤務日を上書きしないようにする。
+  const dayVersion = useRef(0);
+
+  /**
+   * 更新系の応答で確定した勤務日を反映する。
+   * これより前に始めた読み込みは、以後どれも反映しない。
+   */
+  const applyCurrentDay = useCallback((day: WorkDay): void => {
+    dayVersion.current += 1;
+    setState({ status: 'ready', day });
   }, []);
+
+  /**
+   * 現在の勤務日を読み直す。
+   * 読み込んでいる間に打刻や修正が確定した場合、古い応答で画面を巻き戻さない。
+   */
+  const readCurrentDay = useCallback(
+    (handlers: { onDay: (day: WorkDay) => void; onFailure: (cause: unknown) => void }) => {
+      dayVersion.current += 1;
+      const version = dayVersion.current;
+      return api.getTodayAttendance().then(
+        (day) => {
+          if (version === dayVersion.current) handlers.onDay(day);
+        },
+        (cause: unknown) => {
+          if (version === dayVersion.current) handlers.onFailure(cause);
+        },
+      );
+    },
+    [],
+  );
+
+  const load = useCallback(() => {
+    void readCurrentDay({
+      onDay: (day) => setState({ status: 'ready', day }),
+      // 勤務日を取得できない間は、打刻の操作を出さない。
+      onFailure: () => setState({ status: 'unavailable' }),
+    });
+  }, [readCurrentDay]);
 
   useEffect(load, [load]);
 
@@ -179,7 +211,7 @@ function EmployeeTodayAttendance({
   useEffect(() => {
     const created = createPunchQueue({
       owner: { workspaceId, userId, employeeId },
-      onAccepted: (result) => setState({ status: 'ready', day: result.day }),
+      onAccepted: (result) => applyCurrentDay(result.day),
       onRejected: (_entry, message) => setError(message),
       onAuthenticationRequired: () => markSessionExpired('pending_punches'),
     });
@@ -192,7 +224,7 @@ function EmployeeTodayAttendance({
       setQueue(null);
       setSnapshot({ pending: [], blocked: null, hasLegacyEntries: false });
     };
-  }, [workspaceId, userId, employeeId, markSessionExpired]);
+  }, [workspaceId, userId, employeeId, markSessionExpired, applyCurrentDay]);
 
   // 認証が切れて残った打刻は online が起きないため、画面を開いた時点で送り直す。
   // 送るのは勤務日を読み込んだ後にする。
@@ -249,7 +281,7 @@ function EmployeeTodayAttendance({
     setError(null);
     promise
       .then((result) => {
-        setState({ status: 'ready', day: result.day });
+        applyCurrentDay(result.day);
         setDraft(null);
       })
       .catch((cause: unknown) => {
@@ -268,13 +300,12 @@ function EmployeeTodayAttendance({
   function reload(): void {
     setSubmitting(true);
     setError(null);
-    api
-      .getTodayAttendance()
-      .then((next) => setState({ status: 'ready', day: next }))
-      .catch((cause: unknown) => {
+    void readCurrentDay({
+      onDay: (next) => setState({ status: 'ready', day: next }),
+      onFailure: (cause) => {
         setError(cause instanceof ApiRequestError ? cause.message : messages.networkError);
-      })
-      .finally(() => setSubmitting(false));
+      },
+    }).finally(() => setSubmitting(false));
   }
 
   function submitRequest(): void {

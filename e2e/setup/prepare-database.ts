@@ -59,12 +59,21 @@ export const E2E_PUNCH_BYSTANDER_EMPLOYEE: SeededAccount = {
   displayName: '検証 五郎',
 };
 
+/** 遅れて届いた勤務日で画面が巻き戻らないことを確かめるための従業員。 */
+export const E2E_STALE_DAY_EMPLOYEE: SeededAccount = {
+  email: 'stale-day@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E006',
+  displayName: '検証 六郎',
+};
+
 const SEEDED_ACCOUNTS = [
   E2E_EMPLOYEE,
   E2E_MOBILE_EMPLOYEE,
   E2E_PENDING_PUNCH_EMPLOYEE,
   E2E_PUNCH_OWNER_EMPLOYEE,
   E2E_PUNCH_BYSTANDER_EMPLOYEE,
+  E2E_STALE_DAY_EMPLOYEE,
 ];
 
 export function e2eDatabaseUrl(): string {

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { APIResponse, Page, Route } from '@playwright/test';
 import { devices, expect, test } from '@playwright/test';
 import type { PunchQueueOwner } from '../packages/web/src/offline/punch-queue.ts';
 import { storageKeyOf } from '../packages/web/src/offline/punch-queue.ts';
@@ -7,6 +7,7 @@ import {
   E2E_PENDING_PUNCH_EMPLOYEE,
   E2E_PUNCH_BYSTANDER_EMPLOYEE,
   E2E_PUNCH_OWNER_EMPLOYEE,
+  E2E_STALE_DAY_EMPLOYEE,
 } from './setup/prepare-database.js';
 
 /** 携帯電話の画面幅で確認する。 */
@@ -48,6 +49,37 @@ async function storedEntries(page: Page, owner: PunchQueueOwner): Promise<{ requ
   const raw = await page.evaluate((key) => window.localStorage.getItem(key), storageKeyOf(owner));
   if (raw === null) return [];
   return (JSON.parse(raw) as { entries: { requestId: string }[] }).entries;
+}
+
+/** 送信待ち打刻を端末へ用意する。保存形式は画面と同じ実装で組み立てる。 */
+async function seedPendingPunch(
+  page: Page,
+  owner: PunchQueueOwner,
+  requestId: string,
+): Promise<void> {
+  await page.evaluate(
+    ([key, stored]) => window.localStorage.setItem(key ?? '', stored ?? ''),
+    [
+      storageKeyOf(owner),
+      JSON.stringify({
+        schemaVersion: 2,
+        owner,
+        entries: [
+          { requestId, eventType: 'clock_in', occurredAt: new Date().toISOString(), attempts: 1 },
+        ],
+      }),
+    ],
+  );
+}
+
+/** React の描画が落ち着くまで待つ。時間ではなく描画の回数で区切る。 */
+async function settleRendering(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 }
 
 test.describe('送信待ち打刻の所有者', () => {
@@ -102,24 +134,7 @@ test.describe('送信待ち打刻の所有者', () => {
 
     // 持ち主の送信待ち打刻を端末へ用意する。
     const requestId = 'e2e-punch-owner-clock-in';
-    await page.evaluate(
-      ([key, stored]) => window.localStorage.setItem(key ?? '', stored ?? ''),
-      [
-        storageKeyOf(owner),
-        JSON.stringify({
-          schemaVersion: 2,
-          owner,
-          entries: [
-            {
-              requestId,
-              eventType: 'clock_in',
-              occurredAt: new Date().toISOString(),
-              attempts: 1,
-            },
-          ],
-        }),
-      ],
-    );
+    await seedPendingPunch(page, owner, requestId);
 
     await fillSignIn(page, E2E_PUNCH_BYSTANDER_EMPLOYEE);
     await expect(page.locator('.work-state')).toHaveText('出勤前');
@@ -136,5 +151,46 @@ test.describe('送信待ち打刻の所有者', () => {
     await expect(page.locator('.work-state')).toHaveText('勤務中');
     await expect(page.locator('.punch-events li')).toHaveCount(1);
     expect(sent.some((body) => body.includes(requestId))).toBe(true);
+  });
+
+  test('遅れて届いた古い勤務日で打刻の表示を巻き戻さない', async ({ page }) => {
+    await signIn(page, E2E_STALE_DAY_EMPLOYEE);
+    const owner = await ownerOf(page);
+    await signOut(page);
+
+    await seedPendingPunch(page, owner, 'e2e-stale-day-clock-in');
+
+    // 最初の読み込みだけを保留し、後から始まった読み込みを先に返す。
+    // 応答の内容は保留した時点で確保する。後で取りに行くと、打刻後の勤務日になってしまう。
+    let held: { route: Route; response: APIResponse } | null = null;
+    let reads = 0;
+    await page.route('**/api/attendance/today', async (route) => {
+      reads += 1;
+      if (reads === 1) {
+        held = { route, response: await route.fetch() };
+        return;
+      }
+      await route.continue();
+    });
+
+    await fillSignIn(page, E2E_STALE_DAY_EMPLOYEE);
+
+    // 保存済みの打刻が送られ、画面へ反映される。
+    await expect(page.locator('.work-state')).toHaveText('勤務中');
+    await expect(page.locator('.punch-events li')).toHaveCount(1);
+
+    // ここで、打刻より前に確保した勤務日が返る。
+    expect(held).not.toBeNull();
+    const stale = page.waitForResponse((response) =>
+      response.url().includes('/api/attendance/today'),
+    );
+    const pendingRead = held as unknown as { route: Route; response: APIResponse };
+    await pendingRead.route.fulfill({ response: pendingRead.response });
+    await stale;
+    await settleRendering(page);
+
+    // 古い勤務日には打刻が入っていないが、画面は戻らない。
+    await expect(page.locator('.work-state')).toHaveText('勤務中');
+    await expect(page.locator('.punch-events li')).toHaveCount(1);
   });
 });
