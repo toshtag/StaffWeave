@@ -792,7 +792,7 @@ export const operations = {
       },
       {
         status: 409,
-        description: 'このカードは別の従業員に登録されている',
+        description: 'このカードは別の従業員に登録されている、または登録トークンが同時に使われた',
         schema: errorResponseSchema,
       },
     ],

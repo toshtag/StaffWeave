@@ -157,20 +157,36 @@ export function createCardService(deps: CardServiceDependencies): CardService {
         }),
       );
 
-      const token = await deps.cards.findRegistrationTokenByHash(
-        hashToken(input.registrationToken),
-      );
-      if (!token || token.workspaceId !== workspaceId) {
-        throw new ApiError('unauthenticated', '登録トークンが一致しません');
-      }
-      if (token.usedAt !== null) {
-        throw new ApiError('unauthenticated', 'この登録トークンはすでに使われています');
-      }
-      if (token.expiresAt.getTime() <= deps.now().getTime()) {
-        throw new ApiError('unauthenticated', 'この登録トークンは有効期限が切れています');
-      }
+      // 登録トークンの照合から消費までを一つのトランザクションに収める。
+      // 先に読んだ結果は判断材料にすぎず、一度きりを決めるのは条件付きの更新である。
+      const tokenHash = hashToken(input.registrationToken);
 
       return deps.transaction(async ({ cards, audit }) => {
+        const token = await cards.findRegistrationTokenByHash(tokenHash);
+        if (!token || token.workspaceId !== workspaceId) {
+          throw new ApiError('unauthenticated', '登録トークンが一致しません');
+        }
+
+        // 有効期限の判定と消費の記録で時刻がずれないよう、一度だけ決める。
+        const now = deps.now();
+        if (token.usedAt !== null) {
+          throw new ApiError('unauthenticated', 'この登録トークンはすでに使われています');
+        }
+        if (token.expiresAt.getTime() <= now.getTime()) {
+          throw new ApiError('unauthenticated', 'この登録トークンは有効期限が切れています');
+        }
+
+        // 資格情報より先にトークンを消費し、同時に届いた要求をトークンの行で直列化する。
+        // 後続が失敗すれば、この消費も一緒に取り消される。
+        const consumed = await cards.markRegistrationTokenUsedIfAvailable(
+          workspaceId,
+          token.id,
+          now,
+        );
+        if (!consumed) {
+          throw new ApiError('conflict', 'この登録トークンはすでに使用されています');
+        }
+
         let credential: CardCredentialRecord;
         try {
           credential = await cards.insertCredential(workspaceId, {
@@ -185,8 +201,6 @@ export function createCardService(deps: CardServiceDependencies): CardService {
           }
           throw error;
         }
-
-        await cards.markRegistrationTokenUsed(token.id, deps.now());
 
         await audit.record(workspaceId, {
           actorKind: 'device',
