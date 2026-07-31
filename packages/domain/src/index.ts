@@ -197,6 +197,10 @@ export {
   isWebhookEventType,
   WEBHOOK_EVENT_TYPES,
 } from './integration/scopes.js';
+export {
+  MAXIMUM_WEBHOOK_URL_LENGTH,
+  MINIMUM_WEBHOOK_URL_LENGTH,
+} from './integration/webhook.js';
 export type {
   AssignmentContract,
   ContractProblem,

@@ -1,3 +1,4 @@
+import { MAXIMUM_WEBHOOK_URL_LENGTH } from '@staffweave/domain';
 import { describe, expect, it } from 'vitest';
 import type { WebhookHostResolver, WebhookNetworkPolicyMode } from './webhook-network-policy.js';
 import {
@@ -152,6 +153,42 @@ describe('parseWebhookUrl', () => {
     ['ゾーン識別子付き IPv6', 'http://[fe80::1%25eth0]/hook'],
   ])('%s の URL を拒む', (_label, rawUrl) => {
     expect(() => parseWebhookUrl(rawUrl)).toThrow(WebhookTargetError);
+  });
+
+  describe('長さ', () => {
+    const withPath = (length: number): string => {
+      const prefix = 'https://example.com/';
+      return prefix + 'a'.repeat(length - prefix.length);
+    };
+
+    it('上限ちょうどを受け付ける', () => {
+      const rawUrl = withPath(MAXIMUM_WEBHOOK_URL_LENGTH);
+      expect(parseWebhookUrl(rawUrl).href).toHaveLength(MAXIMUM_WEBHOOK_URL_LENGTH);
+    });
+
+    it('上限を 1 文字超えたら拒む', () => {
+      expect(() => parseWebhookUrl(withPath(MAXIMUM_WEBHOOK_URL_LENGTH + 1))).toThrow(
+        WebhookTargetError,
+      );
+    });
+
+    it('下限に満たなければ拒む', () => {
+      expect(() => parseWebhookUrl('http://')).toThrow(WebhookTargetError);
+    });
+
+    // 保存も送信も正規化後の URL で行う。入力の長さだけを見ると素通りする。
+    it('正規化で上限を超える URL を拒む', () => {
+      const rawUrl = `https://example.com/${'あ'.repeat(MAXIMUM_WEBHOOK_URL_LENGTH / 4)}`;
+      expect(rawUrl.length).toBeLessThanOrEqual(MAXIMUM_WEBHOOK_URL_LENGTH);
+      expect(new URL(rawUrl).href.length).toBeGreaterThan(MAXIMUM_WEBHOOK_URL_LENGTH);
+      expect(() => parseWebhookUrl(rawUrl)).toThrow(WebhookTargetError);
+    });
+
+    it('理由に URL 全体を含めない', () => {
+      const rawUrl = withPath(MAXIMUM_WEBHOOK_URL_LENGTH + 1);
+      expect(() => parseWebhookUrl(rawUrl)).toThrow(/文字以内/);
+      expect(() => parseWebhookUrl(rawUrl)).not.toThrow(new RegExp(rawUrl.slice(0, 200)));
+    });
   });
 });
 

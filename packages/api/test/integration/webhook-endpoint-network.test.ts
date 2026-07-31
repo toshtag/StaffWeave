@@ -1,4 +1,5 @@
 import type { ErrorResponse } from '@staffweave/contracts';
+import { MAXIMUM_WEBHOOK_URL_LENGTH } from '@staffweave/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
 import { createApp } from '../../src/app.js';
@@ -134,6 +135,26 @@ describe('Webhook 送信先の登録', () => {
     'https://hooks.example.test/hook#fragment',
   ])('構文が使えない %s を拒む', async (url) => {
     expect((await register(url)).status).toBe(400);
+  });
+
+  describe('URL の長さ', () => {
+    const withPath = (length: number): string => {
+      const prefix = 'https://hooks.example.test/';
+      return prefix + 'a'.repeat(length - prefix.length);
+    };
+
+    it('契約の上限ちょうどを受け付ける', async () => {
+      expect((await register(withPath(MAXIMUM_WEBHOOK_URL_LENGTH))).status).toBe(201);
+    });
+
+    it('契約の上限を超える URL を拒む', async () => {
+      const response = await register(withPath(MAXIMUM_WEBHOOK_URL_LENGTH + 1));
+      const body = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(400);
+      expect(body.error.details?.[0]?.field).toBe('url');
+      expect(await endpointCount()).toBe(0);
+    });
   });
 
   describe('allow-local', () => {

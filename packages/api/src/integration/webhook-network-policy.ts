@@ -10,6 +10,7 @@
 
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
+import { MAXIMUM_WEBHOOK_URL_LENGTH, MINIMUM_WEBHOOK_URL_LENGTH } from '@staffweave/domain';
 
 /** 送信先として許すネットワークの範囲。 */
 export type WebhookNetworkPolicyMode = 'public-only' | 'allow-local';
@@ -160,6 +161,14 @@ export function isAllowedAddress(
   return family === 4 || isGlobalUnicastIpv6(address, 6);
 }
 
+/** 長さの理由。URL 全体は含めない。長い入力をそのまま返しても読めない。 */
+function tooLong(): WebhookTargetError {
+  return new WebhookTargetError(
+    `Webhook 送信先の URL は ${MINIMUM_WEBHOOK_URL_LENGTH} 文字以上 ` +
+      `${MAXIMUM_WEBHOOK_URL_LENGTH} 文字以内で指定してください`,
+  );
+}
+
 /** IPv6 リテラルの角括弧を外す。`net` と `dns` はどちらも括弧なしを扱う。 */
 function bareHostname(url: URL): string {
   const hostname = url.hostname;
@@ -173,11 +182,21 @@ function bareHostname(url: URL): string {
  * `http://2130706433/` のような別表記のループバックを見落とす。
  */
 export function parseWebhookUrl(rawUrl: string): URL {
+  if (rawUrl.length < MINIMUM_WEBHOOK_URL_LENGTH || rawUrl.length > MAXIMUM_WEBHOOK_URL_LENGTH) {
+    throw tooLong();
+  }
+
   let url: URL;
   try {
     url = new URL(rawUrl);
   } catch {
     throw new WebhookTargetError('Webhook 送信先の URL を解釈できません');
+  }
+
+  // 保存も送信も正規化後の URL で行う。入力が上限内でも、percent encoding で
+  // 増えた結果が上限を超えることがある。
+  if (url.href.length > MAXIMUM_WEBHOOK_URL_LENGTH) {
+    throw tooLong();
   }
 
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {

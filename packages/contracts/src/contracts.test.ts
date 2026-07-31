@@ -1,3 +1,4 @@
+import { MAXIMUM_WEBHOOK_URL_LENGTH, MINIMUM_WEBHOOK_URL_LENGTH } from '@staffweave/domain';
 import { describe, expect, it } from 'vitest';
 import type { JsonSchema } from './json-schema.js';
 import { buildOpenApiDocument } from './openapi.js';
@@ -131,8 +132,14 @@ describe('Webhook 送信先の契約', () => {
   const properties = createWebhookEndpointRequestSchema.properties as Record<string, JsonSchema>;
   const url = properties.url ?? {};
 
-  it('URL の形式と長さの上限を示す', () => {
-    expect(url).toMatchObject({ type: 'string', format: 'uri', maxLength: 2048 });
+  // 契約と実 API が同じ定数を見ることで、片方だけ緩い状態を作らない。
+  it('URL の形式と長さを共有の定数から示す', () => {
+    expect(url).toMatchObject({
+      type: 'string',
+      format: 'uri',
+      minLength: MINIMUM_WEBHOOK_URL_LENGTH,
+      maxLength: MAXIMUM_WEBHOOK_URL_LENGTH,
+    });
   });
 
   it('既定で公開ネットワークだけを指定できることを説明する', () => {
