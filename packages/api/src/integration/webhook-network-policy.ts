@@ -43,21 +43,25 @@ export class WebhookTargetError extends Error {
 }
 
 /**
- * 既定で拒む IPv4 の範囲。
+ * 送信先として絶対に許さない範囲。`allow-local` でも上書きできない。
  *
- * ループバック・私設・リンクローカルに加え、文書用・試験用・予約済みも拒む。
- * 到達しない宛先を許す利点はなく、分類の穴は将来の抜け道になる。
+ * 内部サービスへ送りたいという要求と、これらへ到達できることは関係がない。
+ * 許しても、クラウドの資格情報や到達しない宛先を晒す危険だけが増える。
+ *
+ * 範囲は次のレジストリを基準にした（確認日: 2026-07-31）。
+ * 実行時に取得はせず、変更があれば別 Issue で一覧とテストを更新する。
+ *
+ * - IANA IPv4 Special-Purpose Address Registry
+ * - IANA IPv6 Special-Purpose Address Registry
+ * - IANA IPv6 Global Unicast Address Assignments
  */
-const DENIED_IPV4: readonly (readonly [string, number])[] = [
+const ALWAYS_DENIED_IPV4: readonly (readonly [string, number])[] = [
   ['0.0.0.0', 8], // 未指定
-  ['10.0.0.0', 8], // 私設
   ['100.64.0.0', 10], // Carrier-grade NAT
-  ['127.0.0.0', 8], // ループバック
   ['169.254.0.0', 16], // リンクローカル（メタデータサービスを含む）
-  ['172.16.0.0', 12], // 私設
   ['192.0.0.0', 24], // IETF プロトコル割り当て
   ['192.0.2.0', 24], // 文書用 TEST-NET-1
-  ['192.168.0.0', 16], // 私設
+  ['192.88.99.0', 24], // 6to4 リレーの anycast（廃止）
   ['198.18.0.0', 15], // ベンチマーク用
   ['198.51.100.0', 24], // 文書用 TEST-NET-2
   ['203.0.113.0', 24], // 文書用 TEST-NET-3
@@ -65,34 +69,32 @@ const DENIED_IPV4: readonly (readonly [string, number])[] = [
   ['240.0.0.0', 4], // 予約済み（255.255.255.255 を含む）
 ];
 
-/**
- * 既定で拒む IPv6 の範囲。
- *
- * `::ffff:0:0/96` は IPv4 射影アドレスすべてを含む。IPv6 の書き方をしていても
- * 実体は IPv4 であり、公開扱いにすると `[::ffff:127.0.0.1]` で内部へ抜けられる。
- */
-const DENIED_IPV6: readonly (readonly [string, number])[] = [
+const ALWAYS_DENIED_IPV6: readonly (readonly [string, number])[] = [
   ['::', 128], // 未指定
-  ['::1', 128], // ループバック
-  ['::', 96], // IPv4 互換（廃止）
   ['::ffff:0:0', 96], // IPv4 射影
   ['64:ff9b::', 96], // NAT64
   ['64:ff9b:1::', 48], // NAT64 ローカル
   ['100::', 64], // 破棄用
-  ['2001:2::', 48], // ベンチマーク用
+  ['2001::', 23], // IETF プロトコル割り当て（Teredo・ベンチマーク・ORCHID など）
   ['2001:db8::', 32], // 文書用
   ['2002::', 16], // 6to4
-  ['fc00::', 7], // ユニークローカル
+  ['3fff::', 20], // 文書用（RFC 9637）
   ['fe80::', 10], // リンクローカル
   ['fec0::', 10], // サイトローカル（廃止）
   ['ff00::', 8], // マルチキャスト
+  // ユニークローカルの中にある既知のメタデータエンドポイント。
+  // fc00::/7 全体を常時拒否にはしない。それでは内部サービスへ送れなくなる。
+  ['fd00:ec2::254', 128], // Amazon EC2 の IPv6 インスタンスメタデータ
 ];
+// IPv4 互換（`::a.b.c.d`、廃止）はここへ入れない。`::/96` は `::1` を含むため、
+// 常時拒否にするとループバックまで `allow-local` で使えなくなる。
+// これらは 2000::/3 の外にあり、下のグローバルユニキャスト判定で除かれる。
 
 /**
- * `allow-local` で追加して許す範囲。
+ * `allow-local` でのみ許す範囲。
  *
- * リンクローカルとメタデータサービスは含めない。これらは「内部サービスへ送りたい」
- * という要求とは関係がなく、許してもクラウドの資格情報を晒す危険だけが増える。
+ * 常時拒否の判定を先に行うため、この範囲に入っていても
+ * `fd00:ec2::254` のような常時拒否の宛先は許可されない。
  */
 const LOCAL_IPV4: readonly (readonly [string, number])[] = [
   ['127.0.0.0', 8],
@@ -105,6 +107,15 @@ const LOCAL_IPV6: readonly (readonly [string, number])[] = [
   ['::1', 128],
   ['fc00::', 7],
 ];
+
+/**
+ * 現在割り当てられている IPv6 のグローバルユニキャスト空間。
+ *
+ * IPv6 は「拒否一覧に無いから公開」とは判断しない。特別用途の範囲は後から増えるため、
+ * 拒否一覧だけを頼りにすると、新しい範囲が追加されるたびに穴ができる。
+ * まずこの範囲に入っていることを求め、その中の特別用途を常時拒否で除く。
+ */
+const GLOBAL_UNICAST_IPV6: readonly (readonly [string, number])[] = [['2000::', 3]];
 
 /**
  * 種別ごとに別の一覧へ入れる。
@@ -125,10 +136,16 @@ function matcherOf(
     version === 4 ? v4.check(address, 'ipv4') : v6.check(address, 'ipv6');
 }
 
-const isDenied = matcherOf(DENIED_IPV4, DENIED_IPV6);
+const isAlwaysDenied = matcherOf(ALWAYS_DENIED_IPV4, ALWAYS_DENIED_IPV6);
 const isLocal = matcherOf(LOCAL_IPV4, LOCAL_IPV6);
+const isGlobalUnicastIpv6 = matcherOf([], GLOBAL_UNICAST_IPV6);
 
-/** そのアドレスへ接続してよいか。 */
+/**
+ * そのアドレスへ接続してよいか。
+ *
+ * 判定の順序に意味がある。常時拒否をローカル許可より先に見ることで、
+ * `allow-local` が常時拒否の宛先を上書きできないようにする。
+ */
 export function isAllowedAddress(
   address: string,
   mode: WebhookNetworkPolicyMode = 'public-only',
@@ -137,9 +154,10 @@ export function isAllowedAddress(
   if (version === 0) return false;
 
   const family = version === 4 ? 4 : 6;
-  if (!isDenied(address, family)) return true;
-  // 拒否範囲のうち、明示設定で解禁したものだけを通す。
-  return mode === 'allow-local' && isLocal(address, family);
+  if (isAlwaysDenied(address, family)) return false;
+  if (isLocal(address, family)) return mode === 'allow-local';
+  // IPv4 はここまでで私設・特別用途を除いてある。IPv6 は割り当て済みの範囲を要求する。
+  return family === 4 || isGlobalUnicastIpv6(address, 6);
 }
 
 /** IPv6 リテラルの角括弧を外す。`net` と `dns` はどちらも括弧なしを扱う。 */

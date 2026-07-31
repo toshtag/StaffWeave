@@ -51,11 +51,15 @@ describe('isAllowedAddress', () => {
       '::ffff:127.0.0.1',
       '::ffff:10.0.0.1',
       '::ffff:169.254.169.254',
+      '::7f00:1',
       '64:ff9b::7f00:1',
       '100::',
+      '2001::1',
       '2001:2::1',
+      '2001:10::1',
       '2001:db8::1',
       '2002::1',
+      '3fff::1',
       'fc00::1',
       'fe80::1',
       'fec0::1',
@@ -63,6 +67,21 @@ describe('isAllowedAddress', () => {
     ])('IPv6 の %s を拒む', (address) => {
       expect(isAllowedAddress(address, 'public-only')).toBe(false);
     });
+
+    // 拒否一覧に無いことは公開である根拠にならない。特別用途の範囲は後から増える。
+    it.each(['5f00::1', '4000::1', 'f000::1'])(
+      '割り当て済みの範囲外にある %s を拒む',
+      (address) => {
+        expect(isAllowedAddress(address, 'public-only')).toBe(false);
+      },
+    );
+
+    it.each(['2606:4700:4700::1111', '2001:4860:4860::8888'])(
+      '公開の IPv6 %s は許す',
+      (address) => {
+        expect(isAllowedAddress(address, 'public-only')).toBe(true);
+      },
+    );
 
     it('IP アドレスとして読めない値を拒む', () => {
       expect(isAllowedAddress('not-an-address', 'public-only')).toBe(false);
@@ -76,20 +95,39 @@ describe('isAllowedAddress', () => {
   });
 
   describe('allow-local', () => {
-    it.each(['127.0.0.1', '10.0.0.1', '172.16.0.1', '192.168.0.1', '::1', 'fc00::1'])(
-      '明示設定で %s を許す',
-      (address) => {
-        expect(isAllowedAddress(address, 'allow-local')).toBe(true);
-      },
-    );
+    it.each([
+      '127.0.0.1',
+      '10.0.0.1',
+      '172.16.0.1',
+      '192.168.0.1',
+      '::1',
+      'fc00::1',
+      'fd00:1234::1',
+    ])('明示設定で %s を許す', (address) => {
+      expect(isAllowedAddress(address, 'allow-local')).toBe(true);
+    });
 
     // 内部サービスへ送りたいという要求と、これらへ到達できることは関係がない。
-    it.each(['169.254.169.254', '169.254.1.1', 'fe80::1', '0.0.0.0', '224.0.0.1', 'ff02::1'])(
-      '明示設定でも %s は拒む',
-      (address) => {
-        expect(isAllowedAddress(address, 'allow-local')).toBe(false);
-      },
-    );
+    it.each([
+      '169.254.169.254',
+      '169.254.1.1',
+      'fe80::1',
+      '0.0.0.0',
+      '224.0.0.1',
+      'ff02::1',
+      '3fff::1',
+      '5f00::1',
+      '::7f00:1',
+    ])('明示設定でも %s は拒む', (address) => {
+      expect(isAllowedAddress(address, 'allow-local')).toBe(false);
+    });
+
+    // ユニークローカルの中にあるメタデータエンドポイント。fc00::/7 を許しても、
+    // 常時拒否の判定を先に行うためここは通らない。
+    it('明示設定でも IPv6 のメタデータエンドポイントは拒む', () => {
+      expect(isAllowedAddress('fd00:ec2::254', 'allow-local')).toBe(false);
+      expect(isAllowedAddress('fd00:ec2::254', 'public-only')).toBe(false);
+    });
   });
 });
 
