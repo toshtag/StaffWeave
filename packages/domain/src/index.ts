@@ -200,6 +200,8 @@ export {
 export {
   MAXIMUM_WEBHOOK_URL_LENGTH,
   MINIMUM_WEBHOOK_URL_LENGTH,
+  WEBHOOK_SIGNATURE_SCHEME,
+  WEBHOOK_SIGNING_KEY_DERIVATION,
 } from './integration/webhook.js';
 export type {
   AssignmentContract,

@@ -1,10 +1,9 @@
-import { createHmac } from 'node:crypto';
-import { canonicalWebhookMessage } from '@staffweave/domain';
 import type { StructuredLogger } from '../shared/logger.js';
 import { silentLogger } from '../shared/logger.js';
 import type { ClaimedWebhookDelivery, WebhookOutboxRepository } from './outbox-repository.js';
 import type { IntegrationRepository, WebhookDeliveryRecord } from './repository.js';
 import type { WebhookSender } from './sender.js';
+import { signWebhookMessage } from './webhook-signature.js';
 
 /**
  * 送信待ちを取り出して送る処理。
@@ -45,17 +44,6 @@ const SKIPPED: {
   errorMessage: '送信先が停止しているため送信しませんでした',
 };
 
-function signatureOf(
-  secretHash: string,
-  message: { eventId: string; eventType: string; timestamp: string; body: string },
-): string {
-  // 署名にはハッシュではなく秘密そのものが必要だが、サーバーはハッシュしか持たない。
-  // ハッシュを鍵として使うことで、保存物が漏れても受け取り側の検証鍵は別に保てる。
-  return createHmac('sha256', secretHash)
-    .update(canonicalWebhookMessage(message), 'utf8')
-    .digest('base64');
-}
-
 export function createWebhookDeliveryProcessor(
   deps: WebhookDeliveryProcessorDependencies,
 ): WebhookDeliveryProcessor {
@@ -83,7 +71,9 @@ export function createWebhookDeliveryProcessor(
               'x-staffweave-event': entry.eventType,
               'x-staffweave-event-id': entry.eventId,
               'x-staffweave-timestamp': timestamp,
-              'x-staffweave-signature': signatureOf(entry.endpoint.secretHash, {
+              // 署名鍵は署名を生成できる機密情報。データベースを読める者は正当な署名を
+              // 作れるため、通常の秘密鍵と同じ扱いにする。ログにも残さない。
+              'x-staffweave-signature': signWebhookMessage(entry.endpoint.secretHash, {
                 eventId: entry.eventId,
                 eventType: entry.eventType,
                 timestamp,
