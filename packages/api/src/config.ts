@@ -6,6 +6,8 @@
  * 一方の設定を誤っただけでもう一方が起動できなくなる状態にはしない。
  */
 
+import type { WebhookNetworkPolicyMode } from './integration/webhook-network-policy.js';
+
 export interface ApiConfig {
   databaseUrl: string;
   host: string;
@@ -20,6 +22,8 @@ export interface ApiConfig {
   cardFingerprintKey: string | null;
   /** ビルド済みの Web を配信する場合の場所。未設定なら配信しない。 */
   webDistPath: string | null;
+  /** Webhook 送信先として許すネットワークの範囲。登録時の検査で使う。 */
+  webhookNetworkPolicy: WebhookNetworkPolicyMode;
 }
 
 /** Webhook 送信ワーカーの動作設定。既定値と許容範囲はこの一箇所で決める。 */
@@ -31,6 +35,8 @@ export interface WebhookWorkerConfig {
   sendTimeoutMs: number;
   /** 送信中の 1 件を占有する時間。過ぎると他のワーカーが引き取れる。 */
   claimLeaseMs: number;
+  /** 送信先として許すネットワークの範囲。送信の直前に再検査する。 */
+  webhookNetworkPolicy: WebhookNetworkPolicyMode;
 }
 
 export class ConfigurationError extends Error {}
@@ -85,6 +91,20 @@ function readInteger(name: string, raw: string | undefined, setting: IntegerSett
   return value;
 }
 
+/**
+ * 送信先のネットワーク範囲。
+ *
+ * これは API とワーカーで一致させるべき安全側の設定であり、ワーカー専用の性能設定とは扱いが違う。
+ * 誤った値ではどちらのプロセスも起動させない。片方だけが緩い状態を作らないようにする。
+ */
+function readWebhookNetworkPolicy(raw: string | undefined): WebhookNetworkPolicyMode {
+  if (raw === undefined || raw === '') return 'public-only';
+  if (raw === 'public-only' || raw === 'allow-local') return raw;
+  throw new ConfigurationError(
+    `WEBHOOK_NETWORK_POLICY の値が不正です: ${raw}（public-only または allow-local）`,
+  );
+}
+
 function readEnvironment(raw: string | undefined): ApiConfig['environment'] {
   if (raw === undefined || raw === '') return 'development';
   if (raw === 'development' || raw === 'test' || raw === 'production') return raw;
@@ -100,6 +120,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     defaultWorkspaceSlug: env.DEFAULT_WORKSPACE_SLUG ?? 'default',
     cardFingerprintKey: env.CARD_FINGERPRINT_KEY ?? null,
     webDistPath: env.WEB_DIST_PATH ?? null,
+    webhookNetworkPolicy: readWebhookNetworkPolicy(env.WEBHOOK_NETWORK_POLICY),
   };
 }
 
@@ -112,6 +133,7 @@ export function loadWebhookWorkerConfig(env: NodeJS.ProcessEnv = process.env): W
     pollIntervalMs: read('WEBHOOK_WORKER_POLL_INTERVAL_MS'),
     sendTimeoutMs: read('WEBHOOK_SEND_TIMEOUT_MS'),
     claimLeaseMs: read('WEBHOOK_CLAIM_LEASE_MS'),
+    webhookNetworkPolicy: readWebhookNetworkPolicy(env.WEBHOOK_NETWORK_POLICY),
   };
 
   const required = config.sendTimeoutMs + MIN_WEBHOOK_COMPLETION_GRACE_MS;
