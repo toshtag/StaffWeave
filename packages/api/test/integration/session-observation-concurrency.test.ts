@@ -3,13 +3,14 @@
  *
  * 事前の照会だけでは、二つのトランザクションがどちらも「まだ受け取っていない」と判断し、
  * どちらも観測を保存できる。ここで見るのは、要求単位の一意制約が保存を 1 件へ絞ることと、
- * 端末の行ロックが打刻イベントと PC 観測を同じ連番の上で直列化することである。
+ * 端末の行ロックが署名要求（打刻イベント・カード打刻・PC 観測）を
+ * 同じ連番の上で直列化することである。
  * どちらも実時間の待機では再現しないため、二つの処理を同じ地点でそろえてから進ませる。
  */
 import { generateKeyPair, signMessage, signPayload } from '@staffweave/agent';
 import type { RecordSessionObservationsResponse } from '@staffweave/contracts';
 import type { Queryable } from '@staffweave/db';
-import { canonicalSessionObservations } from '@staffweave/domain';
+import { canonicalCardEvent, canonicalSessionObservations } from '@staffweave/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
 import { createApprovalRepository } from '../../src/approval/repository.js';
@@ -17,6 +18,9 @@ import { createCalculationRepository } from '../../src/attendance/calculation-re
 import { createAttendanceRepository } from '../../src/attendance/repository.js';
 import type { AuditRepository } from '../../src/audit/repository.js';
 import { createAuditRepository } from '../../src/audit/repository.js';
+import { createCardRepository } from '../../src/card/repository.js';
+import type { CardRepositories } from '../../src/card/service.js';
+import { createCardService } from '../../src/card/service.js';
 import { createDeviceRepository } from '../../src/device/repository.js';
 import type { DeviceRepositories } from '../../src/device/service.js';
 import { createDeviceService } from '../../src/device/service.js';
@@ -35,6 +39,8 @@ import {
 
 const NOW = new Date('2026-04-01T00:00:00.000Z');
 const OCCURRED_AT = NOW.toISOString();
+/** 端末の中で計算された指紋。生のカード識別子はここにも現れない。 */
+const CARD_FINGERPRINT = 'a'.repeat(64);
 
 interface EnrolledDevice {
   workspaceId: string;
@@ -46,12 +52,17 @@ async function createWorkspaceWithDevice(slug: string): Promise<EnrolledDevice> 
   const db = testDatabase();
   const workspaceId = await createWorkspace(db, { slug });
   const organizationId = await createOrganization(db, workspaceId, { code: 'HQ' });
-  await createEmployeeWithAccount(db, workspaceId, {
+  const employee = await createEmployeeWithAccount(db, workspaceId, {
     organizationId,
     employeeNumber: 'E001',
     displayName: '勤怠 花子',
     email: `hanako@${slug}.example.com`,
   });
+  await db.query(
+    `INSERT INTO card_credentials (workspace_id, employee_id, fingerprint, label)
+     VALUES ($1, $2, $3, '社員証')`,
+    [workspaceId, employee.employeeId, CARD_FINGERPRINT],
+  );
   return { workspaceId, ...(await enrollDevice(workspaceId)) };
 }
 
@@ -76,8 +87,8 @@ interface Hooks {
   audit?: AuditRepository;
 }
 
-/** 打刻イベントと PC 観測が同じ端末の行で直列化されることを見るため、一式は共通にする。 */
-type Repositories = SessionRepositories & DeviceRepositories;
+/** 端末が署名して送る要求が同じ端末の行で直列化されることを見るため、一式は共通にする。 */
+type Repositories = SessionRepositories & DeviceRepositories & CardRepositories;
 
 /**
  * 実データベースへ書く一式を組み立てる。
@@ -95,6 +106,7 @@ function transactionWith(hooks: Hooks) {
         calculations: createCalculationRepository(tx),
         approval: createApprovalRepository(tx),
         observations: createSessionObservationRepository(tx),
+        cards: createCardRepository(tx),
         audit: hooks.audit ?? createAuditRepository(tx),
         devices: {
           ...devices,
@@ -131,6 +143,17 @@ function deviceServiceWith(hooks: Hooks = {}) {
     attendance: createAttendanceRepository(db),
     now: () => NOW,
     cardFingerprintKey: null,
+    transaction: transactionWith(hooks),
+  });
+}
+
+function cardServiceWith(hooks: Hooks = {}) {
+  const db = testDatabase();
+  return createCardService({
+    cards: createCardRepository(db),
+    devices: createDeviceRepository(db),
+    visibility: createEmployeeVisibilityGuard(createAssignmentRepository(db)),
+    now: () => NOW,
     transaction: transactionWith(hooks),
   });
 }
@@ -192,6 +215,28 @@ function sendEvent(
     ...payload,
   });
   return service.recordEvent(device.deviceId, signature, payload);
+}
+
+function tapCard(
+  service: ReturnType<typeof createCardService>,
+  device: EnrolledDevice,
+  sequence: number,
+  requestId: string,
+  eventType: 'clock_in' | 'clock_out' = 'clock_in',
+) {
+  const payload = {
+    sequence,
+    requestId,
+    cardFingerprint: CARD_FINGERPRINT,
+    eventType,
+    occurredAt: OCCURRED_AT,
+    deviceTime: OCCURRED_AT,
+  };
+  const signature = signMessage(
+    device.privateKeyPem,
+    canonicalCardEvent({ deviceId: device.deviceId, ...payload }),
+  );
+  return service.recordCardEvent(device.deviceId, signature, payload);
 }
 
 async function countOf(table: string): Promise<number> {
@@ -320,5 +365,63 @@ describe('打刻イベントと PC 観測の同時送信', () => {
     const rejected = results.find((result) => result.status === 'rejected');
     expect(rejected?.reason).toMatchObject({ code: 'conflict', status: 409 });
     expect(await lastSequenceOf(device.deviceId)).toBe(1);
+  });
+});
+
+describe('カード打刻と PC 観測の連番', () => {
+  let device: EnrolledDevice;
+
+  beforeEach(async () => {
+    device = await createWorkspaceWithDevice('default');
+  });
+
+  it('交互に送っても同じ端末連番を進める', async () => {
+    const cards = cardServiceWith();
+    const sessions = sessionServiceWith();
+
+    await tapCard(cards, device, 1, 'card-event-1', 'clock_in');
+    await sendObservations(sessions, device, 2, 'session-request-2');
+    await tapCard(cards, device, 3, 'card-event-3', 'clock_out');
+    await sendObservations(sessions, device, 4, 'session-request-4');
+
+    expect(await lastSequenceOf(device.deviceId)).toBe(4);
+    expect(await countOf('attendance_events')).toBe(2);
+    expect(await countOf('workstation_session_observations')).toBe(4);
+    expect(await countOf('workstation_session_receipts')).toBe(2);
+  });
+
+  it('同じ連番を同時に使えば、成立するのは 1 件だけ', async () => {
+    const barrier = createBarrier(2);
+    const hooks = { beforeLock: () => barrier.arriveAndWait() };
+
+    const results = await Promise.allSettled([
+      tapCard(cardServiceWith(hooks), device, 1, 'card-concurrent-1', 'clock_in'),
+      sendObservations(sessionServiceWith(hooks), device, 1, 'session-concurrent-1'),
+    ]);
+
+    const [card, session] = results;
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')?.reason).toMatchObject({
+      code: 'conflict',
+      status: 409,
+    });
+    expect(await lastSequenceOf(device.deviceId)).toBe(1);
+
+    // 成立した側だけが記録を残す。断った側は経路ごとの受信記録に残る。
+    const cardWon = card?.status === 'fulfilled';
+    expect(await countOf('attendance_events')).toBe(cardWon ? 1 : 0);
+    expect(await countOf('workstation_session_observations')).toBe(
+      session?.status === 'fulfilled' ? 2 : 0,
+    );
+
+    const receipts = await testDatabase().query<{ outcome: string }>(
+      'SELECT outcome FROM workstation_session_receipts',
+    );
+    expect(receipts.map((row) => row.outcome)).toEqual([cardWon ? 'rejected' : 'accepted']);
+
+    const eventReceipts = await testDatabase().query<{ outcome: string }>(
+      'SELECT outcome FROM device_event_receipts',
+    );
+    expect(eventReceipts.map((row) => row.outcome)).toEqual([cardWon ? 'accepted' : 'rejected']);
   });
 });
