@@ -10,22 +10,50 @@ import {
 } from './webhook-http-transport.js';
 import type { ResolvedWebhookTarget } from './webhook-network-policy.js';
 
-const target = (url: string, address = '127.0.0.1'): ResolvedWebhookTarget => ({
-  url: new URL(url),
+const candidate = (address: string) => ({
   address,
-  family: address.includes(':') ? 6 : 4,
+  family: address.includes(':') ? (6 as const) : (4 as const),
+});
+
+const target = (url: string, ...addresses: string[]): ResolvedWebhookTarget => ({
+  url: new URL(url),
+  addresses: (addresses.length === 0 ? ['127.0.0.1'] : addresses).map(candidate),
 });
 
 describe('buildRequestOptions', () => {
-  it('検査済みのアドレスだけを返す名前解決を渡す', async () => {
-    const options = buildRequestOptions(target('https://example.test/hook', '93.184.216.34'), {});
-    const resolved = await new Promise<{ address: string; family: number }>((resolve) => {
-      options.lookup?.('example.test', {}, (_error, address, family) => {
-        resolve({ address: String(address), family: Number(family) });
-      });
+  const lookedUp = (target: ResolvedWebhookTarget, all: boolean): Promise<unknown> =>
+    new Promise((resolve) => {
+      buildRequestOptions(target, {}).lookup?.('example.test', { all }, (_error, address, family) =>
+        resolve(all ? address : { address, family }),
+      );
     });
 
-    expect(resolved).toEqual({ address: '93.184.216.34', family: 4 });
+  it('検査済みのアドレスだけを返す名前解決を渡す', async () => {
+    await expect(
+      lookedUp(target('https://example.test/hook', '93.184.216.34'), false),
+    ).resolves.toEqual({ address: '93.184.216.34', family: 4 });
+  });
+
+  // 全件が検査済みなので、どれへつないでも安全である。
+  // 1 件へ潰すと、経路の無い種別だけが残ったときに送信できなくなる。
+  it('候補一覧を求められたら検査済みの候補をすべて返す', async () => {
+    await expect(
+      lookedUp(target('https://example.test/hook', '2606:4700:4700::1111', '93.184.216.34'), true),
+    ).resolves.toEqual([
+      { address: '2606:4700:4700::1111', family: 6 },
+      { address: '93.184.216.34', family: 4 },
+    ]);
+  });
+
+  it('候補が複数あるときは種別の自動選択を有効にする', () => {
+    expect(
+      buildRequestOptions(target('https://example.test/hook', '::1', '127.0.0.1'), {})
+        .autoSelectFamily,
+    ).toBe(true);
+    expect(
+      buildRequestOptions(target('https://example.test/hook', '93.184.216.34'), {})
+        .autoSelectFamily,
+    ).toBe(false);
   });
 
   it('接続先を固定しても TLS は元のホスト名で検証する', () => {
@@ -82,8 +110,8 @@ describe('nodeWebhookTransport', () => {
     return (server.address() as AddressInfo).port;
   }
 
-  const send = (url: string, address = '127.0.0.1') =>
-    nodeWebhookTransport(target(url, address), {}, '{}', new AbortController().signal);
+  const send = (url: string, ...addresses: string[]) =>
+    nodeWebhookTransport(target(url, ...addresses), {}, '{}', new AbortController().signal);
 
   it('応答の状態番号を返す', async () => {
     const port = await listen((_request, response) => response.writeHead(204).end());
@@ -170,6 +198,15 @@ describe('nodeWebhookTransport', () => {
     });
 
     await expect(send(`http://127.0.0.1:${port}/hook`)).rejects.toThrow();
+  });
+
+  // IPv6 の経路が無い環境でも、検査済みの IPv4 候補へ切り替えて送れる。
+  it('先頭の候補へ届かなければ次の候補を試す', async () => {
+    const port = await listen((_request, response) => response.writeHead(204).end());
+
+    // 待ち受けているのは 127.0.0.1 だけ。::1 は接続に失敗する。
+    const result = await send(`http://example.test:${port}/hook`, '::1', '127.0.0.1');
+    expect(result).toEqual({ statusCode: 204, bodyLimitExceeded: false });
   });
 
   it('中断信号で通信をやめる', async () => {

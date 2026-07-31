@@ -179,6 +179,26 @@ describe('createWebhookSender', () => {
       expect(aborted).toBe(true);
     });
 
+    it('検査済みの候補をすべて通信へ渡す', async () => {
+      let seen: readonly { address: string; family: 4 | 6 }[] | undefined;
+      const send = sender({
+        resolver: async () => [
+          { address: '93.184.216.34', family: 4 },
+          { address: '2606:4700:4700::1111', family: 6 },
+        ],
+        transport: async (target) => {
+          seen = target.addresses;
+          return responded(204);
+        },
+      });
+
+      await send(request);
+      expect(seen).toEqual([
+        { address: '93.184.216.34', family: 4 },
+        { address: '2606:4700:4700::1111', family: 6 },
+      ]);
+    });
+
     it('名前解決の失敗を利用者向けの文言へ変える', async () => {
       const send = sender({
         resolver: async () => {

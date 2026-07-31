@@ -231,13 +231,12 @@ describe('createWebhookNetworkPolicy', () => {
         throw new Error('名前解決を呼んではならない');
       }).resolve(`https://${PUBLIC_ADDRESS}/hook`);
 
-      expect(target.address).toBe(PUBLIC_ADDRESS);
-      expect(target.family).toBe(4);
+      expect(target.addresses).toEqual([{ address: PUBLIC_ADDRESS, family: 4 }]);
     });
 
     it('allow-local ではループバックを許す', async () => {
       const target = await policy('allow-local').resolve('http://127.0.0.1:8787/hook');
-      expect(target.address).toBe('127.0.0.1');
+      expect(target.addresses).toEqual([{ address: '127.0.0.1', family: 4 }]);
     });
   });
 
@@ -255,8 +254,7 @@ describe('createWebhookNetworkPolicy', () => {
 
       expect(target).toEqual({
         url: new URL('https://example.test/hook'),
-        address: PUBLIC_ADDRESS,
-        family: 4,
+        addresses: [{ address: PUBLIC_ADDRESS, family: 4 }],
       });
     });
 
@@ -269,9 +267,11 @@ describe('createWebhookNetworkPolicy', () => {
         ),
       ).resolve('https://example.test/hook');
 
-      // 応答順をそのまま使う。安全なものを選び直す余地を作らない。
-      expect(target.address).toBe('2606:4700:4700::1111');
-      expect(target.family).toBe(6);
+      // 検査を通った候補はすべて残し、応答順もそのまま保つ。
+      expect(target.addresses).toEqual([
+        { address: '2606:4700:4700::1111', family: 6 },
+        { address: PUBLIC_ADDRESS, family: 4 },
+      ]);
     });
 
     it('内部アドレスだけを返すホストを拒む', async () => {
@@ -320,7 +320,7 @@ describe('createWebhookNetworkPolicy', () => {
         resolving({ address: PUBLIC_ADDRESS, family: 4 }, { address: PUBLIC_ADDRESS, family: 4 }),
       ).resolve('https://example.test/hook');
 
-      expect(target.address).toBe(PUBLIC_ADDRESS);
+      expect(target.addresses).toEqual([{ address: PUBLIC_ADDRESS, family: 4 }]);
     });
 
     it('登録時と送信時で違う結果を返す解決器を扱える', async () => {
@@ -332,7 +332,7 @@ describe('createWebhookNetworkPolicy', () => {
       const target = policy('public-only', rebinding);
 
       await expect(target.resolve('https://example.test/hook')).resolves.toMatchObject({
-        address: PUBLIC_ADDRESS,
+        addresses: [{ address: PUBLIC_ADDRESS, family: 4 }],
       });
       await expect(target.resolve('https://example.test/hook')).rejects.toThrow(
         '許可されていないアドレス',

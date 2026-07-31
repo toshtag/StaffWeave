@@ -31,11 +31,15 @@ export type WebhookHostResolver = (
   signal: AbortSignal,
 ) => Promise<ResolvedAddress[]>;
 
-/** 検査を通った送信先。HTTP はこのアドレスへ接続する。 */
+/**
+ * 検査を通った送信先。HTTP はこの候補のいずれかへ接続する。
+ *
+ * 候補を 1 件へ絞らない。全件が検査済みであれば、どれへつないでも安全であり、
+ * IPv6 の経路が無い環境で IPv4 の候補を試せなくなる方が実害が大きい。
+ */
 export interface ResolvedWebhookTarget {
   url: URL;
-  address: string;
-  family: 4 | 6;
+  addresses: readonly ResolvedAddress[];
 }
 
 /**
@@ -311,7 +315,7 @@ export function createWebhookNetworkPolicy(
             'Webhook 送信先が許可されていないネットワークを指しています',
           );
         }
-        return { url, address: hostname, family: literal === 6 ? 6 : 4 };
+        return { url, addresses: [{ address: hostname, family: literal === 6 ? 6 : 4 }] };
       }
 
       let addresses: ResolvedAddress[];
@@ -338,11 +342,8 @@ export function createWebhookNetworkPolicy(
         }
       }
 
-      const [first] = addresses;
-      if (first === undefined) {
-        throw new WebhookTargetError('Webhook 送信先の名前を解決できません');
-      }
-      return { url, address: first.address, family: first.family };
+      // 検査を通った候補はすべて残す。接続側が到達できるものを選べるようにする。
+      return { url, addresses };
     },
   };
 }

@@ -39,6 +39,17 @@ export type WebhookTransport = (
 ) => Promise<WebhookResponseSummary>;
 
 /**
+ * 送信に使う要求設定。
+ *
+ * `autoSelectFamily` は `net.connect` の設定で、`http` の型には現れないが
+ * 接続処理までそのまま渡る。プロセス既定値に頼らず、送信ごとに明示する。
+ */
+type WebhookRequestOptions = RequestOptions & {
+  headers: Record<string, string>;
+  autoSelectFamily: boolean;
+};
+
+/**
  * 送信に使う要求設定を組み立てる。
  *
  * 接続先の固定と TLS の検証条件は同じ場所で決める。片方だけ変えると、
@@ -47,12 +58,16 @@ export type WebhookTransport = (
 export function buildRequestOptions(
   target: ResolvedWebhookTarget,
   headers: Record<string, string>,
-): RequestOptions & { headers: Record<string, string> } {
-  const { url, address, family } = target;
+): WebhookRequestOptions {
+  const { url, addresses } = target;
+  const [first] = addresses;
+  if (first === undefined) {
+    throw new Error('接続先の候補がありません');
+  }
   const secure = url.protocol === 'https:';
   const hostname = url.hostname.startsWith('[') ? url.hostname.slice(1, -1) : url.hostname;
 
-  const options: RequestOptions & { headers: Record<string, string> } = {
+  const options: WebhookRequestOptions = {
     protocol: url.protocol,
     hostname,
     port: url.port === '' ? (secure ? 443 : 80) : Number(url.port),
@@ -64,12 +79,15 @@ export function buildRequestOptions(
     maxHeaderSize: WEBHOOK_MAX_RESPONSE_HEADER_BYTES,
     // 検査した宛先と接続を一対一で対応させる。別の送信や別の解決結果と socket を共有しない。
     agent: false,
-    // 検査済みのアドレスをそのまま返す。ここで名前を引き直さない。
-    // 接続側が候補一覧を求めることもあるが、返す候補は常にこの 1 件だけにする。
+    // 検査済みの候補をそのまま返す。ここで名前を引き直さない。
+    // 一覧を求められたら全件返す。すべて検査済みなので、どれへつないでも安全であり、
+    // 到達できない種別だけが残って送信が失敗する状態を避けられる。
     lookup: (_hostname, options, callback) => {
-      if (options.all === true) callback(null, [{ address, family }]);
-      else callback(null, address, family);
+      if (options.all === true) callback(null, [...addresses]);
+      else callback(null, first.address, first.family);
     },
+    // 候補が複数あるときは Node.js の種別自動選択に任せ、つながる方を使わせる。
+    autoSelectFamily: addresses.length > 1,
   };
 
   // TLS は接続先の IP ではなく元のホスト名に対して検証する。
