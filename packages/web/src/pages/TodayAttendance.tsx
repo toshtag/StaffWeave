@@ -185,8 +185,6 @@ function EmployeeTodayAttendance({
     });
     const unsubscribe = created.subscribe(setSnapshot);
     setQueue(created);
-    // 認証が切れて残った打刻は online が起きないため、画面を開いた時点で送り直す。
-    void created.flush();
 
     return () => {
       unsubscribe();
@@ -195,6 +193,14 @@ function EmployeeTodayAttendance({
       setSnapshot({ pending: [], blocked: null, hasLegacyEntries: false });
     };
   }, [workspaceId, userId, employeeId, markSessionExpired]);
+
+  // 認証が切れて残った打刻は online が起きないため、画面を開いた時点で送り直す。
+  // 送るのは勤務日を読み込んだ後にする。
+  // 先に送ると、送信前に始めた読み込みが後から届き、送れた打刻を消してしまう。
+  useEffect(() => {
+    if (queue === null || state.status === 'loading') return;
+    void queue.flush();
+  }, [queue, state.status]);
 
   useEffect(() => {
     const update = (): void => setOnline(window.navigator.onLine);
