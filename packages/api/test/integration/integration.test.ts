@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { createConnector, verifyWebhook } from '@staffweave/connector';
 import type {
   ApiKeyList,
@@ -6,7 +7,7 @@ import type {
   DailyRequestRecord,
   ImportResult,
 } from '@staffweave/contracts';
-import { parseCsv } from '@staffweave/domain';
+import { canonicalWebhookMessage, parseCsv } from '@staffweave/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
 import { createApp } from '../../src/app.js';
@@ -393,6 +394,38 @@ describe('Webhook', () => {
     );
 
     expect(verified.eventType).toBe('attendance_request.approved');
+  });
+
+  it('保存された値だけで Webhook 署名を生成できる', async () => {
+    const instance = app();
+    await registerEndpoint(instance);
+    await approve(instance);
+    await runDeliveryWorker();
+
+    const delivery = sent[0];
+    if (!delivery) throw new Error('通知が送られていません');
+
+    const rows = await testDatabase().query<{ secret_hash: string }>(
+      'SELECT secret_hash FROM webhook_endpoints',
+    );
+    const stored = rows[0]?.secret_hash;
+    if (!stored) throw new Error('送信先が登録されていません');
+
+    // 保存値は照合用のハッシュではなく、そのまま HMAC の鍵になる。
+    // データベースを読める者は正当な署名を作れる、という事実をここで固定する。
+    const forged = createHmac('sha256', stored)
+      .update(
+        canonicalWebhookMessage({
+          eventId: delivery.headers['x-staffweave-event-id'] ?? '',
+          eventType: delivery.headers['x-staffweave-event'] ?? '',
+          timestamp: delivery.headers['x-staffweave-timestamp'] ?? '',
+          body: delivery.body,
+        }),
+        'utf8',
+      )
+      .digest('base64');
+
+    expect(forged).toBe(delivery.headers['x-staffweave-signature']);
   });
 
   it('別の秘密では署名が一致しない', async () => {
