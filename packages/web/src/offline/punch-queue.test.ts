@@ -891,6 +891,185 @@ describe('端末へ保存できないとき', () => {
   });
 });
 
+describe('読み込み障害からの復旧', () => {
+  const key = storageKeyOf(OWNER_A);
+  const archiveKey = `${key}.unreadable`;
+
+  /** 行列を作る間だけ読み取りを失敗させ、その後は成功させる。 */
+  function createBrokenReadHarness(initial: Record<string, string> = {}): Harness {
+    const storage = createFakeStorage(initial);
+    storage.failGetItem = (target) => target === key;
+    return createHarness(storage);
+  }
+
+  it('保存領域が戻れば、同じ画面のまま打刻できる', async () => {
+    const harness = createBrokenReadHarness();
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+
+    harness.storage.failGetItem = () => false;
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    // 画面は「もう一度操作してください」と案内している。再操作で直らなければ案内が嘘になる。
+    expect(harness.send).toHaveBeenCalledTimes(1);
+    expect(queue.snapshot().blocked).toBeNull();
+  });
+
+  it('復旧するまでは受理も送信もしない', async () => {
+    const harness = createBrokenReadHarness();
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+    await queue.flush();
+
+    expect(harness.send).not.toHaveBeenCalled();
+    expect(queue.snapshot().pending).toHaveLength(0);
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+  });
+
+  it('復旧するまで冪等キーを発行しない', async () => {
+    const harness = createBrokenReadHarness();
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    // 使われない冪等キーを増やさない。
+    expect(harness.requestIds).toHaveLength(0);
+  });
+
+  it('保存済みの打刻を読み直して送る', async () => {
+    const harness = createBrokenReadHarness({
+      [key]: storedQueue(OWNER_A, [punch('request-a')]),
+    });
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    expect(queue.snapshot().pending).toHaveLength(0);
+
+    harness.storage.failGetItem = () => false;
+    await queue.flush();
+
+    expect(harness.send).toHaveBeenCalledTimes(1);
+    expect(harness.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ requestId: 'request-a' }),
+    );
+  });
+
+  it('online でも読み直す', async () => {
+    const harness = createBrokenReadHarness({
+      [key]: storedQueue(OWNER_A, [punch('request-a')]),
+    });
+    createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    harness.storage.failGetItem = () => false;
+    harness.online.emit();
+
+    await vi.waitFor(() => expect(harness.send).toHaveBeenCalledTimes(1));
+  });
+
+  it('保存済みの打刻を新しい打刻で上書きしない', async () => {
+    const harness = createBrokenReadHarness({
+      [key]: storedQueue(OWNER_A, [punch('request-a')]),
+    });
+    harness.send.mockRejectedValue(new TypeError('offline'));
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    harness.storage.failGetItem = () => false;
+    await queue.enqueue('clock_out', new Date('2026-07-31T09:00:00.000Z'));
+
+    // 先に保存されていた打刻の後ろへ足す。順番も冪等キーも変えない。
+    expect(queue.snapshot().pending.map((entry) => entry.requestId)).toEqual([
+      'request-a',
+      'request-1',
+    ]);
+    const saved = JSON.parse(harness.storage.entries.get(key) ?? 'null');
+    expect(saved.entries).toHaveLength(2);
+  });
+
+  it('復旧すると送信待ちの件数を購読者へ伝える', async () => {
+    const harness = createBrokenReadHarness({
+      [key]: storedQueue(OWNER_A, [punch('request-a')]),
+    });
+    harness.send.mockRejectedValue(new TypeError('offline'));
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    const listener = vi.fn();
+    queue.subscribe(listener);
+    listener.mockClear();
+
+    harness.storage.failGetItem = () => false;
+    await queue.flush();
+
+    expect(listener).toHaveBeenCalled();
+    expect(listener.mock.calls.some(([snapshot]) => snapshot.pending.length === 1)).toBe(true);
+  });
+
+  it('読めない内容を退避してから新しい打刻を保存する', async () => {
+    const harness = createBrokenReadHarness({ [key]: '{壊れた内容' });
+    harness.send.mockRejectedValue(new TypeError('offline'));
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    harness.storage.failGetItem = () => false;
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    const archive = JSON.parse(harness.storage.entries.get(archiveKey) ?? 'null');
+    expect(archive.entries.map((entry: { raw: string }) => entry.raw)).toEqual(['{壊れた内容']);
+    expect(queue.snapshot().pending).toHaveLength(1);
+    expect(queue.snapshot().hasUnreadableEntries).toBe(true);
+  });
+
+  it('退避できなければ新しい打刻を受理しない', async () => {
+    const harness = createBrokenReadHarness({ [key]: '{壊れた内容' });
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    harness.storage.failGetItem = () => false;
+    harness.storage.failSetItem = (target) => target === archiveKey;
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    expect(queue.snapshot().pending).toHaveLength(0);
+    expect(harness.send).not.toHaveBeenCalled();
+    expect(harness.storage.entries.get(key)).toBe('{壊れた内容');
+  });
+
+  it('読み込みが失敗し続けても未処理例外を漏らさない', async () => {
+    const harness = createBrokenReadHarness();
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await expect(
+        queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z')),
+      ).resolves.toBeUndefined();
+      await expect(queue.flush()).resolves.toBeUndefined();
+    }
+
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+  });
+
+  it('送るものが無くても、復旧すれば警告を消す', async () => {
+    const harness = createBrokenReadHarness();
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+
+    harness.storage.failGetItem = () => false;
+    await queue.flush();
+
+    // 送信も打刻も起きないため、読み直せたことだけが警告を消す根拠になる。
+    expect(queue.snapshot().blocked).toBeNull();
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+
+  it('Storage 以外の停止理由を復旧で消さない', async () => {
+    const harness = createHarness(
+      createFakeStorage({ [key]: storedQueue(OWNER_A, [punch('request-a')]) }),
+    );
+    harness.send.mockRejectedValue(new ApiRequestError(403, 'forbidden', ''));
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    await queue.flush();
+    expect(queue.snapshot().blocked?.reason).toBe('permission_blocked');
+
+    await queue.flush();
+    expect(queue.snapshot().blocked?.reason).toBe('permission_blocked');
+  });
+});
+
 describe('旧形式の保存内容', () => {
   const legacy = JSON.stringify([
     { requestId: 'legacy-1', eventType: 'clock_in', occurredAt: '2026-07-30T00:00:00.000Z' },

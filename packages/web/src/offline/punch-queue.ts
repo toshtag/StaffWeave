@@ -345,6 +345,9 @@ export function createPunchQueue(
   /**
    * 保存内容を読めたかどうか。
    * 読めないまま書くと、その所有者の打刻を退避もできずに消してしまう。
+   *
+   * false になるのは読み込みに失敗したときだけで、その間は保存も送信もしない。
+   * つまり、この値が false の間に行列の中身が増えることはない。
    */
   let readable = true;
 
@@ -446,6 +449,43 @@ export function createPunchQueue(
   }
 
   /**
+   * 保存内容を読み直す。
+   *
+   * 保存領域の障害は、設定の変更や空き容量の確保で解消することがある。
+   * 読めないままにすると、画面が案内する再操作では直らず、読み込み直すしかなくなる。
+   *
+   * 読めない間は保存も送信もしていないため、ここで読み直した内容が正本になる。
+   */
+  function restoreCurrentEntries(): boolean {
+    const stored = readStorage(storage, key);
+    if (!stored.ok) {
+      blockOnStorage();
+      return false;
+    }
+
+    if (stored.value === null) {
+      pending = [];
+      unreadable = null;
+    } else {
+      const loaded = parseStored(stored.value, owner);
+      if (loaded === null) {
+        pending = [];
+        unreadable = stored.value;
+        hasUnreadable = true;
+      } else {
+        pending = loaded;
+        unreadable = null;
+      }
+    }
+
+    readable = true;
+    // 認証や権限など、保存以外の理由で止まっている場合はそのままにする。
+    if (blocked?.reason === 'storage_unavailable') blocked = null;
+    notify();
+    return true;
+  }
+
+  /**
    * 送信に失敗したときの後始末。
    * 次の打刻へ進んでよい場合だけ true を返す。
    */
@@ -489,6 +529,7 @@ export function createPunchQueue(
 
   async function flush(): Promise<void> {
     if (disposed || flushing) return;
+    if (!readable && !restoreCurrentEntries()) return;
     flushing = true;
     try {
       while (pending.length > 0) {
@@ -535,6 +576,9 @@ export function createPunchQueue(
   return {
     async enqueue(eventType, occurredAt) {
       if (disposed) return;
+      // 保存できないうちは冪等キーも発行しない。使われない値を増やさない。
+      if (!readable && !restoreCurrentEntries()) return;
+
       const entry: PendingPunch = {
         requestId: createRequestId(),
         eventType,

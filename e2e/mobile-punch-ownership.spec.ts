@@ -9,6 +9,7 @@ import {
   E2E_PUNCH_OWNER_EMPLOYEE,
   E2E_STALE_DAY_EMPLOYEE,
   E2E_STORAGE_FAILURE_EMPLOYEE,
+  E2E_STORAGE_READ_EMPLOYEE,
 } from './setup/prepare-database.js';
 
 /** 携帯電話の画面幅で確認する。 */
@@ -269,5 +270,51 @@ test.describe('送信待ち打刻の所有者', () => {
     await expect(page.locator('.blocked-banner')).toContainText('was not recorded');
 
     await selectLocale(page, 'ja-JP');
+  });
+
+  test('読み込み障害から復旧すれば、同じ画面のまま打刻できる', async ({ page }) => {
+    const sent: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/api/attendance/events')) {
+        sent.push(request.url());
+      }
+    });
+
+    await signIn(page, E2E_STORAGE_READ_EMPLOYEE);
+    const owner = await ownerOf(page);
+    await signOut(page);
+
+    // 送信待ち打刻の保存先だけを読めなくする。合図を送るまで解除しない。
+    await page.addInitScript((key) => {
+      const original = Storage.prototype.getItem;
+      Storage.prototype.getItem = function getItem(name: string) {
+        const recovered = (window as unknown as { punchStorageRecovered?: boolean })
+          .punchStorageRecovered;
+        if (name === key && recovered !== true) {
+          throw new DOMException('Storage is not available', 'SecurityError');
+        }
+        return original.call(this, name);
+      };
+    }, storageKeyOf(owner));
+    await page.reload();
+    await fillSignIn(page, E2E_STORAGE_READ_EMPLOYEE);
+
+    await expect(page.locator('.blocked-banner')).toContainText('打刻は記録されていません');
+    expect(sent).toHaveLength(0);
+
+    // 保存設定が直った状況を作る。画面は再読み込みしない。
+    await page.evaluate(() => {
+      (window as unknown as { punchStorageRecovered: boolean }).punchStorageRecovered = true;
+    });
+
+    await page.getByRole('button', { name: '出勤', exact: true }).click();
+
+    // 画面が案内するとおり、再操作だけで送信まで進む。
+    await expect(page.locator('.work-state')).toHaveText('勤務中');
+    await expect(page.locator('.blocked-banner')).toHaveCount(0);
+    expect(sent).toHaveLength(1);
+
+    await page.reload();
+    await expect(page.locator('.punch-events li')).toHaveCount(1);
   });
 });
