@@ -19,29 +19,31 @@ import {
   grantOrganizationScope,
   loginAndGetCookie,
 } from '../support/fixtures.js';
+import type { SentWebhook } from '../support/webhook.js';
+import { createTestDeliveryProcessor, drain, recordingTransport } from '../support/webhook.js';
 
 const CLOCK_IN_AT = '2026-04-01T00:00:00.000Z';
 const CLOCK_OUT_AT = '2026-04-01T09:00:00.000Z';
 const BUSINESS_DATE = '2026-04-01';
 
-interface SentWebhook {
-  url: string;
-  headers: Record<string, string>;
-  body: string;
-}
-
 const sent: SentWebhook[] = [];
 
-function app(now: string = CLOCK_OUT_AT, response = new Response(null, { status: 204 })) {
+function app(now: string = CLOCK_OUT_AT) {
   return createApp({
     db: testDatabase(),
     defaultWorkspaceSlug: 'default',
     now: () => new Date(now),
-    sendWebhook: async (url, headers, body) => {
-      sent.push({ url, headers, body });
-      return response;
-    },
   });
+}
+
+/** 送信待ちが無くなるまでワーカーを動かす。API 自身は HTTP 送信を行わない。 */
+async function runDeliveryWorker(status = 204): Promise<void> {
+  await drain(
+    createTestDeliveryProcessor(testDatabase(), {
+      now: new Date(CLOCK_OUT_AT),
+      transport: recordingTransport(sent, () => new Response(null, { status })),
+    }),
+  );
 }
 
 type App = ReturnType<typeof app>;
@@ -348,6 +350,7 @@ describe('Webhook', () => {
     const instance = app();
     await registerEndpoint(instance);
     await approve(instance);
+    await runDeliveryWorker();
 
     expect(sent).toHaveLength(1);
     expect(sent[0]?.url).toBe('https://example.test/hooks');
@@ -363,6 +366,7 @@ describe('Webhook', () => {
     const instance = app();
     const endpoint = await registerEndpoint(instance);
     await approve(instance);
+    await runDeliveryWorker();
 
     const delivery = sent[0];
     expect(delivery).toBeDefined();
@@ -389,6 +393,7 @@ describe('Webhook', () => {
     const instance = app();
     await registerEndpoint(instance);
     await approve(instance);
+    await runDeliveryWorker();
 
     const delivery = sent[0];
     if (!delivery) throw new Error('通知が送られていません');
@@ -414,6 +419,7 @@ describe('Webhook', () => {
     const instance = app();
     const endpoint = await registerEndpoint(instance);
     await approve(instance);
+    await runDeliveryWorker();
 
     const delivery = sent[0];
     if (!delivery) throw new Error('通知が送られていません');
@@ -439,14 +445,16 @@ describe('Webhook', () => {
     const instance = app();
     await registerEndpoint(instance, ['monthly_closing.closed']);
     await approve(instance);
+    await runDeliveryWorker();
 
     expect(sent).toHaveLength(0);
   });
 
   it('送信に失敗しても承認は成立し、記録が残る', async () => {
-    const instance = app(CLOCK_OUT_AT, new Response(null, { status: 500 }));
+    const instance = app();
     await registerEndpoint(instance);
     await approve(instance);
+    await runDeliveryWorker(500);
 
     const rows = await testDatabase().query<{ outcome: string; status_code: number }>(
       'SELECT outcome, status_code FROM webhook_deliveries',
@@ -464,6 +472,7 @@ describe('Webhook', () => {
     const instance = app();
     await registerEndpoint(instance);
     await approve(instance);
+    await runDeliveryWorker();
 
     await expect(testDatabase().query('DELETE FROM webhook_deliveries')).rejects.toThrow(
       /追記のみ/,

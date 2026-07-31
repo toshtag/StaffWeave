@@ -62,6 +62,14 @@ Hono による HTTP サーバー。
 それぞれが `repository.ts`（永続化）、`service.ts`（ユースケース）、`routes.ts`（HTTP）を持ちます。
 すべての Repository メソッドは `workspaceId` を必須引数として受け取り、SQL の `WHERE` 句へ必ず含めます。
 
+例外は背景処理です。マイグレーションと Webhook 送信ワーカーは利用者の要求ではないため、
+Workspace をまたいで走査します。取り出した行は `workspace_id` を保持し、
+以後の問い合わせではそれを境界として使います。
+
+機能どうしを直接つながないため、副作用の境界は小さな port として `shared/` に置きます。
+承認モジュールは Webhook の実装を知らず、`NotificationOutbox` へ出来事を積むだけです。
+実際の送信先の検索・署名・HTTP 通信は `integration` の adapter が持ちます。
+
 ### `@staffweave/web`
 
 React + Vite のブラウザアプリケーション。

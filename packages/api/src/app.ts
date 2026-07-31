@@ -22,6 +22,8 @@ import { createIdentityRepository } from './identity/repository.js';
 import { createIdentityRoutes, SESSION_COOKIE_NAME } from './identity/routes.js';
 import { createIdentityService } from './identity/service.js';
 import { createExportService } from './integration/export-service.js';
+import { createWebhookOutboxRepository } from './integration/outbox-repository.js';
+import { createWebhookOutboxWriter } from './integration/outbox-writer.js';
 import { createIntegrationRepository } from './integration/repository.js';
 import { createIntegrationRoutes } from './integration/routes.js';
 import { createIntegrationService } from './integration/service.js';
@@ -52,8 +54,6 @@ export interface AppDependencies {
   useSecureCookie?: boolean;
   /** IC カードの指紋を計算するための鍵。未設定ならカード機能は使えない。 */
   cardFingerprintKey?: string | null;
-  /** Webhook の送信実装。テストから差し替えられるようにする。 */
-  sendWebhook?: (url: string, headers: Record<string, string>, body: string) => Promise<Response>;
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -83,7 +83,6 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const integrationService = createIntegrationService({
     repository: createIntegrationRepository(deps.db),
     now,
-    ...(deps.sendWebhook === undefined ? {} : { send: deps.sendWebhook }),
   });
 
   const anomalyService = createAnomalyService({
@@ -109,6 +108,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       cards: ReturnType<typeof createCardRepository>;
       observations: ReturnType<typeof createSessionObservationRepository>;
       audit: ReturnType<typeof createAuditRepository>;
+      outbox: ReturnType<typeof createWebhookOutboxWriter>;
     }) => Promise<T>,
   ): Promise<T> =>
     deps.db.transaction((tx) =>
@@ -121,6 +121,12 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         cards: createCardRepository(tx),
         observations: createSessionObservationRepository(tx),
         audit: createAuditRepository(tx),
+        // 外部への通知は送信待ちとして同じトランザクションで確定させる。
+        // 実際の HTTP 送信は webhook-worker が行うため、ここでは通信しない。
+        outbox: createWebhookOutboxWriter({
+          endpoints: createIntegrationRepository(tx),
+          outbox: createWebhookOutboxRepository(tx),
+        }),
       }),
     );
 
@@ -165,9 +171,6 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const approvalService = createApprovalService({
     repository: dayRepositories.approval,
     visibility,
-    // 通知に失敗しても承認や締めは成立させる。届かなかったことは記録に残る。
-    notify: (workspaceId, eventType, payload) =>
-      integrationService.dispatch(workspaceId, eventType, payload).catch(() => {}),
     now,
     transaction: withTransaction,
   });

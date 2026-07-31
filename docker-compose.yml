@@ -30,6 +30,8 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
+    # ワーカーと同じイメージを使う。同じ名前にすることでビルドは 1 回で済む。
+    image: staffweave-app
     container_name: staffweave-app
     restart: unless-stopped
     depends_on:
@@ -45,6 +47,27 @@ services:
       WEB_DIST_PATH: /app/packages/web/dist
     ports:
       - '${APP_HOST_PORT:-8787}:8787'
+
+  # Webhook の送信ワーカー。API は送信待ちを記録するだけなので、
+  # このプロセスを動かさない限り Webhook は届かない。
+  webhook-worker:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: staffweave-app
+    container_name: staffweave-webhook-worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://staffweave:staffweave@db:5432/staffweave
+      NODE_ENV: production
+      WEBHOOK_WORKER_POLL_INTERVAL_MS: ${WEBHOOK_WORKER_POLL_INTERVAL_MS:-5000}
+      WEBHOOK_SEND_TIMEOUT_MS: ${WEBHOOK_SEND_TIMEOUT_MS:-10000}
+      WEBHOOK_CLAIM_LEASE_MS: ${WEBHOOK_CLAIM_LEASE_MS:-60000}
+    command: ['pnpm', '--filter', '@staffweave/api', 'webhook-worker']
 
 volumes:
   staffweave-db-data:
