@@ -1,4 +1,9 @@
-import { API_SCOPES, WEBHOOK_EVENT_TYPES } from '@staffweave/domain';
+import {
+  API_SCOPES,
+  MAXIMUM_WEBHOOK_URL_LENGTH,
+  MINIMUM_WEBHOOK_URL_LENGTH,
+  WEBHOOK_EVENT_TYPES,
+} from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
 import { businessDateSchema, nameSchema, timestampSchema, uuidSchema } from './common.js';
 
@@ -58,7 +63,15 @@ export const webhookEndpointListSchema = objectSchema({
 export const createWebhookEndpointRequestSchema = objectSchema({
   properties: {
     name: nameSchema,
-    url: { type: 'string', minLength: 8, maxLength: 2048 },
+    // format は目安であり、これだけを安全の根拠にしない。
+    // 送信先が到達してよいネットワークかどうかは API 側で必ず検査する。
+    url: {
+      type: 'string',
+      format: 'uri',
+      minLength: MINIMUM_WEBHOOK_URL_LENGTH,
+      maxLength: MAXIMUM_WEBHOOK_URL_LENGTH,
+      description: 'http または https の Webhook 送信先。既定では公開ネットワークだけを指定できる',
+    },
     eventTypes: arraySchema({ type: 'string', enum: [...WEBHOOK_EVENT_TYPES] }),
   },
   required: ['name', 'url', 'eventTypes'],

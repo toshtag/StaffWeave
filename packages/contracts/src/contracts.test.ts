@@ -1,8 +1,11 @@
+import { MAXIMUM_WEBHOOK_URL_LENGTH, MINIMUM_WEBHOOK_URL_LENGTH } from '@staffweave/domain';
 import { describe, expect, it } from 'vitest';
+import type { JsonSchema } from './json-schema.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { operationList, operations } from './operations.js';
 import { loginRequestSchema, sessionResponseSchema } from './schemas/auth.js';
 import { ORGANIZATION_SCOPE_DESCRIPTION } from './schemas/common.js';
+import { createWebhookEndpointRequestSchema } from './schemas/integration.js';
 import { createEmployeeRequestSchema } from './schemas/organization.js';
 import type { CreateEmployeeRequest, LoginRequest, SessionResponse } from './types.js';
 import { validate } from './validation.js';
@@ -122,6 +125,40 @@ describe('要求の検証', () => {
       },
     };
     expect(validate(createEmployeeRequestSchema, input).valid).toBe(true);
+  });
+});
+
+describe('Webhook 送信先の契約', () => {
+  const properties = createWebhookEndpointRequestSchema.properties as Record<string, JsonSchema>;
+  const url = properties.url ?? {};
+
+  // 契約と実 API が同じ定数を見ることで、片方だけ緩い状態を作らない。
+  it('URL の形式と長さを共有の定数から示す', () => {
+    expect(url).toMatchObject({
+      type: 'string',
+      format: 'uri',
+      minLength: MINIMUM_WEBHOOK_URL_LENGTH,
+      maxLength: MAXIMUM_WEBHOOK_URL_LENGTH,
+    });
+  });
+
+  it('既定で公開ネットワークだけを指定できることを説明する', () => {
+    expect(url.description).toContain('公開ネットワーク');
+  });
+
+  it('登録の失敗を 400 として定義している', () => {
+    const statuses = operations.createWebhookEndpoint.responses.map((response) => response.status);
+    expect(statuses).toContain(400);
+  });
+
+  // format は検証器の目安でしかない。到達してよいネットワークかどうかは API 側で検査する。
+  it('契約の検証だけでは内部ネットワーク宛を弾かない', () => {
+    const result = validate(createWebhookEndpointRequestSchema, {
+      name: '連携先',
+      url: 'http://127.0.0.1:8787/health',
+      eventTypes: ['attendance_request.approved'],
+    });
+    expect(result.valid).toBe(true);
   });
 });
 

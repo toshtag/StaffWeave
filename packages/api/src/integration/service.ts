@@ -9,10 +9,14 @@ import type {
   WebhookDeliveryRecord,
   WebhookEndpointRecord,
 } from './repository.js';
+import type { WebhookTargetValidator } from './webhook-network-policy.js';
+import { WebhookTargetError } from './webhook-network-policy.js';
 
 export interface IntegrationServiceDependencies {
   repository: IntegrationRepository;
   now: () => Date;
+  /** Webhook 送信先を登録してよいかの判断。内部ネットワーク宛の登録をここで止める。 */
+  webhookTarget: WebhookTargetValidator;
 }
 
 export interface IntegrationService {
@@ -44,6 +48,26 @@ function generateApiKey(): { secret: string; prefix: string } {
 }
 
 export function createIntegrationService(deps: IntegrationServiceDependencies): IntegrationService {
+  /**
+   * 送信先の検査。理由は利用者へ返すが、検査の内部例外はそのまま外へ出さない。
+   * 名前解決の失敗理由をそのまま返すと、内部ネットワークの構成を読み取る手掛かりになる。
+   */
+  const validateWebhookTarget = async (rawUrl: string): Promise<{ canonicalUrl: string }> => {
+    try {
+      return await deps.webhookTarget(rawUrl);
+    } catch (error) {
+      throw invalidRequest([
+        {
+          field: 'url',
+          message:
+            error instanceof WebhookTargetError
+              ? error.message
+              : 'Webhook 送信先を確認できませんでした',
+        },
+      ]);
+    }
+  };
+
   return {
     listApiKeys: (workspaceId) => deps.repository.listApiKeys(workspaceId),
 
@@ -96,10 +120,14 @@ export function createIntegrationService(deps: IntegrationServiceDependencies): 
         ]);
       }
 
+      // 検査を通るまでは、署名用の秘密も作らず repository にも触れない。
+      // 拒んだ登録の痕跡を残さないようにする。
+      const { canonicalUrl } = await validateWebhookTarget(input.url);
+
       const secret = randomBytes(24).toString('base64url');
       const endpoint = await deps.repository.createEndpoint(workspaceId, {
         name: input.name,
-        url: input.url,
+        url: canonicalUrl,
         secretHash: hashToken(secret),
         eventTypes,
       });

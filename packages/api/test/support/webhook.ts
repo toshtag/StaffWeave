@@ -3,14 +3,44 @@ import type { WebhookDeliveryProcessor } from '../../src/integration/delivery-pr
 import { createWebhookDeliveryProcessor } from '../../src/integration/delivery-processor.js';
 import { createWebhookOutboxRepository } from '../../src/integration/outbox-repository.js';
 import { createIntegrationRepository } from '../../src/integration/repository.js';
-import type { WebhookTransport } from '../../src/integration/sender.js';
 import { createWebhookSender } from '../../src/integration/sender.js';
+import type { WebhookTransport } from '../../src/integration/webhook-http-transport.js';
+import type {
+  WebhookHostResolver,
+  WebhookNetworkPolicyMode,
+  WebhookTargetValidator,
+} from '../../src/integration/webhook-network-policy.js';
+import {
+  createWebhookNetworkPolicy,
+  createWebhookTargetValidator,
+} from '../../src/integration/webhook-network-policy.js';
 
 /**
  * 統合テストから Webhook の送信ワーカーを 1 回分だけ動かすための組み立て。
  *
  * API は送信待ちを記録するだけなので、送信の結果を確かめるテストはこれを使う。
+ * 名前解決は必ず偽の解決器へ差し替える。テストを外部の DNS に依存させない。
  */
+
+/** 公開ネットワークとして扱えるアドレス。テストの送信先はすべてここへ解決させる。 */
+export const PUBLIC_TEST_ADDRESS = '93.184.216.34';
+
+/** どのホスト名でも同じアドレスを返す解決器。 */
+export function fixedResolver(address = PUBLIC_TEST_ADDRESS): WebhookHostResolver {
+  const family = address.includes(':') ? (6 as const) : (4 as const);
+  return async () => [{ address, family }];
+}
+
+/** 登録時の検査。外部 DNS を引かずに、実際のポリシー判定だけを通す。 */
+export function testWebhookTargetValidator(
+  resolver: WebhookHostResolver = fixedResolver(),
+  mode: WebhookNetworkPolicyMode = 'public-only',
+  timeoutMs = 1_000,
+): WebhookTargetValidator {
+  return createWebhookTargetValidator(createWebhookNetworkPolicy({ mode, resolver }), {
+    timeoutMs,
+  });
+}
 
 export interface SentWebhook {
   url: string;
@@ -21,13 +51,12 @@ export interface SentWebhook {
 /** 送信内容を控えたうえで、指定した応答を返す通信。 */
 export function recordingTransport(
   sent: SentWebhook[],
-  respond: (request: SentWebhook) => Response | Promise<Response> = () =>
-    new Response(null, { status: 204 }),
+  respond: (request: SentWebhook) => number | Promise<number> = () => 204,
 ): WebhookTransport {
-  return async (url, headers, body) => {
-    const request = { url, headers, body };
+  return async (target, headers, body) => {
+    const request = { url: target.url.href, headers, body };
     sent.push(request);
-    return respond(request);
+    return { statusCode: await respond(request), bodyLimitExceeded: false };
   };
 }
 
@@ -36,6 +65,7 @@ export interface TestDeliveryOptions {
   transport: WebhookTransport;
   claimLeaseMs?: number;
   sendTimeoutMs?: number;
+  resolver?: WebhookHostResolver;
 }
 
 export function createTestDeliveryProcessor(
@@ -47,6 +77,8 @@ export function createTestDeliveryProcessor(
     deliveries: createIntegrationRepository(db),
     send: createWebhookSender({
       transport: options.transport,
+      resolver: options.resolver ?? fixedResolver(),
+      networkPolicy: 'public-only',
       timeoutMs: options.sendTimeoutMs ?? 1_000,
     }),
     now: () => options.now,

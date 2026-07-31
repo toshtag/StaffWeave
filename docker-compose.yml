@@ -45,6 +45,9 @@ services:
       DEFAULT_WORKSPACE_SLUG: ${DEFAULT_WORKSPACE_SLUG:-default}
       CARD_FINGERPRINT_KEY: ${CARD_FINGERPRINT_KEY:-}
       WEB_DIST_PATH: /app/packages/web/dist
+      # 送信先の制限は API とワーカーで同じ値にする。片方だけ緩い状態を作らない。
+      WEBHOOK_NETWORK_POLICY: ${WEBHOOK_NETWORK_POLICY:-public-only}
+      WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: ${WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS:-3000}
     ports:
       - '${APP_HOST_PORT:-8787}:8787'
 
@@ -67,6 +70,7 @@ services:
       WEBHOOK_WORKER_POLL_INTERVAL_MS: ${WEBHOOK_WORKER_POLL_INTERVAL_MS:-5000}
       WEBHOOK_SEND_TIMEOUT_MS: ${WEBHOOK_SEND_TIMEOUT_MS:-10000}
       WEBHOOK_CLAIM_LEASE_MS: ${WEBHOOK_CLAIM_LEASE_MS:-60000}
+      WEBHOOK_NETWORK_POLICY: ${WEBHOOK_NETWORK_POLICY:-public-only}
     command: ['pnpm', '--filter', '@staffweave/api', 'webhook-worker']
 
 volumes:

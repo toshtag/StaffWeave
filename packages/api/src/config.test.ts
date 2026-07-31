@@ -16,6 +16,8 @@ describe('loadApiConfig', () => {
       defaultWorkspaceSlug: 'default',
       cardFingerprintKey: null,
       webDistPath: null,
+      webhookNetworkPolicy: 'public-only',
+      webhookTargetValidationTimeoutMs: 3_000,
     });
   });
 
@@ -47,6 +49,38 @@ describe('loadApiConfig', () => {
     });
     expect(config.databaseUrl).toBe('postgres://x');
   });
+
+  it('送信先のネットワーク範囲を読む', () => {
+    expect(
+      loadApiConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_NETWORK_POLICY: 'allow-local' })
+        .webhookNetworkPolicy,
+    ).toBe('allow-local');
+  });
+
+  // 送信先の制限は API とワーカーで一致させる。誤った値では API も起動させない。
+  it('送信先のネットワーク範囲が不正なら設定エラーになる', () => {
+    expect(() =>
+      loadApiConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_NETWORK_POLICY: 'disabled' }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it('登録時の検査の上限時間を読む', () => {
+    expect(
+      loadApiConfig({
+        DATABASE_URL: 'postgres://x',
+        WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: '5000',
+      }).webhookTargetValidationTimeoutMs,
+    ).toBe(5_000);
+  });
+
+  it.each(['99', '30001', '3.5', 'すぐ'])(
+    '登録時の検査の上限時間が %s なら設定エラーになる',
+    (raw) => {
+      expect(() =>
+        loadApiConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: raw }),
+      ).toThrow(ConfigurationError);
+    },
+  );
 });
 
 describe('loadWebhookWorkerConfig', () => {
@@ -60,6 +94,7 @@ describe('loadWebhookWorkerConfig', () => {
       pollIntervalMs: 5_000,
       sendTimeoutMs: 10_000,
       claimLeaseMs: 60_000,
+      webhookNetworkPolicy: 'public-only',
     });
   });
 
@@ -76,6 +111,7 @@ describe('loadWebhookWorkerConfig', () => {
       pollIntervalMs: 500,
       sendTimeoutMs: 1000,
       claimLeaseMs: 30_000,
+      webhookNetworkPolicy: 'public-only',
     });
   });
 
@@ -89,6 +125,31 @@ describe('loadWebhookWorkerConfig', () => {
         WEBHOOK_WORKER_POLL_INTERVAL_MS: '0',
       }),
     ).toThrow(ConfigurationError);
+  });
+
+  it('送信先のネットワーク範囲を読む', () => {
+    expect(
+      loadWebhookWorkerConfig({
+        DATABASE_URL: 'postgres://x',
+        WEBHOOK_NETWORK_POLICY: 'allow-local',
+      }).webhookNetworkPolicy,
+    ).toBe('allow-local');
+  });
+
+  it('送信先のネットワーク範囲が不正なら許容値を添えて設定エラーになる', () => {
+    expect(() =>
+      loadWebhookWorkerConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_NETWORK_POLICY: 'invalid' }),
+    ).toThrow(/public-only または allow-local/);
+  });
+
+  // 登録時の検査は API だけが行う。ワーカーは送信全体の上限時間を使う。
+  it('登録時の検査の上限時間が不正でもワーカーは起動できる', () => {
+    expect(
+      loadWebhookWorkerConfig({
+        DATABASE_URL: 'postgres://x',
+        WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: 'すぐ',
+      }).sendTimeoutMs,
+    ).toBe(10_000);
   });
 
   describe('占有時間と送信上限の関係', () => {
