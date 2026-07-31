@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { Database } from '@staffweave/db';
 import { createDatabase, MIGRATIONS_DIR, migrate } from '@staffweave/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createSessionObservationRepository } from '../../src/session/repository.js';
 
 /**
  * 受領記録の追加が、すでに動いている環境を壊さないことを確かめる。
@@ -11,15 +12,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  * 0016 は観測テーブルへ触れない。1 回の要求に複数の観測が入る以上、観測行へ
  * 冪等キーの一意制約を置くと通常の複数件送信が 2 件目で失敗する。
  * 0015 までに保存された観測がそのまま残り、複数件の保存も続けられることを固定する。
+ * 0017 はその再送判定を支える索引を足すだけで、観測の内容も件数も変えない。
  *
  * 検証用のデータを開発用やテスト用のデータベースへ作らないよう、この検査だけの
  * データベースをその場で用意し、終わったら消す。
  */
 
 const UPGRADED = 'staffweave_session_receipt_upgrade_test';
+const INDEXED = 'staffweave_session_request_index_test';
 const FRESH = 'staffweave_session_receipt_fresh_test';
 
 const LAST_VERSION_BEFORE_RECEIPTS = 15;
+const LAST_VERSION_BEFORE_REQUEST_INDEX = 16;
+
+const REQUEST_INDEX = 'workstation_session_observations_request_idx';
 
 /** 0016 より前に受け取った、観測が 2 件入るまとめ送り。 */
 const LEGACY_REQUEST_ID = 'legacy-session-request';
@@ -116,20 +122,35 @@ async function insertReceipt(
   );
 }
 
+/** 冪等キーで観測を引くための索引。定義そのものではなく、引ける形かどうかを見る。 */
+async function requestIndexOf(db: Database): Promise<string | undefined> {
+  const rows = await db.query<{ indexdef: string }>(
+    `SELECT indexdef FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND tablename = 'workstation_session_observations'
+        AND indexname = $1`,
+    [REQUEST_INDEX],
+  );
+  return rows[0]?.indexdef;
+}
+
 let admin: Database;
 let upgraded: Database;
+let indexed: Database;
 let fresh: Database;
 let upgradedWorkspace: Workspace;
+let indexedWorkspace: Workspace;
 let freshWorkspace: Workspace;
 
 beforeAll(async () => {
   admin = createDatabase({ connectionString: urlFor('postgres'), maxConnections: 1 });
-  for (const name of [UPGRADED, FRESH]) {
+  for (const name of [UPGRADED, INDEXED, FRESH]) {
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);
     await admin.query(`CREATE DATABASE ${name}`);
   }
 
   upgraded = createDatabase({ connectionString: urlFor(UPGRADED), maxConnections: 1 });
+  indexed = createDatabase({ connectionString: urlFor(INDEXED), maxConnections: 1 });
   fresh = createDatabase({ connectionString: urlFor(FRESH), maxConnections: 1 });
 
   // 0015 までを適用し、当時の形でまとめ送り 1 回分を保存してから 0016 を適用する。
@@ -143,14 +164,26 @@ beforeAll(async () => {
   }
   await migrate(upgraded);
 
+  // 0016 までを適用した環境へ、索引だけを足す 0017 を当てる。
+  await migrate(indexed, await migrationsUpTo(LAST_VERSION_BEFORE_REQUEST_INDEX));
+  indexedWorkspace = await createWorkspaceWith(indexed, 'default');
+  for (const observationType of ['sign_in', 'lock']) {
+    await insertObservation(indexed, indexedWorkspace, {
+      observationType,
+      requestId: LEGACY_REQUEST_ID,
+    });
+  }
+  await migrate(indexed);
+
   await migrate(fresh);
   freshWorkspace = await createWorkspaceWith(fresh, 'default');
 }, 60_000);
 
 afterAll(async () => {
   await upgraded?.close();
+  await indexed?.close();
   await fresh?.close();
-  for (const name of [UPGRADED, FRESH]) {
+  for (const name of [UPGRADED, INDEXED, FRESH]) {
     await admin?.query(`DROP DATABASE IF EXISTS ${name}`);
   }
   await admin?.close();
@@ -182,7 +215,66 @@ describe('0015 まで適用済みのデータベース', () => {
   });
 });
 
+describe('0016 まで適用済みのデータベース', () => {
+  it('冪等キーで観測を引ける索引を足す', async () => {
+    const definition = await requestIndexOf(indexed);
+
+    expect(definition).toBeDefined();
+    expect(definition).toContain('workstation_session_observations');
+    expect(definition).toContain('workspace_id');
+    expect(definition).toContain('request_id');
+    // 1 回の要求に観測が複数入るため、一意索引にはできない。
+    expect(definition).not.toContain('UNIQUE');
+  });
+
+  it('保存されていた観測をそのまま残す', async () => {
+    const rows = await indexed.query<{ observation_type: string }>(
+      'SELECT observation_type FROM workstation_session_observations WHERE request_id = $1',
+      [LEGACY_REQUEST_ID],
+    );
+
+    expect(rows.map((row) => row.observation_type).sort()).toEqual(['lock', 'sign_in']);
+  });
+
+  it('索引を足したあとも同じ冪等キーの観測を保存できる', async () => {
+    await insertObservation(indexed, indexedWorkspace, {
+      observationType: 'sign_out',
+      requestId: LEGACY_REQUEST_ID,
+    });
+
+    const rows = await indexed.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM workstation_session_observations WHERE request_id = $1',
+      [LEGACY_REQUEST_ID],
+    );
+    expect(rows[0]?.count).toBe(3);
+  });
+
+  it('受領記録のない要求を、観測から再送と判定できる', async () => {
+    const observations = createSessionObservationRepository(indexed);
+
+    await expect(
+      observations.existsLegacyRequest(indexedWorkspace.workspaceId, LEGACY_REQUEST_ID),
+    ).resolves.toBe(true);
+    await expect(
+      observations.existsLegacyRequest(indexedWorkspace.workspaceId, 'unknown-session-request'),
+    ).resolves.toBe(false);
+  });
+
+  it('もう一度適用しても何も起きない', async () => {
+    const result = await migrate(indexed);
+
+    expect(result.appliedVersions).toEqual([]);
+  });
+});
+
 describe('空のデータベース', () => {
+  it('最初から冪等キーの索引を持つ', async () => {
+    const definition = await requestIndexOf(fresh);
+
+    expect(definition).toBeDefined();
+    expect(definition).not.toContain('UNIQUE');
+  });
+
   it('同じ冪等キーの観測を複数保存できる', async () => {
     for (const observationType of ['sign_in', 'lock', 'sign_out']) {
       await insertObservation(fresh, freshWorkspace, {

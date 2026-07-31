@@ -50,6 +50,10 @@ export interface SessionObservationRepository {
   /**
    * 0016 より前に保存された観測の再送互換にだけ使う。
    * 新しい要求の冪等性は受領記録の一意制約が正本であり、この照会には依存しない。
+   *
+   * 受領記録がまだ無い要求ではすべてこの照会が走るため、
+   * workstation_session_observations_request_idx（0017）で
+   * (workspace_id, request_id) を引けることを前提にする。
    */
   existsLegacyRequest(workspaceId: string, requestId: string): Promise<boolean>;
   insert(
