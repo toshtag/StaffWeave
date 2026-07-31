@@ -3,6 +3,7 @@ import type {
   RecordAttendanceEventResponse,
 } from '@staffweave/contracts';
 import type { AttendanceEventType } from '@staffweave/domain';
+import { isAttendanceEventType } from '@staffweave/domain';
 import { ApiRequestError, api } from '../api/client.ts';
 
 /**
@@ -25,6 +26,24 @@ const SCHEMA_VERSION = 2;
 
 /** 読めない保存内容を退避する先。上書きで消さないために使う。 */
 const UNREADABLE_SUFFIX = '.unreadable';
+
+const UNREADABLE_SCHEMA_VERSION = 1;
+
+/**
+ * API 契約に合わせた冪等キーの長さ。
+ * ここで弾いておけば、送っても必ず断られる打刻を行列に抱え込まずに済む。
+ */
+const REQUEST_ID_MIN_LENGTH = 8;
+const REQUEST_ID_MAX_LENGTH = 128;
+
+/**
+ * 読めなかった保存内容の控え。
+ * 破損が二度起きても前の内容を失わないよう、1 件ずつ足していく。
+ */
+interface UnreadablePunchArchive {
+  schemaVersion: typeof UNREADABLE_SCHEMA_VERSION;
+  entries: { capturedAt: string; raw: string }[];
+}
 
 /** 送信待ち打刻の持ち主。この 3 値がひとつでも違えば別の行列として扱う。 */
 export interface PunchQueueOwner {
@@ -79,6 +98,8 @@ export interface PunchQueueSnapshot {
   blocked: { reason: PunchBlockedReason; message: string } | null;
   /** 所有者が分からない旧形式の保存内容が残っているか。 */
   hasLegacyEntries: boolean;
+  /** 現在の所有者の保存内容のうち、読み取れず退避したものが残っているか。 */
+  hasUnreadableEntries: boolean;
 }
 
 export type QueueListener = (snapshot: PunchQueueSnapshot) => void;
@@ -102,27 +123,42 @@ function sameOwner(left: PunchQueueOwner, right: PunchQueueOwner): boolean {
   );
 }
 
+/** 識別子として使える文字列か。空文字と空白だけの値は、誰のものとも決められない。 */
+function isIdentifier(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
 function isOwner(value: unknown): value is PunchQueueOwner {
   if (typeof value !== 'object' || value === null) return false;
   const owner = value as Partial<PunchQueueOwner>;
   return (
-    typeof owner.workspaceId === 'string' &&
-    typeof owner.userId === 'string' &&
-    typeof owner.employeeId === 'string'
+    isIdentifier(owner.workspaceId) && isIdentifier(owner.userId) && isIdentifier(owner.employeeId)
   );
 }
 
+/**
+ * 保存されていた 1 件を、そのまま画面の計算と送信に使えるか。
+ *
+ * 保存先は利用者が書き換えられるため、信用できる入力ではない。
+ * 種別は正本の判定を使う。未知の種別が画面の集計へ入ると、そこで落ちる。
+ */
 function isPendingPunch(value: unknown): value is PendingPunch {
   if (typeof value !== 'object' || value === null) return false;
   const entry = value as Partial<PendingPunch>;
+
+  if (typeof entry.requestId !== 'string') return false;
+  if (entry.requestId.length < REQUEST_ID_MIN_LENGTH) return false;
+  if (entry.requestId.length > REQUEST_ID_MAX_LENGTH) return false;
+
+  if (typeof entry.eventType !== 'string') return false;
+  if (!isAttendanceEventType(entry.eventType)) return false;
+
+  if (typeof entry.occurredAt !== 'string') return false;
+  if (!Number.isFinite(new Date(entry.occurredAt).getTime())) return false;
+
+  // 経過時間による受理の可否はサーバーが決める。ここでは日時として読めることだけを見る。
   return (
-    typeof entry.requestId === 'string' &&
-    entry.requestId !== '' &&
-    typeof entry.eventType === 'string' &&
-    typeof entry.occurredAt === 'string' &&
-    typeof entry.attempts === 'number' &&
-    Number.isInteger(entry.attempts) &&
-    entry.attempts >= 0
+    typeof entry.attempts === 'number' && Number.isInteger(entry.attempts) && entry.attempts >= 0
   );
 }
 
@@ -138,14 +174,43 @@ function parseStored(raw: string, owner: PunchQueueOwner): PendingPunch[] | null
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
+  if (!isOwner(owner)) return null;
 
   const stored = parsed as Partial<StoredPunchQueue>;
   if (stored.schemaVersion !== SCHEMA_VERSION) return null;
   if (!isOwner(stored.owner) || !sameOwner(stored.owner, owner)) return null;
   if (!Array.isArray(stored.entries)) return null;
+  // 1 件でも読めなければ、まとめて読まない。
+  // 読める分だけ送ると、利用者が把握できない形で打刻の順序が変わる。
   if (!stored.entries.every(isPendingPunch)) return null;
 
   return [...stored.entries];
+}
+
+/** 退避先の内容。読めない場合は null を返し、上書きの判断へ回す。 */
+function parseUnreadableArchive(raw: string): UnreadablePunchArchive['entries'] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+
+  const archive = parsed as Partial<UnreadablePunchArchive>;
+  if (archive.schemaVersion !== UNREADABLE_SCHEMA_VERSION) return null;
+  if (!Array.isArray(archive.entries)) return null;
+
+  const valid = archive.entries.every(
+    (entry: unknown) =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      typeof (entry as { capturedAt?: unknown }).capturedAt === 'string' &&
+      typeof (entry as { raw?: unknown }).raw === 'string',
+  );
+  if (!valid) return null;
+
+  return [...archive.entries];
 }
 
 export interface PunchQueueDependencies {
@@ -217,25 +282,68 @@ export function createPunchQueue(
     }
   }
 
-  /** 旧形式の保存内容は所有者が分からないため、件数も中身も現在の利用者へ結びつけない。 */
+  const unreadableKey = `${key}${UNREADABLE_SUFFIX}`;
+
+  /**
+   * 旧形式の保存内容は所有者が分からないため、件数も中身も現在の利用者へ結びつけない。
+   * 読めない内容も「無い」とは扱わない。誰のものか分からない打刻が残っていることに変わりはない。
+   */
   function hasLegacyEntries(): boolean {
     const legacy = storage.getItem(LEGACY_STORAGE_KEY);
-    if (legacy === null) return false;
+    if (legacy === null || legacy.trim() === '') return false;
     try {
       const parsed: unknown = JSON.parse(legacy);
-      return Array.isArray(parsed) && parsed.length > 0;
+      return Array.isArray(parsed) ? parsed.length > 0 : true;
     } catch {
-      return false;
+      return true;
     }
   }
 
+  function hasUnreadableEntries(): boolean {
+    if (unreadable !== null) return true;
+    const archived = storage.getItem(unreadableKey);
+    if (archived === null) return false;
+    const entries = parseUnreadableArchive(archived);
+    // 退避先そのものが読めない場合も、読めない内容が残っていることに変わりはない。
+    return entries === null ? true : entries.length > 0;
+  }
+
   function currentSnapshot(): PunchQueueSnapshot {
-    return { pending: [...pending], blocked, hasLegacyEntries: hasLegacyEntries() };
+    return {
+      pending: [...pending],
+      blocked,
+      hasLegacyEntries: hasLegacyEntries(),
+      hasUnreadableEntries: hasUnreadableEntries(),
+    };
+  }
+
+  /**
+   * 読めなかった内容を控えへ足す。
+   * 控え自体が読めない場合は、それも失わないよう何も書かない。
+   */
+  function archiveUnreadable(raw: string): boolean {
+    const archived = storage.getItem(unreadableKey);
+    let entries: UnreadablePunchArchive['entries'] = [];
+    if (archived !== null) {
+      const parsed = parseUnreadableArchive(archived);
+      if (parsed === null) return false;
+      entries = parsed;
+    }
+    if (!entries.some((entry) => entry.raw === raw)) {
+      entries = [...entries, { capturedAt: new Date().toISOString(), raw }];
+    }
+    const archive: UnreadablePunchArchive = {
+      schemaVersion: UNREADABLE_SCHEMA_VERSION,
+      entries,
+    };
+    storage.setItem(unreadableKey, JSON.stringify(archive));
+    return true;
   }
 
   function persist(): void {
     if (unreadable !== null) {
-      storage.setItem(`${key}${UNREADABLE_SUFFIX}`, unreadable);
+      // 退避できないうちは、読めない内容を上書きしない。
+      if (!archiveUnreadable(unreadable)) return;
       unreadable = null;
     }
     const next: StoredPunchQueue = { schemaVersion: SCHEMA_VERSION, owner, entries: pending };

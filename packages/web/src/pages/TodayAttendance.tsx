@@ -153,6 +153,7 @@ function EmployeeTodayAttendance({
     pending: [],
     blocked: null,
     hasLegacyEntries: false,
+    hasUnreadableEntries: false,
   }));
   const [online, setOnline] = useState(() => window.navigator.onLine);
   const reasonId = useId();
@@ -222,7 +223,12 @@ function EmployeeTodayAttendance({
       unsubscribe();
       created.dispose();
       setQueue(null);
-      setSnapshot({ pending: [], blocked: null, hasLegacyEntries: false });
+      setSnapshot({
+        pending: [],
+        blocked: null,
+        hasLegacyEntries: false,
+        hasUnreadableEntries: false,
+      });
     };
   }, [workspaceId, userId, employeeId, markSessionExpired, applyCurrentDay]);
 
@@ -382,6 +388,12 @@ function EmployeeTodayAttendance({
         <p className="blocked-banner" role="status">
           {blockedLabel(snapshot.blocked.reason, messages)}
           {snapshot.blocked.message !== '' && ` ${snapshot.blocked.message}`}
+        </p>
+      )}
+
+      {snapshot.hasUnreadableEntries && (
+        <p className="legacy-banner" role="status">
+          {messages.unreadablePendingPunches}
         </p>
       )}
 

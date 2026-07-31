@@ -82,6 +82,11 @@ function punch(requestId: string, occurredAt = '2026-07-31T00:00:00.000Z'): Pend
   return { requestId, eventType: 'clock_in', occurredAt, attempts: 0 };
 }
 
+/** 保存内容の検証を試すため、契約に合わない値も置けるようにする。 */
+function storedRaw(owner: PunchQueueOwner, entries: unknown[]): string {
+  return JSON.stringify({ schemaVersion: 2, owner, entries });
+}
+
 interface Harness {
   storage: ReturnType<typeof createFakeStorage>;
   online: ReturnType<typeof createFakeOnline>;
@@ -509,16 +514,152 @@ describe('送信待ち行列の保存内容', () => {
 
     expect(queue.snapshot().pending).toHaveLength(0);
   });
+});
 
-  it('上書きが必要になっても、読めなかった内容を別の場所へ残す', async () => {
-    const key = storageKeyOf(OWNER_A);
+describe('保存内容の検証', () => {
+  function queueFor(entries: unknown[]): {
+    queue: ReturnType<typeof createPunchQueue>;
+    sent: Harness['send'];
+  } {
+    const storage = createFakeStorage({ [storageKeyOf(OWNER_A)]: storedRaw(OWNER_A, entries) });
+    const harness = createHarness(storage);
+    return {
+      queue: createPunchQueue(noopOptions(OWNER_A), harness.dependencies),
+      sent: harness.send,
+    };
+  }
+
+  it('契約にない打刻の種別を読み込まない', async () => {
+    const { queue, sent } = queueFor([{ ...punch('request-1'), eventType: 'nap_start' }]);
+    await queue.flush();
+
+    // 未知の種別は画面の集計を落とすため、行列にも送信にも渡さない。
+    expect(queue.snapshot().pending).toHaveLength(0);
+    expect(sent).not.toHaveBeenCalled();
+  });
+
+  it('日時として読めない occurredAt を読み込まない', () => {
+    const { queue } = queueFor([{ ...punch('request-1'), occurredAt: '昨日の朝' }]);
+
+    expect(queue.snapshot().pending).toHaveLength(0);
+  });
+
+  it('契約より短い requestId を読み込まない', () => {
+    const { queue } = queueFor([punch('short')]);
+
+    expect(queue.snapshot().pending).toHaveLength(0);
+  });
+
+  it('契約より長い requestId を読み込まない', () => {
+    const { queue } = queueFor([punch('r'.repeat(129))]);
+
+    expect(queue.snapshot().pending).toHaveLength(0);
+  });
+
+  it('所有者の識別子が空の保存内容を読み込まない', () => {
+    const empty: PunchQueueOwner = { ...OWNER_A, employeeId: '   ' };
+    const storage = createFakeStorage({
+      [storageKeyOf(empty)]: storedRaw(empty, [punch('request-1')]),
+    });
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(empty), harness.dependencies);
+
+    expect(queue.snapshot().pending).toHaveLength(0);
+  });
+
+  it('1 件でも読めなければ、同じ保存内容の他の打刻も送らない', async () => {
+    const { queue, sent } = queueFor([
+      punch('request-1'),
+      { ...punch('request-2'), eventType: 'nap_start' },
+    ]);
+    await queue.flush();
+
+    expect(queue.snapshot().pending).toHaveLength(0);
+    expect(sent).not.toHaveBeenCalled();
+  });
+});
+
+describe('読み取れない保存内容', () => {
+  const key = storageKeyOf(OWNER_A);
+  const archiveKey = `${key}.unreadable`;
+
+  it('残っていることを利用者へ知らせる', () => {
+    const storage = createFakeStorage({ [key]: '{壊れた内容' });
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    expect(queue.snapshot().hasUnreadableEntries).toBe(true);
+  });
+
+  it('新しい打刻を保存するときに元の内容を退避する', async () => {
     const storage = createFakeStorage({ [key]: '{壊れた内容' });
     const harness = createHarness(storage);
 
     const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
     await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
 
-    expect(storage.entries.get(`${key}.unreadable`)).toBe('{壊れた内容');
+    const archive = JSON.parse(storage.entries.get(archiveKey) ?? 'null');
+    expect(archive.entries.map((entry: { raw: string }) => entry.raw)).toEqual(['{壊れた内容']);
+  });
+
+  it('別の壊れた内容を退避しても前の内容を失わない', async () => {
+    const storage = createFakeStorage({ [key]: '{壊れた内容' });
+    const first = createHarness(storage);
+
+    const one = createPunchQueue(noopOptions(OWNER_A), first.dependencies);
+    await one.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    storage.entries.set(key, '{別の壊れた内容');
+    const second = createHarness(storage);
+    const two = createPunchQueue(noopOptions(OWNER_A), second.dependencies);
+    await two.enqueue('clock_in', new Date('2026-07-31T01:00:00.000Z'));
+
+    const archive = JSON.parse(storage.entries.get(archiveKey) ?? 'null');
+    expect(archive.entries.map((entry: { raw: string }) => entry.raw)) //
+      .toEqual(['{壊れた内容', '{別の壊れた内容']);
+  });
+
+  it('同じ壊れた内容を重ねて退避しない', async () => {
+    const storage = createFakeStorage({ [key]: '{壊れた内容' });
+    const first = createHarness(storage);
+
+    const one = createPunchQueue(noopOptions(OWNER_A), first.dependencies);
+    await one.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    storage.entries.set(key, '{壊れた内容');
+    const second = createHarness(storage);
+    const two = createPunchQueue(noopOptions(OWNER_A), second.dependencies);
+    await two.enqueue('clock_in', new Date('2026-07-31T01:00:00.000Z'));
+
+    const archive = JSON.parse(storage.entries.get(archiveKey) ?? 'null');
+    expect(archive.entries).toHaveLength(1);
+  });
+
+  it('退避した後も、次に開いたときに知らせ続ける', async () => {
+    const storage = createFakeStorage({ [key]: '{壊れた内容' });
+    const first = createHarness(storage);
+
+    const one = createPunchQueue(noopOptions(OWNER_A), first.dependencies);
+    await one.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    const second = createHarness(storage);
+    const two = createPunchQueue(noopOptions(OWNER_A), second.dependencies);
+
+    expect(two.snapshot().hasUnreadableEntries).toBe(true);
+  });
+
+  it('退避先が読めない場合は、元の内容を上書きしない', async () => {
+    const storage = createFakeStorage({ [key]: '{壊れた内容', [archiveKey]: '{壊れた控え' });
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+    await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
+
+    expect(storage.entries.get(key)).toBe('{壊れた内容');
+    expect(storage.entries.get(archiveKey)).toBe('{壊れた控え');
+    expect(queue.snapshot().hasUnreadableEntries).toBe(true);
   });
 });
 
@@ -559,6 +700,34 @@ describe('旧形式の保存内容', () => {
 
   it('空であれば知らせない', () => {
     const storage = createFakeStorage({ [LEGACY_STORAGE_KEY]: '[]' });
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    expect(queue.snapshot().hasLegacyEntries).toBe(false);
+  });
+
+  it('読めない内容でも知らせる', () => {
+    const storage = createFakeStorage({ [LEGACY_STORAGE_KEY]: '{壊れた内容' });
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    // 読めないだけで、誰のものか分からない打刻が残っていることに変わりはない。
+    expect(queue.snapshot().hasLegacyEntries).toBe(true);
+  });
+
+  it('配列でない内容でも知らせる', () => {
+    const storage = createFakeStorage({ [LEGACY_STORAGE_KEY]: '{"requestId":"legacy"}' });
+    const harness = createHarness(storage);
+
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    expect(queue.snapshot().hasLegacyEntries).toBe(true);
+  });
+
+  it('空白だけであれば知らせない', () => {
+    const storage = createFakeStorage({ [LEGACY_STORAGE_KEY]: '   ' });
     const harness = createHarness(storage);
 
     const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);

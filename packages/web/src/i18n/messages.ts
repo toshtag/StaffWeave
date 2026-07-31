@@ -91,6 +91,7 @@ export interface Messages {
   offlineNotice: string;
   pendingPunches: (count: number) => string;
   legacyPendingPunches: string;
+  unreadablePendingPunches: string;
   punchBlockedAuthentication: string;
   punchBlockedPermission: string;
   punchBlockedRetry: string;
@@ -198,6 +199,8 @@ const ja: Messages = {
   pendingPunches: (count) => `送信待ちの打刻が ${count} 件あります`,
   legacyPendingPunches:
     '以前の形式で保存された送信待ち打刻があります。所有者を確認できないため、自動送信していません。',
+  unreadablePendingPunches:
+    '読み取れない送信待ち打刻がこの端末に残っています。自動送信せず、元の内容を退避しています。',
   punchBlockedAuthentication:
     '再ログインが必要です。送信待ちの打刻はこの端末に残しています。削除されていません。',
   punchBlockedPermission:
@@ -308,6 +311,8 @@ const en: Messages = {
   pendingPunches: (count) => `${count} punch(es) waiting to be sent`,
   legacyPendingPunches:
     'Some punches are stored in an older format. Their owner cannot be confirmed, so they are not sent automatically.',
+  unreadablePendingPunches:
+    'Unreadable pending punches remain on this device. They have been preserved separately and are not sent automatically.',
   punchBlockedAuthentication:
     'Signing in again is required. Punches waiting to be sent remain on this device and have not been deleted.',
   punchBlockedPermission:
