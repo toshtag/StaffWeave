@@ -6,7 +6,10 @@ import { testDatabase } from '../../../../test/integration-setup.js';
 import { createApp } from '../../src/app.js';
 import { createWebhookDeliveryWorker } from '../../src/integration/delivery-worker.js';
 import { createWebhookOutboxRepository } from '../../src/integration/outbox-repository.js';
-import type { WebhookTransport } from '../../src/integration/sender.js';
+import type {
+  WebhookResponseSummary,
+  WebhookTransport,
+} from '../../src/integration/webhook-http-transport.js';
 import {
   authorized,
   createEmployeeWithAccount,
@@ -67,7 +70,7 @@ function processor(options: Parameters<typeof createTestDeliveryProcessor>[1]) {
 function deliveringProcessor(status = 204) {
   return processor({
     now: NOW,
-    transport: recordingTransport(sent, () => new Response(null, { status })),
+    transport: recordingTransport(sent, () => status),
   });
 }
 
@@ -276,7 +279,7 @@ describe('送信ワーカー', () => {
   it('応答しない送信先でも上限時間で打ち切って次へ進む', async () => {
     const hanging = processor({
       now: NOW,
-      transport: () => new Promise<Response>(() => {}),
+      transport: () => new Promise<WebhookResponseSummary>(() => {}),
       sendTimeoutMs: 20,
     });
 
@@ -321,11 +324,11 @@ describe('複数の送信待ちがあるときのワーカー', () => {
     return {
       started: startedSending,
       release: () => release?.(),
-      transport: async (url, headers, body) => {
-        sentTo.push({ url, headers, body });
+      transport: async (target, headers, body) => {
+        sentTo.push({ url: target.url.href, headers, body });
         started?.();
         await blocked;
-        return new Response(null, { status: 204 });
+        return { statusCode: 204, bodyLimitExceeded: false };
       },
     };
   }

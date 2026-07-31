@@ -3,8 +3,8 @@ import type { WebhookDeliveryProcessor } from '../../src/integration/delivery-pr
 import { createWebhookDeliveryProcessor } from '../../src/integration/delivery-processor.js';
 import { createWebhookOutboxRepository } from '../../src/integration/outbox-repository.js';
 import { createIntegrationRepository } from '../../src/integration/repository.js';
-import type { WebhookTransport } from '../../src/integration/sender.js';
 import { createWebhookSender } from '../../src/integration/sender.js';
+import type { WebhookTransport } from '../../src/integration/webhook-http-transport.js';
 import type {
   WebhookHostResolver,
   WebhookNetworkPolicyMode,
@@ -48,13 +48,12 @@ export interface SentWebhook {
 /** 送信内容を控えたうえで、指定した応答を返す通信。 */
 export function recordingTransport(
   sent: SentWebhook[],
-  respond: (request: SentWebhook) => Response | Promise<Response> = () =>
-    new Response(null, { status: 204 }),
+  respond: (request: SentWebhook) => number | Promise<number> = () => 204,
 ): WebhookTransport {
-  return async (url, headers, body) => {
-    const request = { url, headers, body };
+  return async (target, headers, body) => {
+    const request = { url: target.url.href, headers, body };
     sent.push(request);
-    return respond(request);
+    return { statusCode: await respond(request), bodyLimitExceeded: false };
   };
 }
 
@@ -63,6 +62,7 @@ export interface TestDeliveryOptions {
   transport: WebhookTransport;
   claimLeaseMs?: number;
   sendTimeoutMs?: number;
+  resolver?: WebhookHostResolver;
 }
 
 export function createTestDeliveryProcessor(
@@ -74,6 +74,8 @@ export function createTestDeliveryProcessor(
     deliveries: createIntegrationRepository(db),
     send: createWebhookSender({
       transport: options.transport,
+      resolver: options.resolver ?? fixedResolver(),
+      networkPolicy: 'public-only',
       timeoutMs: options.sendTimeoutMs ?? 1_000,
     }),
     now: () => options.now,

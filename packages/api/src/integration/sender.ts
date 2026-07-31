@@ -1,10 +1,17 @@
 /**
  * Webhook の HTTP 送信。
  *
- * ここが担うのは送信と結果の正規化だけで、どの行を送るかは呼び出し側が決める。
- * 送信先の安全性（内部ネットワーク宛の拒否、名前解決、リダイレクト先の検証）は
- * この関数の手前に置く予定で、まだ実装していない。
+ * ここが担うのは、送信先の検査と通信をつなぎ、上限時間と結果の正規化を行うところまで。
+ * どの行を送るかは呼び出し側が決め、宛先が安全かは webhook-network-policy が決める。
+ *
+ * 送信のたびに名前解決からやり直す。登録時に安全だった送信先でも、その後に
+ * 解決結果が内部アドレスへ変わることがあり、登録時の検査だけでは防げない。
  */
+
+import type { WebhookResponseSummary, WebhookTransport } from './webhook-http-transport.js';
+import { nodeWebhookTransport, WEBHOOK_MAX_RESPONSE_BODY_BYTES } from './webhook-http-transport.js';
+import type { WebhookHostResolver, WebhookNetworkPolicyMode } from './webhook-network-policy.js';
+import { createWebhookNetworkPolicy, WebhookTargetError } from './webhook-network-policy.js';
 
 export interface WebhookRequest {
   url: string;
@@ -18,35 +25,48 @@ export interface WebhookSendResult {
   errorMessage: string | null;
 }
 
-/** 実際の通信。テストから差し替えられるようにする。 */
-export type WebhookTransport = (
-  url: string,
-  headers: Record<string, string>,
-  body: string,
-  signal: AbortSignal,
-) => Promise<Response>;
-
 export type WebhookSender = (request: WebhookRequest) => Promise<WebhookSendResult>;
 
 export interface WebhookSenderDependencies {
-  transport?: WebhookTransport;
+  /** 送信先として許すネットワークの範囲。API 側の登録時検査と同じ値を使う。 */
+  networkPolicy: WebhookNetworkPolicyMode;
   /** この時間で完了しない送信は打ち切る。ワーカーが無期限に滞留しないようにする。 */
   timeoutMs: number;
+  resolver?: WebhookHostResolver;
+  transport?: WebhookTransport;
 }
 
-const defaultTransport: WebhookTransport = (url, headers, body, signal) =>
-  fetch(url, { method: 'POST', headers, body, signal });
+function toResult(response: WebhookResponseSummary): WebhookSendResult {
+  if (response.bodyLimitExceeded) {
+    return {
+      outcome: 'failed',
+      statusCode: response.statusCode,
+      errorMessage: `Webhook 応答本文が ${WEBHOOK_MAX_RESPONSE_BODY_BYTES} バイトの上限を超えました`,
+    };
+  }
 
-function toResult(response: Response): WebhookSendResult {
-  return {
-    outcome: response.ok ? 'delivered' : 'failed',
-    statusCode: response.status,
-    errorMessage: response.ok ? null : `HTTP ${response.status}`,
-  };
+  const { statusCode } = response;
+  if (statusCode >= 200 && statusCode < 300) {
+    return { outcome: 'delivered', statusCode, errorMessage: null };
+  }
+  // 転送先は追わない。追うと署名した宛先と実際の宛先が変わり、
+  // 外部の URL から内部の URL へ誘導されても止められない。
+  if (statusCode >= 300 && statusCode < 400) {
+    return {
+      outcome: 'failed',
+      statusCode,
+      errorMessage: `HTTP ${statusCode}（リダイレクトには追従しません）`,
+    };
+  }
+  return { outcome: 'failed', statusCode, errorMessage: `HTTP ${statusCode}` };
 }
 
 export function createWebhookSender(deps: WebhookSenderDependencies): WebhookSender {
-  const transport = deps.transport ?? defaultTransport;
+  const policy = createWebhookNetworkPolicy({
+    mode: deps.networkPolicy,
+    ...(deps.resolver === undefined ? {} : { resolver: deps.resolver }),
+  });
+  const transport = deps.transport ?? nodeWebhookTransport;
 
   return async (request) => {
     const controller = new AbortController();
@@ -64,14 +84,24 @@ export function createWebhookSender(deps: WebhookSenderDependencies): WebhookSen
       }, deps.timeoutMs);
     });
 
-    const attempt = transport(request.url, request.headers, request.body, controller.signal).then(
-      toResult,
-      (error: unknown): WebhookSendResult => ({
+    const attempt = (async () => {
+      const target = await policy.resolve(request.url);
+      // 名前解決に上限時間を使い切っていたら、新しい接続は開かない。
+      if (controller.signal.aborted) {
+        throw new Error(`送信が ${deps.timeoutMs} ミリ秒で完了しませんでした`);
+      }
+      return transport(target, request.headers, request.body, controller.signal);
+    })().then(toResult, (error: unknown): WebhookSendResult => {
+      // 検査で弾いた理由は利用者向けの文言をそのまま残す。内部アドレスは含まれない。
+      if (error instanceof WebhookTargetError) {
+        return { outcome: 'failed', statusCode: null, errorMessage: error.message };
+      }
+      return {
         outcome: 'failed',
         statusCode: null,
         errorMessage: error instanceof Error ? error.message : '送信に失敗しました',
-      }),
-    );
+      };
+    });
 
     try {
       return await Promise.race([attempt, expired]);

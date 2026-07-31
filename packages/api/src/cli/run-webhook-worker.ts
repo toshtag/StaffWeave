@@ -6,7 +6,8 @@
  * API サーバーは送信待ちを記録するだけで、HTTP 送信は行わない。
  * このプロセスを動かさない限り、Webhook は届かない。
  *
- * 設定は API と分けて読む。ここでの設定ミスは API の起動を妨げない。
+ * 送信の性能に関する設定は API と分けて読む。ここでの設定ミスは API の起動を妨げない。
+ * 送信先のネットワーク範囲だけは例外で、API と同じ値を読む。片方だけ緩い状態を作らない。
  */
 
 import { createDatabase } from '@staffweave/db';
@@ -26,7 +27,10 @@ const worker = createWebhookDeliveryWorker({
   processor: createWebhookDeliveryProcessor({
     outbox: createWebhookOutboxRepository(db),
     deliveries: createIntegrationRepository(db),
-    send: createWebhookSender({ timeoutMs: config.sendTimeoutMs }),
+    send: createWebhookSender({
+      timeoutMs: config.sendTimeoutMs,
+      networkPolicy: config.webhookNetworkPolicy,
+    }),
     now: () => new Date(),
     claimLeaseMs: config.claimLeaseMs,
     logger,

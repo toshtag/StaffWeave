@@ -47,7 +47,7 @@ async function runDeliveryWorker(status = 204): Promise<void> {
   await drain(
     createTestDeliveryProcessor(testDatabase(), {
       now: new Date(CLOCK_OUT_AT),
-      transport: recordingTransport(sent, () => new Response(null, { status })),
+      transport: recordingTransport(sent, () => status),
     }),
   );
 }
