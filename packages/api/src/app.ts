@@ -61,6 +61,7 @@ import {
   DEFAULT_REQUEST_BODY_MAX_BYTES,
 } from './shared/security/body-limit.js';
 import { securityHeaderOptions } from './shared/security/headers.js';
+import { createOriginCheck } from './shared/security/origin.js';
 import { createSystemRoutes } from './system/routes.js';
 
 /** 上限を大きく取る経路。API は `/api` の下に置くため、要求から見える形で持つ。 */
@@ -91,6 +92,11 @@ export interface AppDependencies {
   logger?: StructuredLogger;
   /** 要求本文の上限。ふつうの要求と、まとまった量を受け取る要求で分ける。 */
   requestBodyLimit?: { defaultMaxBytes: number; bulkMaxBytes: number };
+  /**
+   * Cookie の資格情報を使う要求で許す送信元。
+   * 空なら、要求が届いた宛先と同じホストだけを許す。
+   */
+  allowedOrigins?: readonly string[];
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -221,6 +227,15 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   });
 
   const api = new Hono<AppEnv>();
+
+  // Cookie の資格情報に頼る要求は、送信元を確かめてから処理へ進める。
+  api.use(
+    '*',
+    createOriginCheck({
+      allowedOrigins: deps.allowedOrigins ?? [],
+      cookieName: SESSION_COOKIE_NAME,
+    }),
+  );
 
   // 認証は一箇所で行い、各ルートは c.get('auth') / c.get('apiKey') を通じてのみ相手を知る。
   api.use('*', async (c, next) => {

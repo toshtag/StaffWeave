@@ -20,6 +20,7 @@ describe('loadApiConfig', () => {
       webhookTargetValidationTimeoutMs: 3_000,
       maxRequestBodyBytes: 256 * 1024,
       maxBulkRequestBodyBytes: 8 * 1024 * 1024,
+      allowedOrigins: [],
     });
   });
 
@@ -142,6 +143,33 @@ describe('loadApiConfig', () => {
       ).toThrow(ConfigurationError);
     },
   );
+
+  it('許す送信元を読み、表記を揃える', () => {
+    expect(
+      loadApiConfig({
+        DATABASE_URL: 'postgres://x',
+        ALLOWED_ORIGINS: 'https://a.example.com/, https://b.example.com:443',
+      }).allowedOrigins,
+    ).toEqual(['https://a.example.com', 'https://b.example.com']);
+  });
+
+  it.each(['example.com', 'ftp://example.com', 'https://'])(
+    '許す送信元が %s なら設定エラーになる',
+    (raw) => {
+      expect(() => loadApiConfig({ DATABASE_URL: 'postgres://x', ALLOWED_ORIGINS: raw })).toThrow(
+        ConfigurationError,
+      );
+    },
+  );
+
+  it('経路を含む指定はオリジンだけを見る', () => {
+    expect(
+      loadApiConfig({
+        DATABASE_URL: 'postgres://x',
+        ALLOWED_ORIGINS: 'https://example.com/staffweave',
+      }).allowedOrigins,
+    ).toEqual(['https://example.com']);
+  });
 });
 
 describe('loadWebhookWorkerConfig', () => {
