@@ -108,6 +108,17 @@ async function recoverStorageRead(page: Page): Promise<void> {
   });
 }
 
+/**
+ * 打刻の送信が終わるまで待つ。
+ * 画面の状態は端末に残した打刻でも変わるため、表示だけでは送信できたことにならない。
+ */
+function waitForPunchRecorded(page: Page): Promise<unknown> {
+  return page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/attendance/events') && response.request().method() === 'POST',
+  );
+}
+
 /** React の描画が落ち着くまで待つ。時間ではなく描画の回数で区切る。 */
 async function settleRendering(page: Page): Promise<void> {
   await page.evaluate(
@@ -330,10 +341,12 @@ test.describe('送信待ち打刻の所有者', () => {
     await expect(page.getByRole('button', { name: '出勤', exact: true })).toBeEnabled();
     expect(sent).toHaveLength(0);
 
+    const recorded = waitForPunchRecorded(page);
     await page.getByRole('button', { name: '出勤', exact: true }).click();
 
     await expect(page.locator('.work-state')).toHaveText('勤務中');
     expect(sent).toHaveLength(1);
+    await recorded;
 
     await page.reload();
     await expect(page.locator('.punch-events li')).toHaveCount(1);
@@ -363,6 +376,7 @@ test.describe('送信待ち打刻の所有者', () => {
     expect(sent).toHaveLength(0);
 
     await recoverStorageRead(page);
+    const recorded = waitForPunchRecorded(page);
     await page.getByRole('button', { name: '保存内容を再確認' }).click();
 
     // 保存されていた打刻だけが送られ、同じ打刻を二度作らない。
@@ -371,6 +385,7 @@ test.describe('送信待ち打刻の所有者', () => {
     await expect(page.locator('.blocked-banner')).toHaveCount(0);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toContain(requestId);
+    await recorded;
 
     await page.reload();
     await expect(page.locator('.punch-events li')).toHaveCount(1);

@@ -25,8 +25,15 @@ test.describe('スマートフォンからの打刻', () => {
     const box = await clockIn.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
 
+    // 画面の状態は端末に残した打刻でも変わるため、それだけでは送信できたことにならない。
+    // 次のテストは保存された打刻から始まるので、送信の完了まで待つ。
+    const recorded = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/attendance/events') && response.request().method() === 'POST',
+    );
     await clockIn.click();
     await expect(workState).toHaveText('勤務中');
+    await recorded;
   });
 
   test('オフラインでも打刻を受け付け、復帰後に送信する', async ({ page, context }) => {
