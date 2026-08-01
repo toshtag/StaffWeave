@@ -107,6 +107,21 @@ async function createContract(
   return (await response.json()) as AssignmentContractRecord;
 }
 
+async function assign(
+  instance: App,
+  fixture: Fixture,
+  body: { assignmentContractId: string; startsOn: string; endsOn?: string },
+): Promise<EmployeeAssignmentRecord> {
+  const response = await instance.request(
+    '/api/employee-assignments',
+    authorized(fixture.adminCookie, {
+      method: 'POST',
+      body: { employeeId: fixture.dispatchedEmployeeId, ...body },
+    }),
+  );
+  return (await response.json()) as EmployeeAssignmentRecord;
+}
+
 describe('契約と配属', () => {
   let fixture: Fixture;
 
@@ -175,6 +190,160 @@ describe('契約と配属', () => {
         },
       }),
     );
+    expect(response.status).toBe(404);
+  });
+
+  it('雇用元に所属していない従業員は配属できない', async () => {
+    const instance = app();
+    // 受入組織に所属する従業員は、この契約の雇用元の従業員ではない。
+    const outsider = await createEmployeeWithAccount(testDatabase(), fixture.workspaceId, {
+      organizationId: fixture.hostOrganizationId,
+      employeeNumber: 'E003',
+      displayName: '受入 三郎',
+      email: 'saburo@example.com',
+    });
+    const contract = await createContract(instance, fixture);
+
+    const response = await instance.request(
+      '/api/employee-assignments',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          employeeId: outsider.employeeId,
+          assignmentContractId: contract.id,
+          startsOn: '2026-04-01',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+
+    const rows = await testDatabase().query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM employee_assignments',
+    );
+    expect(rows[0]?.count).toBe(0);
+  });
+
+  it('受入組織にない拠点は勤務拠点にできない', async () => {
+    const instance = app();
+    const contract = await createContract(instance, fixture);
+    // 雇用元の拠点。受入組織の拠点ではない。
+    const site = await instance.request(
+      '/api/sites',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          organizationId: fixture.employerOrganizationId,
+          code: 'EMPLOYER1',
+          name: '雇用元の事務所',
+        },
+      }),
+    );
+    const siteId = ((await site.json()) as { id: string }).id;
+
+    const response = await instance.request(
+      '/api/employee-assignments',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          employeeId: fixture.dispatchedEmployeeId,
+          assignmentContractId: contract.id,
+          workplaceSiteId: siteId,
+          startsOn: '2026-04-01',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it('受入組織の拠点なら勤務拠点にできる', async () => {
+    const instance = app();
+    const contract = await createContract(instance, fixture);
+    const site = await instance.request(
+      '/api/sites',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: { organizationId: fixture.hostOrganizationId, code: 'HOST1', name: '受入先の工場' },
+      }),
+    );
+    const siteId = ((await site.json()) as { id: string }).id;
+
+    const response = await instance.request(
+      '/api/employee-assignments',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          employeeId: fixture.dispatchedEmployeeId,
+          assignmentContractId: contract.id,
+          workplaceSiteId: siteId,
+          startsOn: '2026-04-01',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(((await response.json()) as EmployeeAssignmentRecord).workplaceSiteId).toBe(siteId);
+  });
+
+  it('期間が重なる配属は受け付けない', async () => {
+    const instance = app();
+    const contract = await createContract(instance, fixture);
+    await assign(instance, fixture, { assignmentContractId: contract.id, startsOn: '2026-04-01' });
+
+    const response = await instance.request(
+      '/api/employee-assignments',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          employeeId: fixture.dispatchedEmployeeId,
+          assignmentContractId: contract.id,
+          startsOn: '2026-05-01',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { error: { message: string } }).error.message).toContain(
+      '終了日を設定してください',
+    );
+  });
+
+  it('前の配属へ終了日を設定してから次を配属できる', async () => {
+    const instance = app();
+    const contract = await createContract(instance, fixture);
+    const first = await assign(instance, fixture, {
+      assignmentContractId: contract.id,
+      startsOn: '2026-04-01',
+    });
+
+    const ended = await instance.request(
+      `/api/employee-assignments/${first.id}/end`,
+      authorized(fixture.adminCookie, { method: 'POST', body: { endsOn: '2026-04-30' } }),
+    );
+    expect(ended.status).toBe(200);
+    expect(((await ended.json()) as EmployeeAssignmentRecord).endsOn).toBe('2026-04-30');
+
+    const next = await instance.request(
+      '/api/employee-assignments',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          employeeId: fixture.dispatchedEmployeeId,
+          assignmentContractId: contract.id,
+          startsOn: '2026-05-01',
+        },
+      }),
+    );
+    expect(next.status).toBe(201);
+  });
+
+  it('存在しない配属には終了日を設定できない', async () => {
+    const response = await app().request(
+      '/api/employee-assignments/00000000-0000-4000-8000-000000000000/end',
+      authorized(fixture.adminCookie, { method: 'POST', body: { endsOn: '2026-04-30' } }),
+    );
+
     expect(response.status).toBe(404);
   });
 
