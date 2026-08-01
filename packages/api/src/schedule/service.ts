@@ -4,6 +4,7 @@ import type {
   CreateWorkCycleRequest,
   CreateWorkPatternRequest,
   EmployeeWorkCycleRecord,
+  EndWorkCycleAssignmentRequest,
   GenerateWorkSchedulesRequest,
   GenerateWorkSchedulesResponse,
   LeaveTypeRecord,
@@ -27,7 +28,11 @@ import { recalculateWorkDay } from '../attendance/day.js';
 import type { AttendanceRepository } from '../attendance/repository.js';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
-import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
+import {
+  isExclusionViolation,
+  isForeignKeyViolation,
+  isUniqueViolation,
+} from '../shared/database-errors.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { conflict, invalidRequest, notFound } from '../shared/errors.js';
 import type { WorkCycleRepository } from './cycle-repository.js';
@@ -67,11 +72,21 @@ export interface ScheduleService {
     workspaceId: string,
     input: AssignWorkCycleRequest,
   ): Promise<EmployeeWorkCycleRecord>;
+  endWorkCycleAssignment(
+    workspaceId: string,
+    employeeWorkCycleId: string,
+    input: EndWorkCycleAssignmentRequest,
+  ): Promise<EmployeeWorkCycleRecord>;
   generateWorkSchedules(
     context: AuthenticatedContext,
     input: GenerateWorkSchedulesRequest,
   ): Promise<GenerateWorkSchedulesResponse>;
 }
+
+/** 期間の重なりは DB の排他制約で決まる。どの経路から届いても同じ理由を返す。 */
+const OVERLAPPING_ASSIGNMENT_MESSAGE =
+  'この従業員には、期間が重なる勤務周期の割当がすでにあります。' +
+  '先に前の割当へ終了日を設定してください';
 
 function requireBusinessDate(value: string, field: string): BusinessDate {
   if (!isBusinessDate(value)) {
@@ -311,6 +326,26 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
         });
       } catch (error) {
         if (isForeignKeyViolation(error)) throw notFound('従業員または勤務周期');
+        if (isExclusionViolation(error)) throw conflict(OVERLAPPING_ASSIGNMENT_MESSAGE);
+        throw error;
+      }
+    },
+
+    async endWorkCycleAssignment(workspaceId, employeeWorkCycleId, input) {
+      const effectiveTo = requireBusinessDate(input.effectiveTo, 'effectiveTo');
+
+      const existing = await deps.cycles.findAssignment(workspaceId, employeeWorkCycleId);
+      if (!existing) throw notFound('勤務周期の割当');
+      if (effectiveTo < existing.effectiveFrom) {
+        throw invalidRequest([
+          { field: 'effectiveTo', message: '終了日は開始日以降にしてください' },
+        ]);
+      }
+
+      try {
+        return await deps.cycles.endAssignment(workspaceId, employeeWorkCycleId, effectiveTo);
+      } catch (error) {
+        if (isExclusionViolation(error)) throw conflict(OVERLAPPING_ASSIGNMENT_MESSAGE);
         throw error;
       }
     },

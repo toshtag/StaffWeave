@@ -3,6 +3,7 @@ import type {
   CreateLeaveTypeRequest,
   CreateWorkCycleRequest,
   CreateWorkPatternRequest,
+  EndWorkCycleAssignmentRequest,
   GenerateWorkSchedulesRequest,
   UpsertWorkScheduleRequest,
 } from '@staffweave/contracts';
@@ -11,6 +12,7 @@ import {
   createLeaveTypeRequestSchema,
   createWorkCycleRequestSchema,
   createWorkPatternRequestSchema,
+  endWorkCycleAssignmentRequestSchema,
   generateWorkSchedulesRequestSchema,
   listWorkSchedulesQuerySchema,
   operations,
@@ -94,6 +96,22 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
     const auth = requirePermission(c, 'employee.manage');
     const body = await readBody<AssignWorkCycleRequest>(c, assignWorkCycleRequestSchema);
     return c.json(await service.assignWorkCycle(auth.workspace.id, body), 201);
+  });
+
+  app.post('/employee-work-cycles/:employeeWorkCycleId/end', async (c) => {
+    const auth = requirePermission(c, 'employee.manage');
+    const body = await readBody<EndWorkCycleAssignmentRequest>(
+      c,
+      endWorkCycleAssignmentRequestSchema,
+    );
+    return c.json(
+      await service.endWorkCycleAssignment(
+        auth.workspace.id,
+        c.req.param('employeeWorkCycleId'),
+        body,
+      ),
+      200,
+    );
   });
 
   app.post(operations.generateWorkSchedules.path, async (c) => {

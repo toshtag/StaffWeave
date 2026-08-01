@@ -186,6 +186,15 @@ export const assignWorkCycleRequestSchema = objectSchema({
   required: ['employeeId', 'workCycleId', 'anchorDate', 'effectiveFrom'],
 });
 
+export const endWorkCycleAssignmentRequestSchema = objectSchema({
+  description:
+    '勤務周期の割当に終了日を設定する。制度を切り替えるときに、次の割当と期間を重ねないため',
+  properties: {
+    effectiveTo: businessDateSchema,
+  },
+  required: ['effectiveTo'],
+});
+
 export const generateWorkSchedulesRequestSchema = objectSchema({
   description: '割り当てた勤務周期から、期間分の勤務予定を作る',
   properties: {
