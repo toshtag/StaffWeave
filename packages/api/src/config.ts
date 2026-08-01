@@ -11,6 +11,8 @@ import {
   DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
   DEFAULT_REQUEST_BODY_MAX_BYTES,
 } from './shared/security/body-limit.js';
+import type { LoginAttemptPolicies } from './shared/security/login-attempts.js';
+import { DEFAULT_LOGIN_ATTEMPT_POLICY } from './shared/security/login-attempts.js';
 import { normalizeOrigin } from './shared/security/origin.js';
 
 export interface ApiConfig {
@@ -42,6 +44,10 @@ export interface ApiConfig {
    * 空なら、要求が届いた宛先と同じホストだけを許す。
    */
   allowedOrigins: string[];
+  /** ログインの失敗を何回まで受け付けるか。 */
+  loginAttemptPolicy: LoginAttemptPolicies;
+  /** 逆プロキシが付ける転送元の頭書きを信用するか。 */
+  trustProxyForClientAddress: boolean;
 }
 
 /** Webhook 送信ワーカーの動作設定。既定値と許容範囲はこの一箇所で決める。 */
@@ -79,6 +85,27 @@ const API_SETTINGS = {
     fallback: DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
     min: 4 * 1024,
     max: 128 * 1024 * 1024,
+  },
+  // 少なすぎると打ち間違いで締め出す。多すぎると総当たりを妨げられない。
+  LOGIN_MAX_FAILURES_PER_ACCOUNT: {
+    fallback: DEFAULT_LOGIN_ATTEMPT_POLICY.account.maxFailures,
+    min: 3,
+    max: 100,
+  },
+  LOGIN_MAX_FAILURES_PER_SOURCE: {
+    fallback: DEFAULT_LOGIN_ATTEMPT_POLICY.source.maxFailures,
+    min: 5,
+    max: 10_000,
+  },
+  LOGIN_FAILURE_WINDOW_MS: {
+    fallback: DEFAULT_LOGIN_ATTEMPT_POLICY.account.windowMs,
+    min: 60_000,
+    max: 24 * 60 * 60 * 1000,
+  },
+  LOGIN_BLOCK_MS: {
+    fallback: DEFAULT_LOGIN_ATTEMPT_POLICY.account.blockMs,
+    min: 60_000,
+    max: 24 * 60 * 60 * 1000,
   },
 } as const satisfies Record<string, IntegerSetting>;
 
@@ -202,6 +229,55 @@ function readAllowedOrigins(raw: string | undefined): string[] {
   });
 }
 
+/**
+ * 真偽値の設定。
+ *
+ * 未知の値は起動を止める。`no` や `off` を「偽」と読み替える実装にすると、
+ * 書いた側の意図と食い違ったまま動いてしまう。
+ */
+function readBoolean(name: string, raw: string | undefined): boolean {
+  if (raw === undefined || raw === '') return false;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new ConfigurationError(`${name} の値が不正です: ${raw}（true または false）`);
+}
+
+/**
+ * ログインの失敗を数える基準。
+ *
+ * 窓と断る時間は単位で分けない。運用者が把握する値を増やさないため。
+ * 回数だけを分け、送信元は共有回線を巻き込まないよう緩くする。
+ */
+function readLoginAttemptPolicy(env: NodeJS.ProcessEnv): LoginAttemptPolicies {
+  const windowMs = readInteger(
+    'LOGIN_FAILURE_WINDOW_MS',
+    env.LOGIN_FAILURE_WINDOW_MS,
+    API_SETTINGS.LOGIN_FAILURE_WINDOW_MS,
+  );
+  const blockMs = readInteger('LOGIN_BLOCK_MS', env.LOGIN_BLOCK_MS, API_SETTINGS.LOGIN_BLOCK_MS);
+
+  return {
+    account: {
+      maxFailures: readInteger(
+        'LOGIN_MAX_FAILURES_PER_ACCOUNT',
+        env.LOGIN_MAX_FAILURES_PER_ACCOUNT,
+        API_SETTINGS.LOGIN_MAX_FAILURES_PER_ACCOUNT,
+      ),
+      windowMs,
+      blockMs,
+    },
+    source: {
+      maxFailures: readInteger(
+        'LOGIN_MAX_FAILURES_PER_SOURCE',
+        env.LOGIN_MAX_FAILURES_PER_SOURCE,
+        API_SETTINGS.LOGIN_MAX_FAILURES_PER_SOURCE,
+      ),
+      windowMs,
+      blockMs,
+    },
+  };
+}
+
 function readEnvironment(raw: string | undefined): ApiConfig['environment'] {
   if (raw === undefined || raw === '') return 'development';
   if (raw === 'development' || raw === 'test' || raw === 'production') return raw;
@@ -234,6 +310,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       API_SETTINGS.MAX_BULK_REQUEST_BODY_BYTES,
     ),
     allowedOrigins: readAllowedOrigins(env.ALLOWED_ORIGINS),
+    loginAttemptPolicy: readLoginAttemptPolicy(env),
+    trustProxyForClientAddress: readBoolean(
+      'TRUST_PROXY_FOR_CLIENT_ADDRESS',
+      env.TRUST_PROXY_FOR_CLIENT_ADDRESS,
+    ),
   };
 }
 

@@ -19,6 +19,8 @@ const app = createApp({
     bulkMaxBytes: config.maxBulkRequestBodyBytes,
   },
   allowedOrigins: config.allowedOrigins,
+  loginAttemptPolicy: config.loginAttemptPolicy,
+  trustProxyForClientAddress: config.trustProxyForClientAddress,
 });
 
 // セルフホストでは、ビルド済みの Web を同じプロセスから配信できるようにする。
