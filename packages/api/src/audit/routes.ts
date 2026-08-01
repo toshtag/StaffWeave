@@ -44,8 +44,10 @@ export function createAuditRoutes(deps: AuditRouteDependencies): Hono<AppEnv> {
     return c.json({ anomalies }, 200);
   });
 
+  // 監査記録は従業員に紐づかない操作も含み、要約に氏名がそのまま入る。
+  // 閲覧範囲で機械的に絞れないため、ワークスペース管理者だけが読めるようにする。
   app.get(operations.listAuditLogs.path, async (c) => {
-    const auth = requirePermission(c, 'organization.read');
+    const auth = requirePermission(c, 'audit.read');
     return c.json({ logs: await deps.logs.listRecent(auth.workspace.id, 200) }, 200);
   });
 
