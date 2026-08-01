@@ -3,22 +3,32 @@ services:
     image: postgres:17-alpine
     container_name: staffweave-db
     restart: unless-stopped
+    # 資格情報はここへ書かず、.env から与える。
+    # compose ファイルへ書くと、README の「パスワードを変更する」を実行できない。
     environment:
-      POSTGRES_USER: staffweave
-      POSTGRES_PASSWORD: staffweave
-      POSTGRES_DB: staffweave
+      POSTGRES_USER: ${DB_USER:-staffweave}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-staffweave}
+      POSTGRES_DB: ${DB_NAME:-staffweave}
       # 日跨ぎ勤務の判定は業務日として明示的に計算するため、DB のタイムゾーンは UTC で固定する。
       TZ: UTC
       PGTZ: UTC
     ports:
+      # 既定ではループバックにだけ公開する。0.0.0.0 へ結び付けると、
+      # 公開ネットワークに面したホストで PostgreSQL がそのまま開く。
+      # 他のホストから直接つなぐ場合だけ DB_HOST_BIND を変える。
+      #
       # 他プロジェクトの PostgreSQL と衝突しないよう、既定のホスト側ポートを 5433 にする。
       # 変更する場合は .env の DATABASE_URL / TEST_DATABASE_URL も合わせること。
-      - '${DB_HOST_PORT:-5433}:5432'
+      - '${DB_HOST_BIND:-127.0.0.1}:${DB_HOST_PORT:-5433}:5432'
     volumes:
       - staffweave-db-data:/var/lib/postgresql/data
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U staffweave -d staffweave']
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U "${DB_USER:-staffweave}" -d "${DB_NAME:-staffweave}"',
+        ]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -39,7 +49,8 @@ services:
         condition: service_healthy
     # IC カードの指紋鍵だけは値を書かない形にするため、この service は一覧で指定する。
     environment:
-      - DATABASE_URL=postgres://staffweave:staffweave@db:5432/staffweave
+      # 接続先は db service。資格情報は上と同じ .env の値から組み立てる。
+      - DATABASE_URL=postgres://${DB_USER:-staffweave}:${DB_PASSWORD:-staffweave}@db:5432/${DB_NAME:-staffweave}
       - API_HOST=0.0.0.0
       - API_PORT=8787
       - NODE_ENV=production
@@ -48,10 +59,14 @@ services:
       # 送信先の制限は API とワーカーで同じ値にする。片方だけ緩い状態を作らない。
       - WEBHOOK_NETWORK_POLICY=${WEBHOOK_NETWORK_POLICY:-public-only}
       - WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS=${WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS:-3000}
+      - MAX_REQUEST_BODY_BYTES=${MAX_REQUEST_BODY_BYTES:-262144}
+      - MAX_BULK_REQUEST_BODY_BYTES=${MAX_BULK_REQUEST_BODY_BYTES:-8388608}
       # ホスト側に設定があるときだけ渡す。既定値を書くと、空の鍵のまま起動してしまう。
       - CARD_FINGERPRINT_KEY
     ports:
-      - '${APP_HOST_PORT:-8787}:8787'
+      # 既定ではループバックにだけ公開する。HTTPS の終端は前段で行う前提のため、
+      # 直接公開する場合だけ APP_HOST_BIND を変える。
+      - '${APP_HOST_BIND:-127.0.0.1}:${APP_HOST_PORT:-8787}:8787'
 
   # Webhook の送信ワーカー。API は送信待ちを記録するだけなので、
   # このプロセスを動かさない限り Webhook は届かない。
@@ -67,7 +82,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://staffweave:staffweave@db:5432/staffweave
+      DATABASE_URL: postgres://${DB_USER:-staffweave}:${DB_PASSWORD:-staffweave}@db:5432/${DB_NAME:-staffweave}
       NODE_ENV: production
       WEBHOOK_WORKER_POLL_INTERVAL_MS: ${WEBHOOK_WORKER_POLL_INTERVAL_MS:-5000}
       WEBHOOK_SEND_TIMEOUT_MS: ${WEBHOOK_SEND_TIMEOUT_MS:-10000}
