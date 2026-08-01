@@ -14,6 +14,10 @@ const app = createApp({
   cardFingerprintMasterKey: config.cardFingerprintKey,
   webhookNetworkPolicy: config.webhookNetworkPolicy,
   webhookTargetValidationTimeoutMs: config.webhookTargetValidationTimeoutMs,
+  requestBodyLimit: {
+    defaultMaxBytes: config.maxRequestBodyBytes,
+    bulkMaxBytes: config.maxBulkRequestBodyBytes,
+  },
 });
 
 // セルフホストでは、ビルド済みの Web を同じプロセスから配信できるようにする。

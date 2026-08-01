@@ -6,6 +6,7 @@ export type ApiErrorCode =
   | 'forbidden'
   | 'not_found'
   | 'conflict'
+  | 'payload_too_large'
   | 'internal_error';
 
 const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
@@ -14,6 +15,7 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  payload_too_large: 413,
   internal_error: 500,
 };
 
@@ -70,4 +72,9 @@ export function notFound(what: string): ApiError {
 
 export function conflict(message: string): ApiError {
   return new ApiError('conflict', message);
+}
+
+/** 本文が上限を超えた要求。読み切る前に断るため、内容には触れない。 */
+export function payloadTooLarge(): ApiError {
+  return new ApiError('payload_too_large', '要求の本文が大きすぎます');
 }
