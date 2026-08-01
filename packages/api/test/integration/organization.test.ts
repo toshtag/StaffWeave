@@ -112,6 +112,39 @@ describe('組織構造の管理', () => {
       parentBody.id,
     );
   });
+
+  it('別の組織の部門は親にできない', async () => {
+    const instance = app();
+    const organizationId = await createOrganization(testDatabase(), workspaceId, { code: 'HQ' });
+    const otherOrganizationId = await createOrganization(testDatabase(), workspaceId, {
+      code: 'BRANCH',
+    });
+
+    const parent = (await (
+      await instance.request(
+        '/api/departments',
+        authorized(adminCookie, {
+          method: 'POST',
+          body: { organizationId: otherOrganizationId, code: 'SALES', name: '営業本部' },
+        }),
+      )
+    ).json()) as { id: string };
+
+    const child = await instance.request(
+      '/api/departments',
+      authorized(adminCookie, {
+        method: 'POST',
+        body: {
+          organizationId,
+          parentDepartmentId: parent.id,
+          code: 'SALES1',
+          name: '第一営業部',
+        },
+      }),
+    );
+
+    expect(child.status).toBe(400);
+  });
 });
 
 describe('権限', () => {
@@ -312,6 +345,117 @@ describe('従業員の登録', () => {
       "SELECT count(*)::int AS count FROM employees WHERE employee_number = 'E004'",
     );
     expect(rows[0]?.count).toBe(0);
+  });
+
+  it('別の組織の拠点は主拠点にできない', async () => {
+    const instance = app();
+    const otherOrganizationId = await createOrganization(testDatabase(), workspaceId, {
+      code: 'BRANCH',
+    });
+    const site = (await (
+      await instance.request(
+        '/api/sites',
+        authorized(adminCookie, {
+          method: 'POST',
+          body: { organizationId: otherOrganizationId, code: 'OSAKA', name: '大阪オフィス' },
+        }),
+      )
+    ).json()) as Site;
+
+    const response = await instance.request(
+      '/api/employees',
+      authorized(adminCookie, {
+        method: 'POST',
+        body: {
+          organizationId,
+          employeeNumber: 'E006',
+          displayName: '越境 六郎',
+          primarySiteId: site.id,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: { message: string } }).error.message).toBe(
+      '要求の内容が正しくありません',
+    );
+
+    const rows = await testDatabase().query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM employees WHERE employee_number = 'E006'",
+    );
+    expect(rows[0]?.count).toBe(0);
+  });
+
+  it('別の組織の部門は主部門にできない', async () => {
+    const instance = app();
+    const otherOrganizationId = await createOrganization(testDatabase(), workspaceId, {
+      code: 'BRANCH',
+    });
+    const department = (await (
+      await instance.request(
+        '/api/departments',
+        authorized(adminCookie, {
+          method: 'POST',
+          body: { organizationId: otherOrganizationId, code: 'SUPPORT', name: '支援部' },
+        }),
+      )
+    ).json()) as { id: string };
+
+    const response = await instance.request(
+      '/api/employees',
+      authorized(adminCookie, {
+        method: 'POST',
+        body: {
+          organizationId,
+          employeeNumber: 'E007',
+          displayName: '越境 七郎',
+          primaryDepartmentId: department.id,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it('同じ組織の拠点と部門なら主拠点・主部門にできる', async () => {
+    const instance = app();
+    const site = (await (
+      await instance.request(
+        '/api/sites',
+        authorized(adminCookie, {
+          method: 'POST',
+          body: { organizationId, code: 'TOKYO', name: '東京オフィス' },
+        }),
+      )
+    ).json()) as Site;
+    const department = (await (
+      await instance.request(
+        '/api/departments',
+        authorized(adminCookie, {
+          method: 'POST',
+          body: { organizationId, code: 'SALES', name: '営業部' },
+        }),
+      )
+    ).json()) as { id: string };
+
+    const response = await instance.request(
+      '/api/employees',
+      authorized(adminCookie, {
+        method: 'POST',
+        body: {
+          organizationId,
+          employeeNumber: 'E008',
+          displayName: '正規 八郎',
+          primarySiteId: site.id,
+          primaryDepartmentId: department.id,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    const employee = (await response.json()) as Employee;
+    expect(employee.primarySiteId).toBe(site.id);
+    expect(employee.primaryDepartmentId).toBe(department.id);
   });
 
   it('短すぎるパスワードは拒否する', async () => {
