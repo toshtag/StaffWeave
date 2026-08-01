@@ -40,15 +40,18 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 
 | 経路の種類 | 基準にする期間 | 例 |
 | --- | --- | --- |
-| 期間を持たない | 現在日（ワークスペースの時間帯） | `listEmployees`, `listCardCredentials`, `listEmployeeAssignments`, `listAnomalies`, `listEmployeeWorkCycles` |
+| 期間を持たない | 現在日（ワークスペースの時間帯） | `listEmployees`, `listCardCredentials`, `listEmployeeAssignments`, `listEmployeeWorkCycles` |
 | 1 日を対象にする | その業務日 | `getDiscrepancyReport`, 申請の承認・差し戻し |
-| 期間を対象にする | 対象期間と重なるか | `listWorkSchedules`, `listSessionObservations`, `listDailyRequests`, `listMonthlyClosings` の事前検査 |
-| 行ごとに日付を持つ | 行の業務日 | `listDailyRequests`, `listSessionObservations` の絞り込み、`exportAttendanceCsv` |
+| 期間を対象にする | 対象期間と重なるか | `listWorkSchedules`, `listSessionObservations`, `listDailyRequests`, `listMonthlyClosings`, `listAnomalies` の事前検査 |
+| 行ごとに日付を持つ | 行の業務日 | `listDailyRequests`, `listSessionObservations`, `listAnomalies` の絞り込み、`exportAttendanceCsv` |
 | 月を対象にする | その月のいずれかの日 | `listMonthlyClosings` の絞り込み、`closeMonth`, `reopenMonth`, `exportPayrollCsv` |
 
 期間を対象にする経路では、事前検査を「期間と重なるか」で行い、
 行ごとの絞り込みで実際に見せる範囲を決めます。
 検査だけを通っても、配属されていなかった日の行は返しません。
+
+`from` / `to` を受け取る経路を「期間を持たない」側へ入れないでください。
+現在日で判断すると、配属される前や終わった後の期間まで読めてしまいます。
 
 契約終了後の猶予期間は設けません。締めや給与の処理が終わっていない場合は、
 配属の終了日を実態に合わせて設定してください。
@@ -183,7 +186,11 @@ CSV は SQL 側で絞り込むため、インメモリの判定とは別実装�
 受入組織を経由する許可と、本人だけを見る場合の 2 つの分岐を、CSV でも検証しています。
 
 配属の期間については、終了済み・期間内・開始前の 3 通りを別の従業員で用意し、
-従業員一覧・勤怠 CSV・給与 CSV・勤務予定のそれぞれで、
+従業員一覧・勤怠 CSV・給与 CSV・勤務予定・異常の一覧のそれぞれで、
 期間内の従業員だけが見えることを確かめています。
+
+異常の一覧は業務日を持つため、対象期間を変えると見える相手が変わります。
+終了した配属の期間を指定したときにその期間の異常が返り、
+配属される前の期間を指定したときに返らないことを、事前検査と絞り込みの両方で確かめています。
 
 閲覧範囲のモデルを旧動作へ戻すか、いずれかの絞り込みを外すと、このテストは失敗します。
