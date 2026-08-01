@@ -18,6 +18,8 @@ describe('loadApiConfig', () => {
       webDistPath: null,
       webhookNetworkPolicy: 'public-only',
       webhookTargetValidationTimeoutMs: 3_000,
+      maxRequestBodyBytes: 256 * 1024,
+      maxBulkRequestBodyBytes: 8 * 1024 * 1024,
     });
   });
 
@@ -109,6 +111,34 @@ describe('loadApiConfig', () => {
     (raw) => {
       expect(() =>
         loadApiConfig({ DATABASE_URL: 'postgres://x', WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: raw }),
+      ).toThrow(ConfigurationError);
+    },
+  );
+
+  it('要求本文の上限を読む', () => {
+    const config = loadApiConfig({
+      DATABASE_URL: 'postgres://x',
+      MAX_REQUEST_BODY_BYTES: '65536',
+      MAX_BULK_REQUEST_BODY_BYTES: '1048576',
+    });
+    expect(config.maxRequestBodyBytes).toBe(65_536);
+    expect(config.maxBulkRequestBodyBytes).toBe(1_048_576);
+  });
+
+  it.each(['0', '4095', '8388609', '1.5', 'おおきめ'])(
+    '要求本文の上限が %s なら設定エラーになる',
+    (raw) => {
+      expect(() =>
+        loadApiConfig({ DATABASE_URL: 'postgres://x', MAX_REQUEST_BODY_BYTES: raw }),
+      ).toThrow(ConfigurationError);
+    },
+  );
+
+  it.each(['0', '4095', '134217729'])(
+    'まとまった量を受け取る要求の上限が %s なら設定エラーになる',
+    (raw) => {
+      expect(() =>
+        loadApiConfig({ DATABASE_URL: 'postgres://x', MAX_BULK_REQUEST_BODY_BYTES: raw }),
       ).toThrow(ConfigurationError);
     },
   );
