@@ -6,6 +6,7 @@ function createStubDatabase(overrides: Partial<Database> = {}): Database {
   const base: Database = {
     query: async () => [],
     transaction: async <T>(fn: (tx: Queryable) => Promise<T>) => fn({ query: async () => [] }),
+    session: async <T>(fn: (connection: Queryable) => Promise<T>) => fn({ query: async () => [] }),
     ping: async () => {},
     close: async () => {},
   };

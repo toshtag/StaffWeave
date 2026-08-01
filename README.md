@@ -265,6 +265,12 @@ docker compose exec app pnpm bootstrap --email admin@example.com
 
 `http://127.0.0.1:8787` で API と画面の両方が使えます。
 `app` と同じイメージで `webhook-worker` も起動します。
+
+複数のインスタンスを同時に起動しても構いません。
+`pnpm db:migrate` はデータベースのアドバイザリロックで適用を直列化します。
+先に取った 1 つだけが適用し、他は待ってから適用済みの状態を読み直すため、
+同じマイグレーションが二重に走ることはありません。
+プロセスが途中で落ちた場合も、接続が切れた時点でロックは解放されます。
 マイグレーション適用前は、ワーカーが送信待ちを取得できない旨をログへ記録し、
 一定間隔で確認し直します。適用後は、プロセスを再起動しなくても送信処理を始めます。
 
@@ -277,16 +283,21 @@ docker compose exec app pnpm bootstrap --email admin@example.com
 ### 検証
 
 ```sh
-pnpm verify            # lint + typecheck + 全テスト + E2E
-pnpm test:unit         # 単体テストのみ（DB 不要）
-pnpm test:integration  # 統合テストのみ（DB 必要）
+pnpm verify            # 下の 6 つをこの順で実行する（DB 必要）
+pnpm lint              # 書式と静的検査
+pnpm typecheck         # 型検査
+pnpm test              # 単体 + 統合（DB 必要）
 pnpm test:e2e          # ブラウザによる E2E（DB 必要）
 pnpm db:verify         # マイグレーションの適用漏れと内容の変更を検査
 pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・依存方向・マイグレーション）を検査
+
+pnpm test:unit         # 単体テストのみ（DB 不要）
+pnpm test:integration  # 統合テストのみ（DB 必要）
 ```
 
-これらは GitHub Actions でも同じコマンドで実行されます。
-CI でしか通らない状態を作らないため、検証の内容はローカルと揃えています。
+`pnpm verify` は CI が実行する検証と同じ内容です。
+手元で通れば CI でも通る状態にするため、片方だけに項目を足しません。
+コンテナのビルドだけは CI で行います（`docker build -f docker/api.Dockerfile`）。
 
 統合テストは `TEST_DATABASE_URL` のデータベースを使い、実行のたびにデータを消去します。
 開発用データベースを誤って指さないよう、名前が `_test` で終わることを実行時に検査します。

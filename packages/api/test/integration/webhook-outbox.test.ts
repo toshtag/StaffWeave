@@ -58,6 +58,7 @@ function alwaysRollingBack(db: Database): Database {
         await fn(tx);
         throw new Error('検証のために業務処理を失敗させました');
       }),
+    session: (fn) => db.session(fn),
     ping: () => db.ping(),
     close: () => db.close(),
   };
