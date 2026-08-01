@@ -129,6 +129,36 @@ else
   pass 'ドメイン層は独立しています'
 fi
 
+echo 'パッケージの依存方向'
+# 依存してよい相手をここで固定する。文書の依存図と同じ内容を機械的に確かめる。
+# api だけは、端末と外部連携の取り決めを検証するため agent と connector を試験用に使う。
+DEPENDENCY_RULES='domain:
+db:
+contracts:domain
+web:contracts,domain
+agent:contracts,domain
+connector:contracts,domain
+api:contracts,db,domain,agent,connector'
+
+for RULE in $DEPENDENCY_RULES; do
+  PACKAGE=${RULE%%:*}
+  ALLOWED=${RULE#*:}
+  MANIFEST="packages/$PACKAGE/package.json"
+  [ -f "$MANIFEST" ] || continue
+
+  ACTUAL=$(grep -o '"@staffweave/[a-z]*"' "$MANIFEST" | sed 's/"@staffweave\///; s/"//' | sort -u)
+  for DEPENDENCY in $ACTUAL; do
+    [ "$DEPENDENCY" = "$PACKAGE" ] && continue
+    case ",$ALLOWED," in
+      *",$DEPENDENCY,"*) ;;
+      *) fail "$PACKAGE が $DEPENDENCY へ依存しています（docs/module-boundaries.md の依存方向に反します）" ;;
+    esac
+  done
+done
+if [ "$FAILED" -eq 0 ]; then
+  pass '依存方向は文書のとおりです'
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   echo ''
   echo 'リポジトリの決めごとに反する箇所があります。'

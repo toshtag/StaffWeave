@@ -282,7 +282,7 @@ pnpm test:unit         # 単体テストのみ（DB 不要）
 pnpm test:integration  # 統合テストのみ（DB 必要）
 pnpm test:e2e          # ブラウザによる E2E（DB 必要）
 pnpm db:verify         # マイグレーションの適用漏れと内容の変更を検査
-pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・依存方向）を検査
+pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・依存方向・マイグレーション）を検査
 ```
 
 これらは GitHub Actions でも同じコマンドで実行されます。
