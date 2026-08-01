@@ -51,6 +51,15 @@ export interface AttendanceRepository {
     eventId: string,
   ): Promise<AttendanceEventRecord | null>;
 
+  /**
+   * 打刻を記録した従業員。
+   * 受領記録から応答を再現するときのように、従業員が分からないまま打刻を辿る経路で使う。
+   */
+  findEmployeeByEventId(
+    workspaceId: string,
+    eventId: string,
+  ): Promise<{ id: string; displayName: string } | null>;
+
   /** 指定した業務日に記録されたすべてのイベント（修正を含む）を追記順に返す。 */
   listEventsForDay(
     workspaceId: string,
@@ -146,6 +155,20 @@ export function createAttendanceRepository(db: Queryable): AttendanceRepository 
         [workspaceId, employeeId, eventId],
       );
       return rows[0] ? toEvent(rows[0]) : null;
+    },
+
+    async findEmployeeByEventId(workspaceId, eventId) {
+      const rows = await db.query<{ id: string; display_name: string }>(
+        `SELECT employees.id, employees.display_name
+           FROM attendance_events
+           JOIN employees
+             ON employees.id = attendance_events.employee_id
+            AND employees.workspace_id = attendance_events.workspace_id
+          WHERE attendance_events.workspace_id = $1 AND attendance_events.id = $2`,
+        [workspaceId, eventId],
+      );
+      const row = rows[0];
+      return row ? { id: row.id, displayName: row.display_name } : null;
     },
 
     async listEventsForDay(workspaceId, employeeId, businessDate) {
