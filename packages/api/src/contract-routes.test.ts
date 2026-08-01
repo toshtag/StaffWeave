@@ -15,6 +15,7 @@ function createStubDatabase(): Database {
   return {
     query: async () => [],
     transaction: async <T>(fn: (tx: Queryable) => Promise<T>) => fn({ query: async () => [] }),
+    session: async <T>(fn: (connection: Queryable) => Promise<T>) => fn({ query: async () => [] }),
     ping: async () => {},
     close: async () => {},
   };

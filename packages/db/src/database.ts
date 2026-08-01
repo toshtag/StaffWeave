@@ -63,6 +63,16 @@ export function createDatabase(options: CreateDatabaseOptions): Database {
         client.release();
       }
     },
+    async session<T>(fn: (connection: Queryable) => Promise<T>): Promise<T> {
+      const client = await pool.connect();
+      try {
+        return await fn(toQueryable(client));
+      } finally {
+        // 接続を返すとセッションに紐づくロックも解放される。
+        // プロセスが落ちた場合も、接続が切れた時点で PostgreSQL 側が解放する。
+        client.release();
+      }
+    },
     async ping(): Promise<void> {
       await pool.query('SELECT 1');
     },
