@@ -96,7 +96,8 @@ export function classifyPunchFailure(error: unknown): PunchFailureDisposition {
  */
 export type PunchBlockedReason =
   | Exclude<PunchFailureDisposition, 'permanent_rejection'>
-  | 'storage_unavailable';
+  | 'storage_read_unavailable'
+  | 'storage_write_unavailable';
 
 export interface PunchQueueSnapshot {
   pending: PendingPunch[];
@@ -109,6 +110,16 @@ export interface PunchQueueSnapshot {
 }
 
 export type QueueListener = (snapshot: PunchQueueSnapshot) => void;
+
+/**
+ * 新しい打刻を受け付けてよい状態か。
+ *
+ * 保存内容を読めていない間は、送信待ちが残っているかどうかを確かめられない。
+ * その状態で打刻を受け取ると、すでに保存されている同じ打刻と二重になる。
+ */
+export function acceptsNewPunch(snapshot: PunchQueueSnapshot): boolean {
+  return snapshot.blocked?.reason !== 'storage_read_unavailable';
+}
 
 /**
  * 保存先の名前。
@@ -357,7 +368,7 @@ export function createPunchQueue(
   const stored = readStorage(storage, key);
   if (!stored.ok) {
     readable = false;
-    blocked = { reason: 'storage_unavailable', message: '' };
+    blocked = { reason: 'storage_read_unavailable', message: '' };
   } else if (stored.value !== null) {
     const loaded = parseStored(stored.value, owner);
     if (loaded === null) {
@@ -443,8 +454,13 @@ export function createPunchQueue(
     for (const listener of listeners) listener(snapshot);
   }
 
-  function blockOnStorage(): void {
-    blocked = { reason: 'storage_unavailable', message: '' };
+  function blockOnStorageRead(): void {
+    blocked = { reason: 'storage_read_unavailable', message: '' };
+    notify();
+  }
+
+  function blockOnStorageWrite(): void {
+    blocked = { reason: 'storage_write_unavailable', message: '' };
     notify();
   }
 
@@ -459,7 +475,7 @@ export function createPunchQueue(
   function restoreCurrentEntries(): boolean {
     const stored = readStorage(storage, key);
     if (!stored.ok) {
-      blockOnStorage();
+      blockOnStorageRead();
       return false;
     }
 
@@ -480,7 +496,7 @@ export function createPunchQueue(
 
     readable = true;
     // 認証や権限など、保存以外の理由で止まっている場合はそのままにする。
-    if (blocked?.reason === 'storage_unavailable') blocked = null;
+    if (blocked?.reason === 'storage_read_unavailable') blocked = null;
     notify();
     return true;
   }
@@ -497,7 +513,7 @@ export function createPunchQueue(
       // 同じ要求をそのまま送り直しても成立しないと契約で決まっている応答だけを取り除く。
       const next = pending.slice(1);
       if (!persistEntries(next)) {
-        blockOnStorage();
+        blockOnStorageWrite();
         return false;
       }
       pending = next;
@@ -512,7 +528,7 @@ export function createPunchQueue(
       // 試行回数も保存できた場合だけ数える。
       const next = [{ ...entry, attempts: entry.attempts + 1 }, ...pending.slice(1)];
       if (!persistEntries(next)) {
-        blockOnStorage();
+        blockOnStorageWrite();
         return false;
       }
       pending = next;
@@ -555,7 +571,7 @@ export function createPunchQueue(
         // 先に取り除くと、保存に失敗したときに冪等キーごと失う。
         const next = pending.slice(1);
         if (!persistEntries(next)) {
-          blockOnStorage();
+          blockOnStorageWrite();
           break;
         }
         pending = next;
@@ -576,8 +592,19 @@ export function createPunchQueue(
   return {
     async enqueue(eventType, occurredAt) {
       if (disposed) return;
-      // 保存できないうちは冪等キーも発行しない。使われない値を増やさない。
-      if (!readable && !restoreCurrentEntries()) return;
+
+      if (!readable) {
+        // 保存できないうちは冪等キーも発行しない。使われない値を増やさない。
+        if (!restoreCurrentEntries()) return;
+
+        // 読み直して送信待ちが見つかった場合、利用者の操作はその打刻を送ることで満たされる。
+        // 画面には送信待ちが見えていないため、同じ打刻をもう一度押していることが多い。
+        // ここで足すと二重に送り、サーバーに断られて利用者へエラーだけが残る。
+        if (pending.length > 0) {
+          await flush();
+          return;
+        }
+      }
 
       const entry: PendingPunch = {
         requestId: createRequestId(),
@@ -590,7 +617,7 @@ export function createPunchQueue(
       // 端末へ保存できない打刻は受理しない。
       // 送信待ちとして見せた打刻が再読み込みで消えると、利用者は失われたことに気付けない。
       if (!persistEntries(next)) {
-        blockOnStorage();
+        blockOnStorageWrite();
         return;
       }
 

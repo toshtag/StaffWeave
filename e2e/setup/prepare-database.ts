@@ -83,6 +83,14 @@ export const E2E_STORAGE_READ_EMPLOYEE: SeededAccount = {
   displayName: '検証 八郎',
 };
 
+/** 保存済み打刻がある状態での読み込み障害を確かめるための従業員。 */
+export const E2E_STORED_PUNCH_EMPLOYEE: SeededAccount = {
+  email: 'stored-punch@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E009',
+  displayName: '検証 九郎',
+};
+
 const SEEDED_ACCOUNTS = [
   E2E_EMPLOYEE,
   E2E_MOBILE_EMPLOYEE,
@@ -92,6 +100,7 @@ const SEEDED_ACCOUNTS = [
   E2E_STALE_DAY_EMPLOYEE,
   E2E_STORAGE_FAILURE_EMPLOYEE,
   E2E_STORAGE_READ_EMPLOYEE,
+  E2E_STORED_PUNCH_EMPLOYEE,
 ];
 
 export function e2eDatabaseUrl(): string {

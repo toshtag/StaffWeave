@@ -16,7 +16,7 @@ import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
 import type { PunchBlockedReason, PunchQueue, PunchQueueSnapshot } from '../offline/punch-queue.ts';
-import { createPunchQueue, isPunchQueueOwner } from '../offline/punch-queue.ts';
+import { acceptsNewPunch, createPunchQueue, isPunchQueueOwner } from '../offline/punch-queue.ts';
 import { useSession } from '../session/SessionProvider.tsx';
 
 type LoadState =
@@ -73,7 +73,10 @@ function blockedLabel(
       return messages.punchBlockedPermission;
     case 'retry_later':
       return messages.punchBlockedRetry;
-    case 'storage_unavailable':
+    case 'storage_read_unavailable':
+      // 送信待ちが残っているか確かめられないため、記録の有無を断定しない。
+      return messages.punchBlockedStorageUnreadable;
+    case 'storage_write_unavailable':
       // 保存できなかった打刻は受理していない。残っている打刻がある場合とは伝えることが違う。
       return pendingCount === 0
         ? messages.punchBlockedStorageNotRecorded
@@ -387,7 +390,9 @@ function EmployeeTodayAttendance({
     displayState === 'not_started' ? 'clock_in' : displayState === 'working' ? 'clock_out' : null;
   const secondary: AttendanceEventType | null =
     displayState === 'working' ? 'break_start' : displayState === 'on_break' ? 'break_end' : null;
-  const punchDisabled = !day.editable;
+  // 保存内容を確認できていない間は、同じ打刻を二重に作らないよう受け付けない。
+  const canPunch = acceptsNewPunch(snapshot);
+  const punchDisabled = !day.editable || !canPunch;
 
   return (
     <section className="card punch-card">
@@ -427,7 +432,20 @@ function EmployeeTodayAttendance({
         </p>
       )}
 
-      {online && snapshot.pending.length > 0 && (
+      {!canPunch && (
+        <button
+          type="button"
+          className="recheck-button"
+          onClick={() => {
+            setError(null);
+            void queue?.flush();
+          }}
+        >
+          {messages.recheckStoredPunches}
+        </button>
+      )}
+
+      {canPunch && online && snapshot.pending.length > 0 && (
         <button
           type="button"
           className="retry-button"

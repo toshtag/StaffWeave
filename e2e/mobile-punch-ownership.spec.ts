@@ -10,6 +10,7 @@ import {
   E2E_STALE_DAY_EMPLOYEE,
   E2E_STORAGE_FAILURE_EMPLOYEE,
   E2E_STORAGE_READ_EMPLOYEE,
+  E2E_STORED_PUNCH_EMPLOYEE,
 } from './setup/prepare-database.js';
 
 /** 携帯電話の画面幅で確認する。 */
@@ -81,6 +82,30 @@ async function seedPendingPunch(
       }),
     ],
   );
+}
+
+/**
+ * 送信待ち打刻の保存先だけを読めなくする。
+ * 合図を送るまで解除しないため、同じ画面のまま復旧を確かめられる。
+ */
+async function breakStorageRead(page: Page, owner: PunchQueueOwner): Promise<void> {
+  await page.addInitScript((key) => {
+    const original = Storage.prototype.getItem;
+    Storage.prototype.getItem = function getItem(name: string) {
+      const recovered = (window as unknown as { punchStorageRecovered?: boolean })
+        .punchStorageRecovered;
+      if (name === key && recovered !== true) {
+        throw new DOMException('Storage is not available', 'SecurityError');
+      }
+      return original.call(this, name);
+    };
+  }, storageKeyOf(owner));
+}
+
+async function recoverStorageRead(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as unknown as { punchStorageRecovered: boolean }).punchStorageRecovered = true;
+  });
 }
 
 /** React の描画が落ち着くまで待つ。時間ではなく描画の回数で区切る。 */
@@ -276,7 +301,7 @@ test.describe('送信待ち打刻の所有者', () => {
     const sent: string[] = [];
     page.on('request', (request) => {
       if (request.method() === 'POST' && request.url().includes('/api/attendance/events')) {
-        sent.push(request.url());
+        sent.push(request.postData() ?? '');
       }
     });
 
@@ -284,35 +309,68 @@ test.describe('送信待ち打刻の所有者', () => {
     const owner = await ownerOf(page);
     await signOut(page);
 
-    // 送信待ち打刻の保存先だけを読めなくする。合図を送るまで解除しない。
-    await page.addInitScript((key) => {
-      const original = Storage.prototype.getItem;
-      Storage.prototype.getItem = function getItem(name: string) {
-        const recovered = (window as unknown as { punchStorageRecovered?: boolean })
-          .punchStorageRecovered;
-        if (name === key && recovered !== true) {
-          throw new DOMException('Storage is not available', 'SecurityError');
-        }
-        return original.call(this, name);
-      };
-    }, storageKeyOf(owner));
+    await breakStorageRead(page, owner);
     await page.reload();
     await fillSignIn(page, E2E_STORAGE_READ_EMPLOYEE);
 
-    await expect(page.locator('.blocked-banner')).toContainText('打刻は記録されていません');
+    // 送信待ちの有無を確かめられないため、記録の有無は断定しない。
+    const blocked = page.locator('.blocked-banner');
+    await expect(blocked).toContainText('送信待ち打刻を確認できません');
+    await expect(blocked).not.toContainText('記録されていません');
+    // 確かめられないうちは新しい打刻も受け付けない。
+    await expect(page.getByRole('button', { name: '出勤', exact: true })).toHaveCount(0);
     expect(sent).toHaveLength(0);
 
     // 保存設定が直った状況を作る。画面は再読み込みしない。
-    await page.evaluate(() => {
-      (window as unknown as { punchStorageRecovered: boolean }).punchStorageRecovered = true;
-    });
+    await recoverStorageRead(page);
+    await page.getByRole('button', { name: '保存内容を再確認' }).click();
+
+    // 保存されていた打刻は無かったので、通常の打刻へ戻る。
+    await expect(page.locator('.blocked-banner')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '出勤', exact: true })).toBeEnabled();
+    expect(sent).toHaveLength(0);
 
     await page.getByRole('button', { name: '出勤', exact: true }).click();
 
-    // 画面が案内するとおり、再操作だけで送信まで進む。
     await expect(page.locator('.work-state')).toHaveText('勤務中');
+    expect(sent).toHaveLength(1);
+
+    await page.reload();
+    await expect(page.locator('.punch-events li')).toHaveCount(1);
+  });
+
+  test('保存済み打刻がある読み込み障害では、再確認でその打刻だけを送る', async ({ page }) => {
+    const sent: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/api/attendance/events')) {
+        sent.push(request.postData() ?? '');
+      }
+    });
+
+    await signIn(page, E2E_STORED_PUNCH_EMPLOYEE);
+    const owner = await ownerOf(page);
+    await signOut(page);
+
+    const requestId = 'e2e-stored-punch-clock-in';
+    await seedPendingPunch(page, owner, requestId);
+
+    await breakStorageRead(page, owner);
+    await page.reload();
+    await fillSignIn(page, E2E_STORED_PUNCH_EMPLOYEE);
+
+    await expect(page.locator('.blocked-banner')).toContainText('送信待ち打刻を確認できません');
+    await expect(page.getByRole('button', { name: '出勤', exact: true })).toHaveCount(0);
+    expect(sent).toHaveLength(0);
+
+    await recoverStorageRead(page);
+    await page.getByRole('button', { name: '保存内容を再確認' }).click();
+
+    // 保存されていた打刻だけが送られ、同じ打刻を二度作らない。
+    await expect(page.locator('.work-state')).toHaveText('勤務中');
+    await expect(page.locator('.form-error')).toHaveCount(0);
     await expect(page.locator('.blocked-banner')).toHaveCount(0);
     expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain(requestId);
 
     await page.reload();
     await expect(page.locator('.punch-events li')).toHaveCount(1);

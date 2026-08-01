@@ -735,7 +735,7 @@ describe('端末へ保存できないとき', () => {
 
     // 送信待ちとして見せた打刻が再読み込みで消えると、失われたことに気付けない。
     expect(queue.snapshot().pending).toHaveLength(0);
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_write_unavailable');
     expect(harness.send).not.toHaveBeenCalled();
   });
 
@@ -778,7 +778,7 @@ describe('端末へ保存できないとき', () => {
 
     expect(storage.entries.get(key)).toBe('{壊れた内容');
     expect(storage.entries.get(archiveKey)).toBe('{壊れた控え');
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_write_unavailable');
     expect(harness.send).not.toHaveBeenCalled();
   });
 
@@ -792,7 +792,8 @@ describe('端末へ保存できないとき', () => {
     const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
     await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
 
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    // 送信待ちが残っているか確かめられないため、書き込めるかどうか以前の問題として断る。
+    expect(queue.snapshot().blocked?.reason).toBe('storage_read_unavailable');
     expect(harness.send).not.toHaveBeenCalled();
     expect(storage.entries.get(key)).toBe(storedQueue(OWNER_A, [punch('request-a')]));
   });
@@ -811,7 +812,7 @@ describe('端末へ保存できないとき', () => {
     expect(harness.send).toHaveBeenCalledTimes(1);
     expect(onAccepted).not.toHaveBeenCalled();
     expect(queue.snapshot().pending.map((entry) => entry.requestId)).toEqual(['request-a']);
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_write_unavailable');
 
     storage.failSetItem = () => false;
     await queue.flush();
@@ -839,7 +840,7 @@ describe('端末へ保存できないとき', () => {
 
     expect(onRejected).not.toHaveBeenCalled();
     expect(queue.snapshot().pending).toHaveLength(1);
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_write_unavailable');
 
     storage.failSetItem = () => false;
     await queue.flush();
@@ -859,7 +860,7 @@ describe('端末へ保存できないとき', () => {
     await queue.flush();
 
     expect(queue.snapshot().pending[0]?.attempts).toBe(0);
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_write_unavailable');
   });
 
   it('保存の失敗を送信の失敗として扱わない', async () => {
@@ -905,7 +906,7 @@ describe('読み込み障害からの復旧', () => {
   it('保存領域が戻れば、同じ画面のまま打刻できる', async () => {
     const harness = createBrokenReadHarness();
     const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_read_unavailable');
 
     harness.storage.failGetItem = () => false;
     await queue.enqueue('clock_in', new Date('2026-07-31T00:00:00.000Z'));
@@ -924,7 +925,7 @@ describe('読み込み障害からの復旧', () => {
 
     expect(harness.send).not.toHaveBeenCalled();
     expect(queue.snapshot().pending).toHaveLength(0);
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_read_unavailable');
   });
 
   it('復旧するまで冪等キーを発行しない', async () => {
@@ -965,23 +966,62 @@ describe('読み込み障害からの復旧', () => {
     await vi.waitFor(() => expect(harness.send).toHaveBeenCalledTimes(1));
   });
 
-  it('保存済みの打刻を新しい打刻で上書きしない', async () => {
+  it('保存済みの打刻があれば、新しい打刻を足さずにそれだけを送る', async () => {
     const harness = createBrokenReadHarness({
       [key]: storedQueue(OWNER_A, [punch('request-a')]),
     });
-    harness.send.mockRejectedValue(new TypeError('offline'));
+    const onRejected = vi.fn();
+    const queue = createPunchQueue({ ...noopOptions(OWNER_A), onRejected }, harness.dependencies);
+
+    harness.storage.failGetItem = () => false;
+    // 画面では送信待ちが見えていないため、利用者は同じ打刻をもう一度押す。
+    await queue.enqueue('clock_in', new Date('2026-07-31T09:00:00.000Z'));
+
+    // 押した操作は、保存済みの打刻を送ることで満たされている。
+    // ここで足すと同じ打刻を二度送り、サーバーに断られて利用者へエラーを見せることになる。
+    expect(harness.requestIds).toHaveLength(0);
+    expect(harness.send).toHaveBeenCalledTimes(1);
+    expect(harness.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ requestId: 'request-a' }),
+    );
+    expect(onRejected).not.toHaveBeenCalled();
+    expect(queue.snapshot().pending).toHaveLength(0);
+  });
+
+  it('保存済みの打刻が複数あれば、順番にそれだけを送る', async () => {
+    const harness = createBrokenReadHarness({
+      [key]: storedQueue(OWNER_A, [
+        punch('request-a', '2026-07-31T00:00:00.000Z'),
+        {
+          requestId: 'request-b',
+          eventType: 'break_start',
+          occurredAt: '2026-07-31T04:00:00.000Z',
+          attempts: 0,
+        },
+      ]),
+    });
     const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
 
     harness.storage.failGetItem = () => false;
-    await queue.enqueue('clock_out', new Date('2026-07-31T09:00:00.000Z'));
+    await queue.enqueue('clock_in', new Date('2026-07-31T09:00:00.000Z'));
 
-    // 先に保存されていた打刻の後ろへ足す。順番も冪等キーも変えない。
-    expect(queue.snapshot().pending.map((entry) => entry.requestId)).toEqual([
-      'request-a',
-      'request-1',
-    ]);
-    const saved = JSON.parse(harness.storage.entries.get(key) ?? 'null');
-    expect(saved.entries).toHaveLength(2);
+    const sentIds = harness.send.mock.calls.map(
+      ([input]) => (input as { requestId: string }).requestId,
+    );
+    expect(sentIds).toEqual(['request-a', 'request-b']);
+    expect(harness.requestIds).toHaveLength(0);
+  });
+
+  it('保存済みの打刻が無いと確かめられた場合だけ、新しい打刻を受け付ける', async () => {
+    const harness = createBrokenReadHarness();
+    const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
+
+    harness.storage.failGetItem = () => false;
+    await queue.enqueue('clock_in', new Date('2026-07-31T09:00:00.000Z'));
+
+    expect(harness.requestIds).toHaveLength(1);
+    expect(harness.send).toHaveBeenCalledTimes(1);
+    expect(queue.snapshot().pending).toHaveLength(0);
   });
 
   it('復旧すると送信待ちの件数を購読者へ伝える', async () => {
@@ -1039,13 +1079,13 @@ describe('読み込み障害からの復旧', () => {
       await expect(queue.flush()).resolves.toBeUndefined();
     }
 
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_read_unavailable');
   });
 
   it('送るものが無くても、復旧すれば警告を消す', async () => {
     const harness = createBrokenReadHarness();
     const queue = createPunchQueue(noopOptions(OWNER_A), harness.dependencies);
-    expect(queue.snapshot().blocked?.reason).toBe('storage_unavailable');
+    expect(queue.snapshot().blocked?.reason).toBe('storage_read_unavailable');
 
     harness.storage.failGetItem = () => false;
     await queue.flush();
