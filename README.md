@@ -62,7 +62,7 @@ pnpm install
 # 2. 環境変数を用意
 cp .env.example .env
 
-# 3. PostgreSQL を起動（ホスト側ポートは既定で 5433）
+# 3. PostgreSQL を起動（ホスト側は既定で 127.0.0.1:5433 にだけ公開）
 docker compose up -d db
 
 # 4. マイグレーションを適用
@@ -293,8 +293,24 @@ docker compose exec app pnpm bootstrap --email admin@example.com
 公開する場合は次を必ず行ってください。
 
 - IC カードを使う場合は `.env` の `CARD_FINGERPRINT_KEY` を `openssl rand -hex 32` の出力にする
-- PostgreSQL のパスワードを変更する
+- `.env` の `DB_PASSWORD` を変更する（`db`・`app`・`webhook-worker` がこの値を共有します）
 - HTTPS で終端する（`NODE_ENV=production` のとき、セッション Cookie に `Secure` が付きます）
+
+`DB_PASSWORD` は接続文字列（URL）へそのまま入るため、URL で意味を持つ文字
+（`@` `:` `/` `?` `#` `[` `]` 空白）を含めないでください。
+`openssl rand -hex 24` の出力のように、英数字だけで作れば安全です。
+
+#### ホストへの公開範囲
+
+`docker compose` がホストへ公開するポートは、既定でループバックにだけ結び付きます。
+
+| 設定 | 既定 | 変えるとき |
+| --- | --- | --- |
+| `DB_HOST_BIND` | `127.0.0.1` | 他のホストから PostgreSQL へ直接つなぐ場合 |
+| `APP_HOST_BIND` | `127.0.0.1` | 前段のプロキシを介さず、直接公開する場合 |
+
+`DB_HOST_BIND` を広げると、PostgreSQL が公開ネットワークに面します。
+`DB_PASSWORD` を変更していない状態で広げないでください。
 
 #### 応答のヘッダー
 
