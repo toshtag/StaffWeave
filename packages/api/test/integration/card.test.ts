@@ -656,4 +656,86 @@ describe('カード機能の設定', () => {
 
     expect(enrolled.cardFingerprintKey).toBeUndefined();
   });
+
+  it('指紋鍵が設定されていなければカードの経路を受け付けない', async () => {
+    const workspaceId = await createWorkspace(testDatabase(), { slug: 'default' });
+    await createUser(testDatabase(), workspaceId, {
+      email: 'admin@example.com',
+      roles: ['workspace_admin'],
+    });
+
+    const instance = app(NOW, null);
+    const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    const listed = await instance.request('/api/card-credentials', authorized(cookie));
+    expect(listed.status).toBe(404);
+    expect(((await listed.json()) as { error: { message: string } }).error.message).toBe(
+      'IC カード機能は設定されていません',
+    );
+
+    // 署名を確かめる前に断る。鍵なしで計算した指紋は受け取らない。
+    const tapped = await instance.request('/api/device-agent/card-events', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sequence: 1,
+        requestId: 'card-without-key',
+        cardFingerprint: 'a'.repeat(64),
+        occurredAt: NOW,
+        deviceTime: NOW,
+      }),
+    });
+    expect(tapped.status).toBe(404);
+
+    const rows = await testDatabase().query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM card_credentials',
+    );
+    expect(rows[0]?.count).toBe(0);
+  });
+
+  it('Workspace ごとに違う指紋鍵を配る', async () => {
+    const instance = app();
+    const keys: string[] = [];
+
+    for (const slug of ['default', 'other']) {
+      const workspaceId = await createWorkspace(testDatabase(), { slug });
+      await createUser(testDatabase(), workspaceId, {
+        email: `admin@${slug}.example.com`,
+        roles: ['workspace_admin'],
+      });
+      const cookie = await loginAndGetCookie(instance, {
+        email: `admin@${slug}.example.com`,
+        workspaceSlug: slug,
+      });
+      const registered = (await (
+        await instance.request(
+          '/api/devices',
+          authorized(cookie, { method: 'POST', body: { name: `${slug} の端末` } }),
+        )
+      ).json()) as RegisterDeviceResponse;
+
+      const enrolled = (await (
+        await instance.request('/api/device-agent/enroll', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            enrollmentToken: registered.enrollmentToken,
+            publicKey: generateKeyPair().publicKeyPem,
+          }),
+        })
+      ).json()) as EnrollDeviceResponse;
+
+      expect(enrolled.cardFingerprintKey).toBe(
+        deriveCardFingerprintKey(CARD_MASTER_KEY, workspaceId),
+      );
+      keys.push(enrolled.cardFingerprintKey ?? '');
+    }
+
+    // 一方の端末を登録できても、他方の Workspace の指紋は計算できない。
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys).not.toContain(CARD_MASTER_KEY);
+    expect(cardFingerprint(keys[0] ?? '', 'SHARED-CARD')).not.toBe(
+      cardFingerprint(keys[1] ?? '', 'SHARED-CARD'),
+    );
+  });
 });
