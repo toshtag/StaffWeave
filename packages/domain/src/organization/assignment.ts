@@ -61,26 +61,58 @@ export function activeAssignmentAt(
   );
 }
 
+/**
+ * 閲覧の判断に使う対象期間。
+ *
+ * 1 日だけを見る経路では `from` と `to` に同じ業務日を渡す。
+ * 期間を見る経路では、その期間と配属期間が重なるかどうかで判断する。
+ */
+export interface AccessPeriod {
+  from: BusinessDate;
+  to: BusinessDate;
+}
+
+function overlapsPeriod(
+  span: { startsOn: BusinessDate; endsOn: BusinessDate | null },
+  period: AccessPeriod,
+): boolean {
+  return span.startsOn <= period.to && (span.endsOn === null || period.from <= span.endsOn);
+}
+
+/** 配属によって受入組織と関わっていた期間。契約と配属の両方が続いているあいだだけ。 */
+export interface HostOrganizationPeriod {
+  organizationId: string;
+  startsOn: BusinessDate;
+  /** 終わりが決まっていなければ null。 */
+  endsOn: BusinessDate | null;
+}
+
 export interface EmployeeOrganizationView {
   /** 従業員が所属する組織。 */
   employerOrganizationId: string;
-  /** 配属によって関わる受入組織。複数の契約があれば複数になる。 */
-  hostOrganizationIds: readonly string[];
+  /** 配属によって関わる受入組織と、その期間。複数の契約があれば複数になる。 */
+  hostOrganizations: readonly HostOrganizationPeriod[];
 }
 
 /**
- * 指定した組織のいずれかが、その従業員の雇用元か受入組織かどうか。
+ * 指定した組織のいずれかが、その期間にその従業員の雇用元か受入組織かどうか。
  *
  * 空の配列は「どの組織も指定されていない」という意味であり、「すべて」ではない。
  * 空の配列を渡した場合は常に false になる。
  * 誰をどこまで見られるかの判断は {@link resolveEmployeeVisibility} が決める。
+ *
+ * 雇用元は期間で絞らない。所属している限り、雇用元は自社の従業員として扱う。
+ * 受入組織は配属の期間だけに限る。契約が始まる前と終わった後は関わりが無い。
  */
 export function canAccessEmployee(
   scopedOrganizationIds: readonly string[],
   employee: EmployeeOrganizationView,
+  period: AccessPeriod,
 ): boolean {
   if (scopedOrganizationIds.includes(employee.employerOrganizationId)) return true;
-  return employee.hostOrganizationIds.some((id) => scopedOrganizationIds.includes(id));
+  return employee.hostOrganizations.some(
+    (host) => scopedOrganizationIds.includes(host.organizationId) && overlapsPeriod(host, period),
+  );
 }
 
 /**
@@ -132,7 +164,7 @@ export function resolveEmployeeVisibility(input: {
 }
 
 /**
- * その従業員を見てよいかどうか。
+ * その期間についてその従業員を見てよいかどうか。
  *
  * `organizations` を渡さなかった場合、組織の対応が分からない従業員として扱い、
  * 自分自身でない限り見られない。
@@ -141,6 +173,7 @@ export function isEmployeeVisible(
   visibility: EmployeeVisibility,
   employeeId: string,
   organizations?: EmployeeOrganizationView | undefined,
+  period?: AccessPeriod | undefined,
 ): boolean {
   switch (visibility.kind) {
     case 'workspace':
@@ -151,8 +184,8 @@ export function isEmployeeVisible(
       return visibility.employeeId === employeeId;
     case 'organizations':
       if (visibility.selfEmployeeId === employeeId) return true;
-      if (organizations === undefined) return false;
-      return canAccessEmployee(visibility.organizationIds, organizations);
+      if (organizations === undefined || period === undefined) return false;
+      return canAccessEmployee(visibility.organizationIds, organizations, period);
   }
 }
 

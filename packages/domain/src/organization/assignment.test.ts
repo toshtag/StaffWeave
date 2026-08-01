@@ -65,32 +65,58 @@ describe('activeAssignmentAt', () => {
 });
 
 describe('canAccessEmployee', () => {
+  /** 4 月のあいだだけ受入組織へ配属されている従業員。 */
   const employee = {
     employerOrganizationId: 'employer',
-    hostOrganizationIds: ['host'],
+    hostOrganizations: [{ organizationId: 'host', startsOn: '2026-04-01', endsOn: '2026-04-30' }],
   };
+  const on = (date: string) => ({ from: date, to: date });
 
   it('組織の指定が無ければ誰も見られない', () => {
     // 空配列は「すべて」ではなく「指定なし」。全体を見られるかはロールで決める。
-    expect(canAccessEmployee([], employee)).toBe(false);
+    expect(canAccessEmployee([], employee, on('2026-04-15'))).toBe(false);
   });
 
-  it('雇用元が範囲に含まれていれば見られる', () => {
-    expect(canAccessEmployee(['employer'], employee)).toBe(true);
+  it('雇用元は期間に関わらず見られる', () => {
+    expect(canAccessEmployee(['employer'], employee, on('2026-04-15'))).toBe(true);
+    expect(canAccessEmployee(['employer'], employee, on('2027-01-01'))).toBe(true);
   });
 
-  it('受入組織が範囲に含まれていれば見られる（外部承認者）', () => {
-    expect(canAccessEmployee(['host'], employee)).toBe(true);
+  it('受入組織は配属の期間だけ見られる（外部承認者）', () => {
+    expect(canAccessEmployee(['host'], employee, on('2026-04-15'))).toBe(true);
+  });
+
+  it('配属の開始前と終了後は受入組織でも見られない', () => {
+    expect(canAccessEmployee(['host'], employee, on('2026-03-31'))).toBe(false);
+    expect(canAccessEmployee(['host'], employee, on('2026-05-01'))).toBe(false);
+  });
+
+  it('期間が配属と重なっていれば見られる', () => {
+    expect(canAccessEmployee(['host'], employee, { from: '2026-03-01', to: '2026-04-01' })).toBe(
+      true,
+    );
+    expect(canAccessEmployee(['host'], employee, { from: '2026-05-01', to: '2026-06-30' })).toBe(
+      false,
+    );
+  });
+
+  it('終わりの無い配属は以降ずっと関わりが続く', () => {
+    const open = {
+      employerOrganizationId: 'employer',
+      hostOrganizations: [{ organizationId: 'host', startsOn: '2026-04-01', endsOn: null }],
+    };
+    expect(canAccessEmployee(['host'], open, on('2030-01-01'))).toBe(true);
+    expect(canAccessEmployee(['host'], open, on('2026-03-31'))).toBe(false);
   });
 
   it('関係のない組織だけなら見られない', () => {
-    expect(canAccessEmployee(['other'], employee)).toBe(false);
+    expect(canAccessEmployee(['other'], employee, on('2026-04-15'))).toBe(false);
   });
 
   it('配属が無い従業員は雇用元でしか見られない', () => {
-    const unassigned = { employerOrganizationId: 'employer', hostOrganizationIds: [] };
-    expect(canAccessEmployee(['employer'], unassigned)).toBe(true);
-    expect(canAccessEmployee(['host'], unassigned)).toBe(false);
+    const unassigned = { employerOrganizationId: 'employer', hostOrganizations: [] };
+    expect(canAccessEmployee(['employer'], unassigned, on('2026-04-15'))).toBe(true);
+    expect(canAccessEmployee(['host'], unassigned, on('2026-04-15'))).toBe(false);
   });
 });
 
@@ -162,7 +188,11 @@ describe('resolveEmployeeVisibility', () => {
 });
 
 describe('isEmployeeVisible', () => {
-  const view = { employerOrganizationId: 'employer', hostOrganizationIds: ['host'] };
+  const view = {
+    employerOrganizationId: 'employer',
+    hostOrganizations: [{ organizationId: 'host', startsOn: '2026-04-01', endsOn: null }],
+  };
+  const period = { from: '2026-04-15', to: '2026-04-15' };
 
   it('ワークスペース全体なら組織を知らなくても見られる', () => {
     expect(isEmployeeVisible({ kind: 'workspace' }, 'employee-1')).toBe(true);
@@ -174,7 +204,7 @@ describe('isEmployeeVisible', () => {
       organizationIds: [],
       selfEmployeeId: null,
     } as const;
-    expect(isEmployeeVisible(visibility, 'employee-1', view)).toBe(false);
+    expect(isEmployeeVisible(visibility, 'employee-1', view, period)).toBe(false);
   });
 
   it('管理対象を持たない組織管理者でも自分自身は見られる', () => {
@@ -184,7 +214,7 @@ describe('isEmployeeVisible', () => {
       selfEmployeeId: 'employee-1',
     } as const;
     expect(isEmployeeVisible(visibility, 'employee-1')).toBe(true);
-    expect(isEmployeeVisible(visibility, 'employee-2', view)).toBe(false);
+    expect(isEmployeeVisible(visibility, 'employee-2', view, period)).toBe(false);
   });
 
   it('範囲内の組織に属する従業員だけを見られる', () => {
@@ -193,12 +223,25 @@ describe('isEmployeeVisible', () => {
       organizationIds: ['host'],
       selfEmployeeId: null,
     } as const;
-    expect(isEmployeeVisible(visibility, 'employee-1', view)).toBe(true);
+    expect(isEmployeeVisible(visibility, 'employee-1', view, period)).toBe(true);
     expect(
-      isEmployeeVisible(visibility, 'employee-2', {
-        employerOrganizationId: 'other',
-        hostOrganizationIds: [],
-      }),
+      isEmployeeVisible(
+        visibility,
+        'employee-2',
+        { employerOrganizationId: 'other', hostOrganizations: [] },
+        period,
+      ),
+    ).toBe(false);
+  });
+
+  it('配属の期間から外れた日は見られない', () => {
+    const visibility = {
+      kind: 'organizations',
+      organizationIds: ['host'],
+      selfEmployeeId: null,
+    } as const;
+    expect(
+      isEmployeeVisible(visibility, 'employee-1', view, { from: '2026-03-01', to: '2026-03-31' }),
     ).toBe(false);
   });
 
@@ -208,7 +251,7 @@ describe('isEmployeeVisible', () => {
       organizationIds: ['host'],
       selfEmployeeId: null,
     } as const;
-    expect(isEmployeeVisible(visibility, 'employee-1', undefined)).toBe(false);
+    expect(isEmployeeVisible(visibility, 'employee-1', undefined, period)).toBe(false);
   });
 
   it('一般従業員は自分だけを見られる', () => {

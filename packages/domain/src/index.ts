@@ -204,11 +204,13 @@ export {
   WEBHOOK_SIGNING_KEY_DERIVATION,
 } from './integration/webhook.js';
 export type {
+  AccessPeriod,
   AssignmentContract,
   ContractProblem,
   EmployeeAssignment,
   EmployeeOrganizationView,
   EmployeeVisibility,
+  HostOrganizationPeriod,
 } from './organization/assignment.js';
 export {
   activeAssignmentAt,
