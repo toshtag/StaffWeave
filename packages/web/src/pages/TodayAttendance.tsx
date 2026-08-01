@@ -392,7 +392,8 @@ function EmployeeTodayAttendance({
     displayState === 'working' ? 'break_start' : displayState === 'on_break' ? 'break_end' : null;
   // 保存内容を確認できていない間は、同じ打刻を二重に作らないよう受け付けない。
   const canPunch = acceptsNewPunch(snapshot);
-  const punchDisabled = !day.editable || !canPunch;
+  // 打刻の操作を出せるかどうか。理由が違うため、説明文の表示条件とは分けて持つ。
+  const punchControlsDisabled = !day.editable || !canPunch;
 
   return (
     <section className="card punch-card">
@@ -458,9 +459,9 @@ function EmployeeTodayAttendance({
         </button>
       )}
 
-      {punchDisabled && <p className="notice">{messages.editingLocked}</p>}
+      {!day.editable && <p className="notice">{messages.editingLocked}</p>}
 
-      {!punchDisabled && primary !== null && (
+      {!punchControlsDisabled && primary !== null && (
         <button
           type="button"
           className="punch-button"
@@ -471,7 +472,7 @@ function EmployeeTodayAttendance({
         </button>
       )}
 
-      {!punchDisabled && secondary !== null && (
+      {!punchControlsDisabled && secondary !== null && (
         <button
           type="button"
           className="break-button"

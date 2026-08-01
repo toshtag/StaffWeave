@@ -330,7 +330,13 @@ test.describe('送信待ち打刻の所有者', () => {
     await expect(blocked).not.toContainText('記録されていません');
     // 確かめられないうちは新しい打刻も受け付けない。
     await expect(page.getByRole('button', { name: '出勤', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '保存内容を再確認' })).toBeVisible();
     expect(sent).toHaveLength(0);
+
+    // 端末の保存の問題であって、この日の勤怠が締められたわけではない。
+    await expect(
+      page.getByText('この日は打刻の追加や修正ができません', { exact: true }),
+    ).toHaveCount(0);
 
     // 保存設定が直った状況を作る。画面は再読み込みしない。
     await recoverStorageRead(page);
@@ -339,6 +345,9 @@ test.describe('送信待ち打刻の所有者', () => {
     // 保存されていた打刻は無かったので、通常の打刻へ戻る。
     await expect(page.locator('.blocked-banner')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '出勤', exact: true })).toBeEnabled();
+    await expect(
+      page.getByText('この日は打刻の追加や修正ができません', { exact: true }),
+    ).toHaveCount(0);
     expect(sent).toHaveLength(0);
 
     const recorded = waitForPunchRecorded(page);
