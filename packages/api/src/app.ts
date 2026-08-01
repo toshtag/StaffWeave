@@ -60,8 +60,11 @@ export interface AppDependencies {
   defaultWorkspaceSlug?: string;
   /** 本番環境では Cookie に Secure を付ける。 */
   useSecureCookie?: boolean;
-  /** IC カードの指紋を計算するための鍵。未設定ならカード機能は使えない。 */
-  cardFingerprintKey?: string | null;
+  /**
+   * IC カードの指紋鍵の元になる共通の鍵。
+   * 端末へ渡すのは、ここから Workspace ごとに導出した鍵。未設定ならカード機能は使えない。
+   */
+  cardFingerprintMasterKey?: string | null;
   /** Webhook 送信先として許すネットワークの範囲。既定は公開ネットワークだけ。 */
   webhookNetworkPolicy?: WebhookNetworkPolicyMode;
   /** 送信先の検査。テストから名前解決を伴わない実装へ差し替えるために開ける。 */
@@ -72,6 +75,7 @@ export interface AppDependencies {
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const now = deps.now ?? (() => new Date());
+  const cardFingerprintMasterKey = deps.cardFingerprintMasterKey ?? null;
 
   const identityService = createIdentityService({
     repository: createIdentityRepository(deps.db),
@@ -167,7 +171,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     repository: createDeviceRepository(deps.db),
     attendance: dayRepositories.attendance,
     now,
-    cardFingerprintKey: deps.cardFingerprintKey ?? null,
+    cardFingerprintMasterKey,
     transaction: withTransaction,
   });
 

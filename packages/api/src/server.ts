@@ -10,7 +10,8 @@ const app = createApp({
   db,
   defaultWorkspaceSlug: config.defaultWorkspaceSlug,
   useSecureCookie: config.environment === 'production',
-  cardFingerprintKey: config.cardFingerprintKey,
+  // 設定で読むのは共通の鍵。端末へ渡す鍵は Workspace ごとに導出する。
+  cardFingerprintMasterKey: config.cardFingerprintKey,
   webhookNetworkPolicy: config.webhookNetworkPolicy,
   webhookTargetValidationTimeoutMs: config.webhookTargetValidationTimeoutMs,
 });

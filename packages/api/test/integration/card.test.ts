@@ -16,6 +16,7 @@ import { canonicalCardEvent, canonicalCardRegistration } from '@staffweave/domai
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
 import { createApp } from '../../src/app.js';
+import { deriveCardFingerprintKey } from '../../src/shared/security/card-fingerprint-key.js';
 import {
   authorized,
   createEmployeeWithAccount,
@@ -26,14 +27,15 @@ import {
 } from '../support/fixtures.js';
 
 const NOW = '2026-04-01T00:00:00.000Z';
-const CARD_KEY = 'test-card-fingerprint-key';
+/** 端末へ渡す鍵の元になる共通の鍵。端末が受け取るのは Workspace ごとに導出した鍵。 */
+const CARD_MASTER_KEY = 'test-card-fingerprint-master-key';
 
-function app(now: string = NOW, cardKey: string | null = CARD_KEY) {
+function app(now: string = NOW, masterKey: string | null = CARD_MASTER_KEY) {
   return createApp({
     db: testDatabase(),
     defaultWorkspaceSlug: 'default',
     now: () => new Date(now),
-    cardFingerprintKey: cardKey,
+    cardFingerprintMasterKey: masterKey,
   });
 }
 
@@ -88,7 +90,8 @@ async function setUp(): Promise<Fixture> {
     })
   ).json()) as EnrollDeviceResponse;
 
-  expect(enrolled.cardFingerprintKey).toBe(CARD_KEY);
+  // 端末が受け取るのは、その Workspace 用に導出した鍵。共通の鍵そのものは渡らない。
+  expect(enrolled.cardFingerprintKey).toBe(deriveCardFingerprintKey(CARD_MASTER_KEY, workspaceId));
 
   return {
     adminCookie,
@@ -97,7 +100,7 @@ async function setUp(): Promise<Fixture> {
     device: {
       deviceId: enrolled.deviceId,
       privateKeyPem: keyPair.privateKeyPem,
-      cardKey: enrolled.cardFingerprintKey ?? CARD_KEY,
+      cardKey: enrolled.cardFingerprintKey ?? '',
     },
   };
 }
