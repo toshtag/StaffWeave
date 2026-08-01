@@ -63,13 +63,16 @@ import {
 } from './schemas/device.js';
 import {
   apiKeyListSchema,
+  apiKeySchema,
   createApiKeyRequestSchema,
   createApiKeyResponseSchema,
   createWebhookEndpointRequestSchema,
   createWebhookEndpointResponseSchema,
+  employeeImportCsvSchema,
   exportAttendanceQuerySchema,
   exportPayrollQuerySchema,
   importResultSchema,
+  webhookDeliveryListSchema,
   webhookEndpointListSchema,
 } from './schemas/integration.js';
 import {
@@ -118,7 +121,11 @@ import {
 export type HttpMethod = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
 /** 認証方式。フェーズが進むにつれて API キーが加わる。 */
-export type SecurityRequirement = 'public' | 'session' | 'deviceSignature';
+/**
+ * 呼び出しに必要な資格。
+ * `sessionOrApiKey` は、画面のセッションでも API キーでも呼べる経路を表す。
+ */
+export type SecurityRequirement = 'public' | 'session' | 'deviceSignature' | 'sessionOrApiKey';
 
 export interface ResponseContract {
   status: number;
@@ -142,6 +149,10 @@ export interface OperationContract {
   security: SecurityRequirement;
   pathParameters?: readonly PathParameterContract[];
   requestBody?: JsonSchema;
+  /** 要求本文の内容種別。省略すると application/json。 */
+  requestContentType?: string;
+  /** 応答本文の内容種別。省略すると application/json。 */
+  responseContentType?: string;
   query?: JsonSchema;
   responses: readonly ResponseContract[];
 }
@@ -1158,6 +1169,19 @@ export const operations = {
       forbidden,
     ],
   },
+  listWebhookDeliveries: {
+    operationId: 'listWebhookDeliveries',
+    method: 'get',
+    path: '/webhook-deliveries',
+    summary: 'Webhook の送信結果を一覧する',
+    tags: ['integration'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '送信結果の一覧', schema: webhookDeliveryListSchema },
+      unauthorized,
+      forbidden,
+    ],
+  },
   listAuditLogs: {
     operationId: 'listAuditLogs',
     method: 'get',
@@ -1177,19 +1201,31 @@ export const operations = {
     path: '/exports/attendance.csv',
     summary: '日次の勤怠と集計を CSV で出力する（セッションまたは API キー）',
     tags: ['integration'],
-    security: 'session',
+    security: 'sessionOrApiKey',
     query: exportAttendanceQuerySchema,
-    responses: [{ status: 200, description: 'CSV 本文' }, invalidRequest, unauthorized, forbidden],
+    responseContentType: 'text/csv',
+    responses: [
+      { status: 200, description: 'UTF-8 の CSV。1 行目は見出し' },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
   },
   exportPayrollCsv: {
     operationId: 'exportPayrollCsv',
     method: 'get',
     path: '/exports/payroll.csv',
-    summary: '月次の集計を給与連携向けの汎用 CSV で出力する',
+    summary: '月次の集計を給与連携向けの汎用 CSV で出力する（セッションまたは API キー）',
     tags: ['integration'],
-    security: 'session',
+    security: 'sessionOrApiKey',
     query: exportPayrollQuerySchema,
-    responses: [{ status: 200, description: 'CSV 本文' }, invalidRequest, unauthorized, forbidden],
+    responseContentType: 'text/csv',
+    responses: [
+      { status: 200, description: 'UTF-8 の CSV。1 行目は見出し' },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
   },
   importEmployeesCsv: {
     operationId: 'importEmployeesCsv',
@@ -1198,6 +1234,8 @@ export const operations = {
     summary: '従業員を CSV から取り込む',
     tags: ['integration'],
     security: 'session',
+    requestBody: employeeImportCsvSchema,
+    requestContentType: 'text/csv',
     responses: [
       { status: 200, description: '取り込み結果', schema: importResultSchema },
       invalidRequest,
@@ -1231,6 +1269,21 @@ export const operations = {
       invalidRequest,
       unauthorized,
       forbidden,
+    ],
+  },
+  revokeApiKey: {
+    operationId: 'revokeApiKey',
+    method: 'post',
+    path: '/api-keys/{apiKeyId}/revoke',
+    summary: 'API キーを失効させる',
+    tags: ['integration'],
+    security: 'session',
+    pathParameters: [{ name: 'apiKeyId', description: 'API キーの識別子', schema: uuidSchema }],
+    responses: [
+      { status: 200, description: '失効した API キー', schema: apiKeySchema },
+      unauthorized,
+      forbidden,
+      { status: 404, description: 'API キーが見つからない', schema: errorResponseSchema },
     ],
   },
   listWebhookEndpoints: {

@@ -1,6 +1,6 @@
 export type { JsonSchema } from './json-schema.js';
 export { arraySchema, objectSchema } from './json-schema.js';
-export { API_BASE_PATH, buildOpenApiDocument } from './openapi.js';
+export { API_BASE_PATH, buildOpenApiDocument, honoPath } from './openapi.js';
 export type {
   HttpMethod,
   OperationContract,
