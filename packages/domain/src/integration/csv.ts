@@ -5,9 +5,48 @@
  * 区切り文字や改行が値に含まれていても壊れないようにするため。
  */
 
+/**
+ * 表計算が数式の始まりとして読む文字。
+ *
+ * 引用符で囲んでも解釈は変わらない。Excel も LibreOffice も、
+ * 引用符を外したあとの内容を数式として評価する。
+ */
+const FORMULA_LEADERS = ['=', '+', '-', '@', '\t', '\r'];
+
+/**
+ * 無害化に使う印。
+ *
+ * 表計算はこの印を「以降を文字列として扱う」指示として読み、セルには表示しない。
+ * 読み取り側（{@link parseCsv}）は同じ規則で外すため、staffweave 同士の
+ * 書き出しと取り込みでは値が変わらない。
+ */
+const TEXT_MARKER = "'";
+
+function startsFormula(text: string): boolean {
+  const [first] = text;
+  return first !== undefined && FORMULA_LEADERS.includes(first);
+}
+
+/**
+ * 表計算で数式として動く値を、文字列として扱わせる形へ直す。
+ *
+ * 負の数のように正しい値も対象になるが、数値の列は数値として渡すため印は付かない。
+ * 文字列として渡された `-1` は印が付く。
+ */
+export function neutralizeFormula(text: string): string {
+  return startsFormula(text) ? `${TEXT_MARKER}${text}` : text;
+}
+
+/** {@link neutralizeFormula} が付けた印を外す。付いていなければそのまま返す。 */
+export function stripFormulaMarker(text: string): string {
+  return text.startsWith(TEXT_MARKER) && startsFormula(text.slice(1)) ? text.slice(1) : text;
+}
+
 export function toCsvValue(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '""';
-  return `"${String(value).replaceAll('"', '""')}"`;
+  // 数値はそのまま出す。数式として読まれる形にはならない。
+  const text = typeof value === 'number' ? String(value) : neutralizeFormula(value);
+  return `"${text.replaceAll('"', '""')}"`;
 }
 
 export function toCsv(
@@ -84,7 +123,7 @@ export function parseCsv(text: string): CsvParseResult {
   if (value !== '' || current.length > 0) pushRecord();
 
   const nonEmpty = records.filter((record) => record.some((entry) => entry.trim() !== ''));
-  const header = nonEmpty[0]?.map((entry) => entry.trim()) ?? [];
+  const header = nonEmpty[0]?.map((entry) => stripFormulaMarker(entry.trim())) ?? [];
   const problems: CsvParseProblem[] = [];
   const rows: Record<string, string>[] = [];
 
@@ -100,7 +139,8 @@ export function parseCsv(text: string): CsvParseResult {
     }
     const row: Record<string, string> = {};
     header.forEach((name, column) => {
-      row[name] = record[column] ?? '';
+      // 自分が書き出した印は外す。書き出しと取り込みで値が変わらないようにする。
+      row[name] = stripFormulaMarker(record[column] ?? '');
     });
     rows.push(row);
   }
