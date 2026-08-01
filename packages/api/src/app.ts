@@ -51,6 +51,8 @@ import { createSessionService } from './session/service.js';
 import type { AppEnv } from './shared/context.js';
 import { createEmployeeVisibilityGuard } from './shared/employee-visibility.js';
 import { ApiError } from './shared/errors.js';
+import type { StructuredLogger } from './shared/logger.js';
+import { createConsoleLogger } from './shared/logger.js';
 import { createSystemRoutes } from './system/routes.js';
 
 export interface AppDependencies {
@@ -71,10 +73,16 @@ export interface AppDependencies {
   webhookTargetValidator?: WebhookTargetValidator;
   /** 送信先の登録時に、URL と名前解決を確かめる上限時間。 */
   webhookTargetValidationTimeoutMs?: number;
+  /**
+   * 応答へ出さない失敗の詳細を書き出す先。
+   * 既定では標準出力へ出す。テストからは差し替えられる。
+   */
+  logger?: StructuredLogger;
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const now = deps.now ?? (() => new Date());
+  const logger = deps.logger ?? createConsoleLogger('api');
   const cardFingerprintMasterKey = deps.cardFingerprintMasterKey ?? null;
 
   const identityService = createIdentityService({
@@ -208,7 +216,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     await next();
   });
 
-  api.route('/', createSystemRoutes({ db: deps.db, now }));
+  api.route('/', createSystemRoutes({ db: deps.db, now, logger }));
   api.route(
     '/',
     createIdentityRoutes({

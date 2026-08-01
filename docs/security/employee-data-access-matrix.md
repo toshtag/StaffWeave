@@ -142,7 +142,7 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 | （未登録） | GET | `/webhook-deliveries` | `user.manage` | OpenAPI に未登録 |
 | `recordAttendanceEvent` / `correctAttendance` / `submitDailyRequest` | POST | `/attendance/events`, `/attendance/corrections`, `/attendance/requests` | 認証のみ | 自分の分だけを登録する |
 | `enrollDevice` / `recordDeviceEvent` / `registerCard` / `recordCardEvent` / `recordSessionObservations` | POST | `/device-agent/*` | 端末の署名 | セッションを使わない |
-| — | GET | `/health`, `/ready`, `/openapi.json` | — | 認証不要 |
+| — | GET | `/health`, `/ready`, `/openapi.json` | — | 認証不要。下の「稼働確認」を参照 |
 
 ## 監査記録
 
@@ -154,6 +154,21 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 そのため閲覧範囲での絞り込みは行わず、読める相手をロールで限ります。
 
 組織管理者向けに範囲内の記録だけを見せる表示は、管理画面（P17）で扱います。
+
+## 稼働確認
+
+`/health`・`/ready`・`/openapi.json` は認証を要求しません。
+死活監視と起動判定に使うため、認証の前に答えられる必要があります。
+
+`/ready` の応答は、検査の名前と成否までにとどめます。
+接続先、利用者名、マイグレーションのファイル名は含めません。
+含めると、認証なしで内部ネットワークの構成と適用済みの版を読み取れます。
+
+失敗の理由はログへ出します（`ready.database_failed` / `ready.migrations_changed` /
+`ready.migrations_failed`）。運用者はそちらで原因を追えます。
+
+未適用のマイグレーションの件数と、変更された件数は応答へ含めます。
+どちらも名前を伴わない数であり、稼働していない理由を運用者へ返すために要ります。
 
 ## 歴史的な記録
 
