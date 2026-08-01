@@ -18,6 +18,7 @@ import {
   createEmployeeAssignmentRequestSchema,
   employeeAssignmentListSchema,
   employeeAssignmentSchema,
+  endEmployeeAssignmentRequestSchema,
   grantUserScopeRequestSchema,
   userScopeListSchema,
   userScopeSchema,
@@ -1080,6 +1081,35 @@ export const operations = {
       {
         status: 404,
         description: '従業員・契約・拠点のいずれかが見つからない',
+        schema: errorResponseSchema,
+      },
+      {
+        status: 409,
+        description: '同じ従業員の配属と期間が重なる',
+        schema: errorResponseSchema,
+      },
+    ],
+  },
+  endEmployeeAssignment: {
+    operationId: 'endEmployeeAssignment',
+    method: 'post',
+    path: '/employee-assignments/{employeeAssignmentId}/end',
+    summary: '配属に終了日を設定する',
+    tags: ['assignment'],
+    security: 'session',
+    pathParameters: [
+      { name: 'employeeAssignmentId', description: '配属の識別子', schema: uuidSchema },
+    ],
+    requestBody: endEmployeeAssignmentRequestSchema,
+    responses: [
+      { status: 200, description: '終了日を設定した配属', schema: employeeAssignmentSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '配属が見つからない', schema: errorResponseSchema },
+      {
+        status: 409,
+        description: '同じ従業員の配属と期間が重なる',
         schema: errorResponseSchema,
       },
     ],

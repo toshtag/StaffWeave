@@ -25,6 +25,14 @@ export interface AssignmentRepository {
   ): Promise<AssignmentContractRecord>;
 
   listAssignments(workspaceId: string): Promise<EmployeeAssignmentRecord[]>;
+  findAssignment(
+    workspaceId: string,
+    employeeAssignmentId: string,
+  ): Promise<EmployeeAssignmentRecord | null>;
+  /**
+   * 配属を登録する。雇用元と受入組織は契約から複製するため、要求では受け取らない。
+   * 契約が見つからなければ何も作らず、null を返す。
+   */
   createAssignment(
     workspaceId: string,
     input: {
@@ -34,6 +42,12 @@ export interface AssignmentRepository {
       startsOn: BusinessDate;
       endsOn: BusinessDate | null;
     },
+  ): Promise<EmployeeAssignmentRecord | null>;
+  /** 配属に終了日を設定する。契約を切り替えるとき、次の配属と期間が重ならないようにする。 */
+  endAssignment(
+    workspaceId: string,
+    employeeAssignmentId: string,
+    endsOn: BusinessDate,
   ): Promise<EmployeeAssignmentRecord>;
 
   listScopes(workspaceId: string): Promise<UserScopeRecord[]>;
@@ -144,10 +158,16 @@ export function createAssignmentRepository(db: Queryable): AssignmentRepository 
     },
 
     async createAssignment(workspaceId, input) {
+      // 雇用元と受入組織は契約が決める。要求からは受け取らず、契約から複製する。
+      // 契約が無ければ 0 行になり、呼び出し側が存在しない契約として扱う。
       const rows = await db.query<AssignmentRow>(
         `INSERT INTO employee_assignments
-           (workspace_id, employee_id, assignment_contract_id, workplace_site_id, starts_on, ends_on)
-         VALUES ($1, $2, $3, $4, $5, $6)
+           (workspace_id, employee_id, assignment_contract_id, workplace_site_id,
+            starts_on, ends_on, employer_organization_id, host_organization_id)
+         SELECT $1, $2, contracts.id, $4, $5, $6,
+                contracts.employer_organization_id, contracts.host_organization_id
+           FROM assignment_contracts AS contracts
+          WHERE contracts.workspace_id = $1 AND contracts.id = $3
          RETURNING ${ASSIGNMENT_COLUMNS}`,
         [
           workspaceId,
@@ -158,8 +178,27 @@ export function createAssignmentRepository(db: Queryable): AssignmentRepository 
           input.endsOn,
         ],
       );
+      return rows[0] ? toAssignment(rows[0]) : null;
+    },
+
+    async findAssignment(workspaceId, employeeAssignmentId) {
+      const rows = await db.query<AssignmentRow>(
+        `SELECT ${ASSIGNMENT_COLUMNS} FROM employee_assignments
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, employeeAssignmentId],
+      );
+      return rows[0] ? toAssignment(rows[0]) : null;
+    },
+
+    async endAssignment(workspaceId, employeeAssignmentId, endsOn) {
+      const rows = await db.query<AssignmentRow>(
+        `UPDATE employee_assignments SET ends_on = $3
+          WHERE workspace_id = $1 AND id = $2
+          RETURNING ${ASSIGNMENT_COLUMNS}`,
+        [workspaceId, employeeAssignmentId, endsOn],
+      );
       const row = rows[0];
-      if (!row) throw new Error('配属を登録できませんでした');
+      if (!row) throw new Error('配属を更新できませんでした');
       return toAssignment(row);
     },
 
