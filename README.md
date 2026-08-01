@@ -346,6 +346,7 @@ staffweave は不正打刻の完全な防止や、特定の国・地域の労働
 | [docs/security/webhook-target-policy.md](docs/security/webhook-target-policy.md) | Webhook 送信先のネットワーク方針 |
 | [docs/security/webhook-signing.md](docs/security/webhook-signing.md) | Webhook 署名鍵の保存と検証手順 |
 | [docs/security/card-fingerprint-key.md](docs/security/card-fingerprint-key.md) | IC カード指紋鍵の設定と Workspace ごとの分離 |
+| [docs/security/csv-output.md](docs/security/csv-output.md) | CSV 出力の無害化と、取り込み側から見える差 |
 
 ## ライセンス
 
