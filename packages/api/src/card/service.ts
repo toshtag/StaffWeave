@@ -22,7 +22,8 @@ import type { AttendanceRepositories } from '../attendance/record.js';
 import { recordAttendanceEvent, resolveBusinessDate } from '../attendance/record.js';
 import { resolveTimeZoneForEmployee } from '../attendance/service.js';
 import type { AuditRepository } from '../audit/repository.js';
-import type { DeviceRepository } from '../device/repository.js';
+import { rejectionOf } from '../device/receipt.js';
+import type { DeviceEventReceipt, DeviceRepository } from '../device/repository.js';
 import { verifySignature } from '../device/signature.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
@@ -68,6 +69,53 @@ export interface CardService {
 }
 
 const DEFAULT_REGISTRATION_MINUTES = 15;
+
+/** 断った要求も受領記録として残すため、例外は結果として持ち回る。 */
+type CardEventOutcome =
+  | { kind: 'ok'; result: CardEventResponse; created: boolean }
+  | { kind: 'rejected'; error: ApiError };
+
+/**
+ * 受け取り済みの要求へ返す応答を、受領記録だけから組み立てる。
+ *
+ * 最初の応答を決めたときの勤務状態は、別の経路の打刻や修正ですでに変わっていることがある。
+ * 再送で種別を決め直せば、一度受理した打刻が後から断られる。ここでは記録に残した
+ * 結果をそのまま返し、判定をやり直さない。
+ */
+async function replay(
+  repositories: CardRepositories,
+  workspaceId: string,
+  receipt: DeviceEventReceipt,
+): Promise<CardEventOutcome> {
+  const rejection = rejectionOf(receipt);
+  if (rejection) return { kind: 'rejected', error: rejection };
+
+  const { attendanceEventId, eventType, businessDate } = receipt;
+  if (attendanceEventId === null || eventType === null || businessDate === null) {
+    // 受理した記録は打刻イベント・種別・業務日を必ず持つ。DB でも同じ内容を検査している。
+    throw new Error(`受領記録から応答を再現できません: ${receipt.requestId}`);
+  }
+
+  const employee = await repositories.attendance.findEmployeeByEventId(
+    workspaceId,
+    attendanceEventId,
+  );
+  if (!employee) throw new Error(`受領記録が指す打刻が見つかりません: ${attendanceEventId}`);
+
+  return {
+    kind: 'ok',
+    result: {
+      outcome: 'duplicate',
+      attendanceEventId,
+      eventType,
+      businessDate,
+      employeeDisplayName: employee.displayName,
+      sequenceStep: receipt.sequenceStep,
+      clockSkewSeconds: receipt.clockSkewSeconds,
+    },
+    created: false,
+  };
+}
 
 export function createCardService(deps: CardServiceDependencies): CardService {
   /** 端末を署名で認証し、ワークスペースと公開鍵を得る。 */
@@ -252,18 +300,23 @@ export function createCardService(deps: CardServiceDependencies): CardService {
         const { cards, devices, attendance } = repositories;
         if (!(await devices.lock(workspaceId, deviceId))) throw notFound('端末');
 
+        // 同じ冪等キーの再送は、保存済みの受領記録から最初の応答をそのまま返す。
+        // 種別の決め直しも勤務状態の再評価も行わない。
         const existingReceipt = await devices.findReceiptByRequestId(
           workspaceId,
           deviceId,
           input.requestId,
         );
+        if (existingReceipt) return replay(repositories, workspaceId, existingReceipt);
 
         const device = await devices.findById(workspaceId, deviceId);
         if (!device) throw notFound('端末');
 
-        const credential = await cards.findActiveByFingerprint(workspaceId, input.cardFingerprint);
-        if (!credential) {
-          // カードが未登録であることは端末へ伝える。誰のカードかは分からないままにする。
+        const lastSequence = device.lastSequence;
+        const sequenceStep = input.sequence - lastSequence;
+
+        /** 断った要求も受領記録へ残し、再送へ同じ理由を返せるようにする。 */
+        async function reject(error: ApiError, reason: string) {
           await devices.insertReceipt(workspaceId, {
             deviceId,
             sequence: input.sequence,
@@ -271,13 +324,26 @@ export function createCardService(deps: CardServiceDependencies): CardService {
             receivedAt: now,
             deviceTime,
             clockSkewSeconds: skew,
-            sequenceStep: input.sequence - device.lastSequence,
-            attendanceEventId: null,
-            businessDate: null,
-            outcome: 'rejected',
-            detail: { reason: 'unknown_card' },
+            sequenceStep,
+            outcome: 'rejected' as const,
+            rejection: { code: error.code, message: error.message },
+            detail: { reason, lastSequence },
           });
-          return { kind: 'rejected' as const, error: notFound('登録されたカード') };
+          return { kind: 'rejected' as const, error };
+        }
+
+        if (evaluateSequence(lastSequence, input.sequence) === 'replay') {
+          // 冪等キーが違うのに連番が戻っている。記録として残したうえで断る。
+          return reject(
+            new ApiError('conflict', '連番がすでに受け取った値以下です'),
+            'sequence_replay',
+          );
+        }
+
+        const credential = await cards.findActiveByFingerprint(workspaceId, input.cardFingerprint);
+        if (!credential) {
+          // カードが未登録であることは端末へ伝える。誰のカードかは分からないままにする。
+          return reject(notFound('登録されたカード'), 'unknown_card');
         }
 
         const timeZone = await resolveTimeZoneForEmployee(
@@ -308,36 +374,9 @@ export function createCardService(deps: CardServiceDependencies): CardService {
           );
           const decided = nextCardPunch(day.state);
           if (decided === null) {
-            return {
-              kind: 'rejected' as const,
-              error: new ApiError('conflict', 'すでに退勤済みです'),
-            };
+            return reject(new ApiError('conflict', 'すでに退勤済みです'), 'punch_rejected');
           }
           eventType = decided;
-        }
-
-        const sequenceStep = input.sequence - device.lastSequence;
-        if (
-          existingReceipt === null &&
-          evaluateSequence(device.lastSequence, input.sequence) === 'replay'
-        ) {
-          await devices.insertReceipt(workspaceId, {
-            deviceId,
-            sequence: input.sequence,
-            requestId: input.requestId,
-            receivedAt: now,
-            deviceTime,
-            clockSkewSeconds: skew,
-            sequenceStep,
-            attendanceEventId: null,
-            businessDate: null,
-            outcome: 'rejected',
-            detail: { reason: 'sequence_replay', lastSequence: device.lastSequence },
-          });
-          return {
-            kind: 'rejected' as const,
-            error: new ApiError('conflict', '連番がすでに受け取った値以下です'),
-          };
         }
 
         let recorded: Awaited<ReturnType<typeof recordAttendanceEvent>>;
@@ -363,47 +402,33 @@ export function createCardService(deps: CardServiceDependencies): CardService {
           );
         } catch (error) {
           if (error instanceof ApiError && error.code === 'conflict') {
-            await devices.insertReceipt(workspaceId, {
-              deviceId,
-              sequence: input.sequence,
-              requestId: input.requestId,
-              receivedAt: now,
-              deviceTime,
-              clockSkewSeconds: skew,
-              sequenceStep,
-              attendanceEventId: null,
-              businessDate: null,
-              outcome: 'rejected',
-              detail: { reason: 'punch_rejected' },
-            });
-            return { kind: 'rejected' as const, error };
+            return reject(error, 'punch_rejected');
           }
           throw error;
         }
 
-        if (existingReceipt === null) {
-          await devices.insertReceipt(workspaceId, {
-            deviceId,
-            sequence: input.sequence,
-            requestId: input.requestId,
-            receivedAt: now,
-            deviceTime,
-            clockSkewSeconds: skew,
-            sequenceStep,
-            attendanceEventId: recorded.result.event.id,
-            businessDate: recorded.result.event.businessDate,
-            outcome: recorded.created ? 'accepted' : 'duplicate',
-            detail: {
-              cardCredentialId: credential.id,
-              ...(sequenceStep > 1 ? { sequenceGap: sequenceStep - 1 } : {}),
-              ...(isNotableClockSkew(skew) ? { notableClockSkew: true } : {}),
-            },
-          });
-          await devices.updateSequence(workspaceId, deviceId, {
-            lastSequence: input.sequence,
-            lastSeenAt: now,
-          });
-        }
+        await devices.insertReceipt(workspaceId, {
+          deviceId,
+          sequence: input.sequence,
+          requestId: input.requestId,
+          receivedAt: now,
+          deviceTime,
+          clockSkewSeconds: skew,
+          sequenceStep,
+          attendanceEventId: recorded.result.event.id,
+          businessDate: recorded.result.event.businessDate,
+          eventType: recorded.result.event.eventType,
+          outcome: recorded.created ? 'accepted' : 'duplicate',
+          detail: {
+            cardCredentialId: credential.id,
+            ...(sequenceStep > 1 ? { sequenceGap: sequenceStep - 1 } : {}),
+            ...(isNotableClockSkew(skew) ? { notableClockSkew: true } : {}),
+          },
+        });
+        await devices.updateSequence(workspaceId, deviceId, {
+          lastSequence: input.sequence,
+          lastSeenAt: now,
+        });
 
         return {
           kind: 'ok' as const,

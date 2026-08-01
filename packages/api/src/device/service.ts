@@ -24,6 +24,7 @@ import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation } from '../shared/database-errors.js';
 import { ApiError, invalidRequest, notFound } from '../shared/errors.js';
 import { hashToken } from '../shared/security/tokens.js';
+import { rejectionOf } from './receipt.js';
 import type { DeviceRepository } from './repository.js';
 import { generateEnrollmentToken, isSupportedDeviceKey, verifySignedEvent } from './signature.js';
 
@@ -227,6 +228,8 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
           input.requestId,
         );
         if (existingReceipt) {
+          const rejection = rejectionOf(existingReceipt);
+          if (rejection) return { kind: 'rejected' as const, error: rejection };
           return {
             kind: 'ok' as const,
             result: {
@@ -254,9 +257,8 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
             deviceTime,
             clockSkewSeconds: skew,
             sequenceStep,
-            attendanceEventId: null,
-            businessDate: null,
             outcome: 'rejected' as const,
+            rejection: { code: error.code, message: error.message },
             detail: { reason, lastSequence: device?.lastSequence ?? 0 },
           });
           return { kind: 'rejected' as const, error };
@@ -317,6 +319,7 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
           sequenceStep,
           attendanceEventId: result.event.id,
           businessDate: result.event.businessDate,
+          eventType: result.event.eventType,
           outcome: created ? 'accepted' : 'duplicate',
           detail: {
             employeeNumber: input.employeeNumber,

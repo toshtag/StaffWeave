@@ -332,6 +332,25 @@ describe('署名イベントの受理', () => {
     expect(receipts[0]?.outcome).toBe('rejected');
   });
 
+  it('断った要求の再送は、受理せずに同じ理由で断る', async () => {
+    const instance = app();
+    await sendSignedEvent(instance, device, { sequence: 3, requestId: 'device-seq-ahead' });
+
+    const input = {
+      sequence: 2,
+      requestId: 'device-rejected-retry',
+      eventType: 'clock_out',
+    } as const;
+    const rejected = await sendSignedEvent(instance, device, input);
+    const reason = ((await rejected.json()) as { error: { message: string } }).error.message;
+    expect(rejected.status).toBe(409);
+
+    const resent = await sendSignedEvent(instance, device, input);
+
+    expect(resent.status).toBe(409);
+    expect(((await resent.json()) as { error: { message: string } }).error.message).toBe(reason);
+  });
+
   it('端末時計のずれを記録する', async () => {
     const response = await sendSignedEvent(app(), device, {
       sequence: 1,

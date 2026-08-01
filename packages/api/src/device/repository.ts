@@ -1,6 +1,54 @@
 import type { DeviceReceiptRecord, DeviceRecord } from '@staffweave/contracts';
 import type { Queryable } from '@staffweave/db';
-import type { DeviceState } from '@staffweave/domain';
+import type { AttendanceEventType, DeviceState } from '@staffweave/domain';
+import type { ApiErrorCode } from '../shared/errors.js';
+import { isApiErrorCode } from '../shared/errors.js';
+
+/** 断ったときに返した応答。同じ冪等キーの再送へ、同じ理由を返すために残す。 */
+export interface DeviceReceiptRejection {
+  code: ApiErrorCode;
+  message: string;
+}
+
+/**
+ * 端末からの要求 1 件に対する受領記録。
+ *
+ * 一覧に出す `DeviceReceiptRecord` へ、応答の再現に必要な値を足したもの。
+ * 再送に何を返すかはこの記録だけで決まり、そのときの勤務状態を見直さない。
+ */
+export interface DeviceEventReceipt extends DeviceReceiptRecord {
+  /** 受理した打刻の種別。断った記録では null。 */
+  eventType: AttendanceEventType | null;
+  rejection: DeviceReceiptRejection | null;
+}
+
+interface DeviceReceiptInputBase {
+  deviceId: string;
+  sequence: number;
+  requestId: string;
+  receivedAt: Date;
+  deviceTime: Date;
+  clockSkewSeconds: number;
+  sequenceStep: number;
+  detail?: Record<string, unknown>;
+}
+
+/**
+ * 受領記録に残す内容。
+ *
+ * 受理と拒否で残す値が違うことを型で示し、応答を再現できない記録を作らせない。
+ * DB 側にも同じ内容の検査を置いている。
+ */
+export type InsertDeviceReceiptInput = DeviceReceiptInputBase &
+  (
+    | {
+        outcome: 'accepted' | 'duplicate';
+        attendanceEventId: string;
+        businessDate: string;
+        eventType: AttendanceEventType;
+      }
+    | { outcome: 'rejected'; rejection: DeviceReceiptRejection }
+  );
 
 export interface DeviceRepository {
   list(workspaceId: string): Promise<DeviceRecord[]>;
@@ -47,32 +95,18 @@ export interface DeviceRepository {
   /** 同時に届いた署名イベントを直列化するための行ロック。 */
   lock(workspaceId: string, deviceId: string): Promise<boolean>;
 
+  /** 同じ冪等キーで受け取り済みかどうか。受理と拒否のどちらも残る。 */
   findReceiptByRequestId(
     workspaceId: string,
     deviceId: string,
     requestId: string,
-  ): Promise<DeviceReceiptRecord | null>;
+  ): Promise<DeviceEventReceipt | null>;
   listReceipts(
     workspaceId: string,
     deviceId: string,
     limit: number,
   ): Promise<DeviceReceiptRecord[]>;
-  insertReceipt(
-    workspaceId: string,
-    input: {
-      deviceId: string;
-      sequence: number;
-      requestId: string;
-      receivedAt: Date;
-      deviceTime: Date;
-      clockSkewSeconds: number;
-      sequenceStep: number;
-      attendanceEventId: string | null;
-      businessDate: string | null;
-      outcome: DeviceReceiptRecord['outcome'];
-      detail?: Record<string, unknown>;
-    },
-  ): Promise<DeviceReceiptRecord>;
+  insertReceipt(workspaceId: string, input: InsertDeviceReceiptInput): Promise<DeviceEventReceipt>;
 }
 
 interface DeviceRow {
@@ -99,12 +133,16 @@ interface ReceiptRow {
   attendance_event_id: string | null;
   business_date: string | null;
   outcome: DeviceReceiptRecord['outcome'];
+  event_type: AttendanceEventType | null;
+  rejection_code: string | null;
+  rejection_message: string | null;
 }
 
 const DEVICE_COLUMNS = `id, site_id, name, state, enrollments, last_sequence,
   enrolled_at, revoked_at, last_seen_at, created_at`;
 const RECEIPT_COLUMNS = `device_id, sequence, request_id, received_at, device_time,
-  clock_skew_seconds, sequence_step, attendance_event_id, business_date, outcome`;
+  clock_skew_seconds, sequence_step, attendance_event_id, business_date, outcome,
+  event_type, rejection_code, rejection_message`;
 
 function toDevice(row: DeviceRow): DeviceRecord {
   return {
@@ -121,7 +159,17 @@ function toDevice(row: DeviceRow): DeviceRecord {
   };
 }
 
-function toReceipt(row: ReceiptRow): DeviceReceiptRecord {
+function toRejection(row: ReceiptRow): DeviceReceiptRejection | null {
+  if (row.rejection_code === null || row.rejection_message === null) return null;
+  // 保存できるコードは DB の検査で限っている。合わない値は記録の破損として扱う。
+  if (!isApiErrorCode(row.rejection_code)) {
+    throw new Error(`受領記録の応答コードが不正です: ${row.rejection_code}`);
+  }
+  return { code: row.rejection_code, message: row.rejection_message };
+}
+
+/** 一覧に出す形。応答の再現に使う値は契約へ出さず、サーバーの内部記録として扱う。 */
+function toReceiptRecord(row: ReceiptRow): DeviceReceiptRecord {
   return {
     deviceId: row.device_id,
     sequence: row.sequence,
@@ -134,6 +182,10 @@ function toReceipt(row: ReceiptRow): DeviceReceiptRecord {
     businessDate: row.business_date,
     outcome: row.outcome,
   };
+}
+
+function toReceipt(row: ReceiptRow): DeviceEventReceipt {
+  return { ...toReceiptRecord(row), eventType: row.event_type, rejection: toRejection(row) };
 }
 
 export function createDeviceRepository(db: Queryable): DeviceRepository {
@@ -281,15 +333,17 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
           ORDER BY sequence DESC LIMIT $3`,
         [workspaceId, deviceId, limit],
       );
-      return rows.map(toReceipt);
+      return rows.map(toReceiptRecord);
     },
 
     async insertReceipt(workspaceId, input) {
+      const rejected = input.outcome === 'rejected';
       const rows = await db.query<ReceiptRow>(
         `INSERT INTO device_event_receipts
            (workspace_id, device_id, sequence, request_id, received_at, device_time,
-            clock_skew_seconds, sequence_step, attendance_event_id, business_date, outcome, detail)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+            clock_skew_seconds, sequence_step, attendance_event_id, business_date, outcome,
+            event_type, rejection_code, rejection_message, detail)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
          RETURNING ${RECEIPT_COLUMNS}`,
         [
           workspaceId,
@@ -300,9 +354,12 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
           input.deviceTime,
           input.clockSkewSeconds,
           input.sequenceStep,
-          input.attendanceEventId,
-          input.businessDate,
+          rejected ? null : input.attendanceEventId,
+          rejected ? null : input.businessDate,
           input.outcome,
+          rejected ? null : input.eventType,
+          rejected ? input.rejection.code : null,
+          rejected ? input.rejection.message : null,
           JSON.stringify(input.detail ?? {}),
         ],
       );

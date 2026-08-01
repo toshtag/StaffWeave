@@ -708,7 +708,11 @@ export const operations = {
     requestBody: deviceEventRequestSchema,
     responses: [
       { status: 201, description: '受理した打刻', schema: deviceEventResponseSchema },
-      { status: 200, description: '同じ冪等キーの再送', schema: deviceEventResponseSchema },
+      {
+        status: 200,
+        description: '同じ冪等キーの再送。受領記録に残した最初の応答をそのまま返す',
+        schema: deviceEventResponseSchema,
+      },
       invalidRequest,
       {
         status: 401,
@@ -718,7 +722,7 @@ export const operations = {
       { status: 404, description: '従業員が見つからない', schema: errorResponseSchema },
       {
         status: 409,
-        description: '現在の状態では受け付けられない打刻',
+        description: '現在の状態では受け付けられない打刻。断った要求の再送も同じ理由で断る',
         schema: errorResponseSchema,
       },
     ],
@@ -807,13 +811,17 @@ export const operations = {
     requestBody: cardEventRequestSchema,
     responses: [
       { status: 201, description: '受理した打刻', schema: cardEventResponseSchema },
-      { status: 200, description: '同じ冪等キーの再送', schema: cardEventResponseSchema },
+      {
+        status: 200,
+        description: '同じ冪等キーの再送。受領記録に残した最初の応答をそのまま返す',
+        schema: cardEventResponseSchema,
+      },
       invalidRequest,
       { status: 401, description: '端末を認証できません', schema: errorResponseSchema },
       { status: 404, description: 'カードが登録されていない', schema: errorResponseSchema },
       {
         status: 409,
-        description: '現在の状態では受け付けられない打刻',
+        description: '現在の状態では受け付けられない打刻。断った要求の再送も同じ理由で断る',
         schema: errorResponseSchema,
       },
     ],
