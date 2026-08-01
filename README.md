@@ -310,6 +310,20 @@ API と画面のどちらの応答にも、次のヘッダーを製品の側で�
 | `Cache-Control`（`/api` の応答） | `no-store` |
 | `Strict-Transport-Security` | `NODE_ENV=production` のときだけ送る |
 
+#### 要求本文の上限
+
+本文の大きさには上限があります。超えた要求は、本文を読み切らずに 413 で断ります。
+
+| 設定 | 既定 | 対象 |
+| --- | --- | --- |
+| `MAX_REQUEST_BODY_BYTES` | 256 KiB | 打刻・認証・端末からの送信など、ふつうの要求 |
+| `MAX_BULK_REQUEST_BODY_BYTES` | 8 MiB | 従業員の CSV 取り込み（`POST /api/imports/employees`） |
+
+逆プロキシ側にも上限がある場合は、小さいほうが先に効きます。
+大きな CSV を取り込む場合は、両方の値を確認してください。
+
+#### 応答のヘッダーと逆プロキシ
+
 逆プロキシで同じヘッダーを付ける場合は、値を二重に送らないようにしてください。
 `Strict-Transport-Security` は HTTPS で終端している構成でだけ送ります。
 HTTP で動かす構成へ送ると、その後 HTTPS へ移すまで画面を開けなくなります。

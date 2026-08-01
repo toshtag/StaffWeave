@@ -7,6 +7,10 @@
  */
 
 import type { WebhookNetworkPolicyMode } from './integration/webhook-network-policy.js';
+import {
+  DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
+  DEFAULT_REQUEST_BODY_MAX_BYTES,
+} from './shared/security/body-limit.js';
 
 export interface ApiConfig {
   databaseUrl: string;
@@ -28,6 +32,10 @@ export interface ApiConfig {
   webhookNetworkPolicy: WebhookNetworkPolicyMode;
   /** 送信先の登録時に、URL と名前解決を確かめる上限時間。 */
   webhookTargetValidationTimeoutMs: number;
+  /** ふつうの要求の本文の上限。 */
+  maxRequestBodyBytes: number;
+  /** CSV の取り込みなど、まとまった量を受け取る要求の本文の上限。 */
+  maxBulkRequestBodyBytes: number;
 }
 
 /** Webhook 送信ワーカーの動作設定。既定値と許容範囲はこの一箇所で決める。 */
@@ -54,6 +62,18 @@ interface IntegerSetting {
 /** API が読む整数の設定。ワーカー側とは別に持ち、片方の設定ミスで両方を止めない。 */
 const API_SETTINGS = {
   WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: { fallback: 3_000, min: 100, max: 30_000 },
+  // 下限は、この製品がふつうに送る要求（打刻・認証）が通る大きさ。
+  // 上限は、1 つの要求で確保させてよいメモリの目安。
+  MAX_REQUEST_BODY_BYTES: {
+    fallback: DEFAULT_REQUEST_BODY_MAX_BYTES,
+    min: 4 * 1024,
+    max: 8 * 1024 * 1024,
+  },
+  MAX_BULK_REQUEST_BODY_BYTES: {
+    fallback: DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
+    min: 4 * 1024,
+    max: 128 * 1024 * 1024,
+  },
 } as const satisfies Record<string, IntegerSetting>;
 
 const WEBHOOK_WORKER_SETTINGS = {
@@ -171,6 +191,16 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       'WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS',
       env.WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS,
       API_SETTINGS.WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS,
+    ),
+    maxRequestBodyBytes: readInteger(
+      'MAX_REQUEST_BODY_BYTES',
+      env.MAX_REQUEST_BODY_BYTES,
+      API_SETTINGS.MAX_REQUEST_BODY_BYTES,
+    ),
+    maxBulkRequestBodyBytes: readInteger(
+      'MAX_BULK_REQUEST_BODY_BYTES',
+      env.MAX_BULK_REQUEST_BODY_BYTES,
+      API_SETTINGS.MAX_BULK_REQUEST_BODY_BYTES,
     ),
   };
 }

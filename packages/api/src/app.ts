@@ -1,3 +1,4 @@
+import { operations } from '@staffweave/contracts';
 import type { Database } from '@staffweave/db';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
@@ -54,8 +55,16 @@ import { createEmployeeVisibilityGuard } from './shared/employee-visibility.js';
 import { ApiError } from './shared/errors.js';
 import type { StructuredLogger } from './shared/logger.js';
 import { createConsoleLogger } from './shared/logger.js';
+import {
+  createRequestBodyLimit,
+  DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
+  DEFAULT_REQUEST_BODY_MAX_BYTES,
+} from './shared/security/body-limit.js';
 import { securityHeaderOptions } from './shared/security/headers.js';
 import { createSystemRoutes } from './system/routes.js';
+
+/** 上限を大きく取る経路。API は `/api` の下に置くため、要求から見える形で持つ。 */
+const BULK_REQUEST_PATHS = [`/api${operations.importEmployeesCsv.path}`] as const;
 
 export interface AppDependencies {
   db: Database;
@@ -80,6 +89,8 @@ export interface AppDependencies {
    * 既定では標準出力へ出す。テストからは差し替えられる。
    */
   logger?: StructuredLogger;
+  /** 要求本文の上限。ふつうの要求と、まとまった量を受け取る要求で分ける。 */
+  requestBodyLimit?: { defaultMaxBytes: number; bulkMaxBytes: number };
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -262,6 +273,16 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   // 防御用のヘッダーは、この 1 箇所で全部の応答へ付ける。
   // セルフホストでは同じプロセスが API と画面の両方を返すため、経路ごとには分けない。
   app.use('*', secureHeaders(securityHeaderOptions(deps.useSecureCookie ?? false)));
+
+  // 本文の上限は、認証より前に効かせる。読み切ってから断るのでは遅い。
+  app.use(
+    '*',
+    createRequestBodyLimit({
+      defaultMaxBytes: deps.requestBodyLimit?.defaultMaxBytes ?? DEFAULT_REQUEST_BODY_MAX_BYTES,
+      bulkMaxBytes: deps.requestBodyLimit?.bulkMaxBytes ?? DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
+      bulkPaths: BULK_REQUEST_PATHS,
+    }),
+  );
 
   app.route('/api', api);
 
