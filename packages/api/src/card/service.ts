@@ -264,6 +264,7 @@ export function createCardService(deps: CardServiceDependencies): CardService {
         const credential = await cards.findActiveByFingerprint(workspaceId, input.cardFingerprint);
         if (!credential) {
           // カードが未登録であることは端末へ伝える。誰のカードかは分からないままにする。
+          const error = notFound('登録されたカード');
           await devices.insertReceipt(workspaceId, {
             deviceId,
             sequence: input.sequence,
@@ -272,12 +273,11 @@ export function createCardService(deps: CardServiceDependencies): CardService {
             deviceTime,
             clockSkewSeconds: skew,
             sequenceStep: input.sequence - device.lastSequence,
-            attendanceEventId: null,
-            businessDate: null,
             outcome: 'rejected',
+            rejection: { code: error.code, message: error.message },
             detail: { reason: 'unknown_card' },
           });
-          return { kind: 'rejected' as const, error: notFound('登録されたカード') };
+          return { kind: 'rejected' as const, error };
         }
 
         const timeZone = await resolveTimeZoneForEmployee(
@@ -321,6 +321,7 @@ export function createCardService(deps: CardServiceDependencies): CardService {
           existingReceipt === null &&
           evaluateSequence(device.lastSequence, input.sequence) === 'replay'
         ) {
+          const error = new ApiError('conflict', '連番がすでに受け取った値以下です');
           await devices.insertReceipt(workspaceId, {
             deviceId,
             sequence: input.sequence,
@@ -329,15 +330,11 @@ export function createCardService(deps: CardServiceDependencies): CardService {
             deviceTime,
             clockSkewSeconds: skew,
             sequenceStep,
-            attendanceEventId: null,
-            businessDate: null,
             outcome: 'rejected',
+            rejection: { code: error.code, message: error.message },
             detail: { reason: 'sequence_replay', lastSequence: device.lastSequence },
           });
-          return {
-            kind: 'rejected' as const,
-            error: new ApiError('conflict', '連番がすでに受け取った値以下です'),
-          };
+          return { kind: 'rejected' as const, error };
         }
 
         let recorded: Awaited<ReturnType<typeof recordAttendanceEvent>>;
@@ -371,9 +368,8 @@ export function createCardService(deps: CardServiceDependencies): CardService {
               deviceTime,
               clockSkewSeconds: skew,
               sequenceStep,
-              attendanceEventId: null,
-              businessDate: null,
               outcome: 'rejected',
+              rejection: { code: error.code, message: error.message },
               detail: { reason: 'punch_rejected' },
             });
             return { kind: 'rejected' as const, error };
@@ -392,6 +388,7 @@ export function createCardService(deps: CardServiceDependencies): CardService {
             sequenceStep,
             attendanceEventId: recorded.result.event.id,
             businessDate: recorded.result.event.businessDate,
+            eventType: recorded.result.event.eventType,
             outcome: recorded.created ? 'accepted' : 'duplicate',
             detail: {
               cardCredentialId: credential.id,

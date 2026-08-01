@@ -17,6 +17,11 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   internal_error: 500,
 };
 
+/** 保存した応答コードなど、外から来た文字列を失敗の種類として扱えるかを判定する。 */
+export function isApiErrorCode(value: string): value is ApiErrorCode {
+  return Object.hasOwn(STATUS_BY_CODE, value);
+}
+
 /**
  * API が利用者へ返す失敗。
  * 予期しない例外と区別し、内部情報を漏らさない形で応答へ変換する。

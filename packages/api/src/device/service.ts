@@ -254,9 +254,8 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
             deviceTime,
             clockSkewSeconds: skew,
             sequenceStep,
-            attendanceEventId: null,
-            businessDate: null,
             outcome: 'rejected' as const,
+            rejection: { code: error.code, message: error.message },
             detail: { reason, lastSequence: device?.lastSequence ?? 0 },
           });
           return { kind: 'rejected' as const, error };
@@ -317,6 +316,7 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
           sequenceStep,
           attendanceEventId: result.event.id,
           businessDate: result.event.businessDate,
+          eventType: result.event.eventType,
           outcome: created ? 'accepted' : 'duplicate',
           detail: {
             employeeNumber: input.employeeNumber,
