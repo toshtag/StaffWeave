@@ -1,5 +1,24 @@
+import type { Page } from '@playwright/test';
 import { devices, expect, test } from '@playwright/test';
+import type { RecordAttendanceEventResponse } from '@staffweave/contracts';
 import { E2E_MOBILE_EMPLOYEE } from './setup/prepare-database.js';
+
+/**
+ * 打刻がサーバーへ受け付けられるまで待つ。
+ *
+ * 画面の状態は端末に残した打刻でも変わるため、表示だけでは送信できたことにならない。
+ * 応答が返ったことだけでも足りない。断られた応答でも待機は終わってしまう。
+ */
+async function waitForAcceptedPunch(page: Page): Promise<void> {
+  const response = await page.waitForResponse(
+    (candidate) =>
+      candidate.url().includes('/api/attendance/events') && candidate.request().method() === 'POST',
+  );
+
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as RecordAttendanceEventResponse;
+  expect(body.duplicate).toBe(false);
+}
 
 /** 携帯電話の画面幅で確認する。 */
 test.use({ ...devices['Pixel 5'] });
@@ -25,8 +44,16 @@ test.describe('スマートフォンからの打刻', () => {
     const box = await clockIn.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
 
+    // 次のテストは保存された打刻から始まるので、受け付けられるまで待つ。
+    const recorded = waitForAcceptedPunch(page);
     await clockIn.click();
     await expect(workState).toHaveText('勤務中');
+    await recorded;
+
+    // このテストだけを実行しても、端末に残った打刻では成立しないことを確かめる。
+    await page.reload();
+    await expect(page.locator('.work-state')).toHaveText('勤務中');
+    await expect(page.locator('.punch-events li')).toHaveCount(1);
   });
 
   test('オフラインでも打刻を受け付け、復帰後に送信する', async ({ page, context }) => {

@@ -6,7 +6,7 @@ import { useSession } from '../session/SessionProvider.tsx';
 
 export function SignInPage(): React.JSX.Element {
   const { messages } = useLocale();
-  const { signIn } = useSession();
+  const { state, signIn } = useSession();
   const emailId = useId();
   const passwordId = useId();
 
@@ -22,6 +22,12 @@ export function SignInPage(): React.JSX.Element {
         <p className="subtitle">{messages.tagline}</p>
         <LocaleSwitcher />
       </header>
+
+      {state.status === 'signed_out' && state.expiry === 'pending_punches' && (
+        <p className="session-expired-notice" role="status">
+          {messages.sessionExpiredWithPendingPunches}
+        </p>
+      )}
 
       <form
         className="card"

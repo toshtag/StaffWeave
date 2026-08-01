@@ -1,4 +1,9 @@
-import type { AttendanceEventRecord, SessionResponse, WorkDay } from '@staffweave/contracts';
+import type {
+  AttendanceEventRecord,
+  EmployeeSummary,
+  SessionResponse,
+  WorkDay,
+} from '@staffweave/contracts';
 import type {
   AttendanceEventType,
   CorrectionAction,
@@ -6,12 +11,13 @@ import type {
   WorkDayState,
 } from '@staffweave/domain';
 import { summarizeWorkDay } from '@staffweave/domain';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
-import type { PendingPunch } from '../offline/punch-queue.ts';
-import { createPunchQueue } from '../offline/punch-queue.ts';
+import type { PunchBlockedReason, PunchQueue, PunchQueueSnapshot } from '../offline/punch-queue.ts';
+import { acceptsNewPunch, createPunchQueue, isPunchQueueOwner } from '../offline/punch-queue.ts';
+import { useSession } from '../session/SessionProvider.tsx';
 
 type LoadState =
   | { status: 'loading' }
@@ -55,6 +61,29 @@ function actionLabel(action: CorrectionAction, messages: Messages): string {
   }
 }
 
+function blockedLabel(
+  reason: PunchBlockedReason,
+  pendingCount: number,
+  messages: Messages,
+): string {
+  switch (reason) {
+    case 'authentication_required':
+      return messages.punchBlockedAuthentication;
+    case 'permission_blocked':
+      return messages.punchBlockedPermission;
+    case 'retry_later':
+      return messages.punchBlockedRetry;
+    case 'storage_read_unavailable':
+      // 送信待ちが残っているか確かめられないため、記録の有無を断定しない。
+      return messages.punchBlockedStorageUnreadable;
+    case 'storage_write_unavailable':
+      // 保存できなかった打刻は受理していない。残っている打刻がある場合とは伝えることが違う。
+      return pendingCount === 0
+        ? messages.punchBlockedStorageNotRecorded
+        : messages.punchBlockedStorageRetained;
+  }
+}
+
 function requestStateLabel(state: DailyRequestState, messages: Messages): string {
   switch (state) {
     case 'draft':
@@ -93,42 +122,151 @@ interface CorrectionDraft {
 /**
  * 本日の勤怠。
  *
+ * 打刻は従業員に対して記録するため、従業員が紐づいていない利用者には案内だけを出す。
+ * 送信待ち行列は従業員が確定してから作り、代わりの識別子で保存先を作らない。
+ */
+export function TodayAttendance({ session }: { session: SessionResponse }): React.JSX.Element {
+  const { messages } = useLocale();
+  const { employee } = session;
+
+  if (employee === null) {
+    return (
+      <section className="card">
+        <h2>{messages.today}</h2>
+        <p>{messages.employeeRequiredForPunch}</p>
+      </section>
+    );
+  }
+
+  const owner = {
+    workspaceId: session.workspace.id,
+    userId: session.user.id,
+    employeeId: employee.id,
+  };
+
+  // 持ち主を特定できない打刻は、後から誰のものか決められない。
+  if (!isPunchQueueOwner(owner)) {
+    return (
+      <section className="card">
+        <h2>{messages.today}</h2>
+        <p>{messages.punchOwnerUnverified}</p>
+      </section>
+    );
+  }
+
+  return <EmployeeTodayAttendance session={session} employee={employee} />;
+}
+
+/**
+ * 従業員が確定している場合の本日の勤怠。
+ *
  * 携帯電話で片手で使えることを最優先にする。
  * 現在の状態と「次に押すべきボタン」を画面の上へ大きく出し、修正や履歴はその下に置く。
  * 通信できないときも打刻は受け付け、送信待ちとして見せてから後で送る。
  */
-export function TodayAttendance({ session }: { session: SessionResponse }): React.JSX.Element {
+function EmployeeTodayAttendance({
+  session,
+  employee,
+}: {
+  session: SessionResponse;
+  employee: EmployeeSummary;
+}): React.JSX.Element {
   const { locale, messages } = useLocale();
+  const { markSessionExpired } = useSession();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<CorrectionDraft | null>(null);
-  const [pending, setPending] = useState<PendingPunch[]>([]);
+  const [snapshot, setSnapshot] = useState<PunchQueueSnapshot>(() => ({
+    pending: [],
+    blocked: null,
+    hasLegacyEntries: false,
+    hasUnreadableEntries: false,
+  }));
   const [online, setOnline] = useState(() => window.navigator.onLine);
   const reasonId = useId();
   const timeId = useId();
   const typeId = useId();
 
-  const queue = useMemo(
-    () =>
-      createPunchQueue({
-        onAccepted: (result) => setState({ status: 'ready', day: result.day }),
-        onRejected: (_entry, message) => setError(message),
-      }),
+  const [queue, setQueue] = useState<PunchQueue | null>(null);
+  const workspaceId = session.workspace.id;
+  const userId = session.user.id;
+  const employeeId = employee.id;
+
+  // 勤務日の版。読み込みの応答が、その後に確定した勤務日を上書きしないようにする。
+  const dayVersion = useRef(0);
+
+  /**
+   * 更新系の応答で確定した勤務日を反映する。
+   * これより前に始めた読み込みは、以後どれも反映しない。
+   */
+  const applyCurrentDay = useCallback((day: WorkDay): void => {
+    dayVersion.current += 1;
+    setState({ status: 'ready', day });
+  }, []);
+
+  /**
+   * 現在の勤務日を読み直す。
+   * 読み込んでいる間に打刻や修正が確定した場合、古い応答で画面を巻き戻さない。
+   */
+  const readCurrentDay = useCallback(
+    (handlers: { onDay: (day: WorkDay) => void; onFailure: (cause: unknown) => void }) => {
+      dayVersion.current += 1;
+      const version = dayVersion.current;
+      return api.getTodayAttendance().then(
+        (day) => {
+          if (version === dayVersion.current) handlers.onDay(day);
+        },
+        (cause: unknown) => {
+          if (version === dayVersion.current) handlers.onFailure(cause);
+        },
+      );
+    },
     [],
   );
 
   const load = useCallback(() => {
-    api
-      .getTodayAttendance()
-      .then((day) => setState({ status: 'ready', day }))
-      // 従業員が紐づいていない場合も通信に失敗した場合も、打刻できないことに変わりはない。
-      .catch(() => setState({ status: 'unavailable' }));
-  }, []);
+    void readCurrentDay({
+      onDay: (day) => setState({ status: 'ready', day }),
+      // 勤務日を取得できない間は、打刻の操作を出さない。
+      onFailure: () => setState({ status: 'unavailable' }),
+    });
+  }, [readCurrentDay]);
 
   useEffect(load, [load]);
 
-  useEffect(() => queue.subscribe(setPending), [queue]);
+  // 行列の寿命はこの画面と同じにする。
+  // 利用者・Workspace・従業員のいずれかが変われば、前の行列を破棄して別の行列を作る。
+  useEffect(() => {
+    const created = createPunchQueue({
+      owner: { workspaceId, userId, employeeId },
+      onAccepted: (result) => applyCurrentDay(result.day),
+      onRejected: (_entry, message) => setError(message),
+      onAuthenticationRequired: () => markSessionExpired('pending_punches'),
+    });
+    const unsubscribe = created.subscribe(setSnapshot);
+    setQueue(created);
+
+    return () => {
+      unsubscribe();
+      created.dispose();
+      setQueue(null);
+      setSnapshot({
+        pending: [],
+        blocked: null,
+        hasLegacyEntries: false,
+        hasUnreadableEntries: false,
+      });
+    };
+  }, [workspaceId, userId, employeeId, markSessionExpired, applyCurrentDay]);
+
+  // 認証が切れて残った打刻は online が起きないため、画面を開いた時点で送り直す。
+  // 送るのは勤務日を読み込んだ後にする。
+  // 先に送ると、送信前に始めた読み込みが後から届き、送れた打刻を消してしまう。
+  useEffect(() => {
+    if (queue === null || state.status === 'loading') return;
+    void queue.flush();
+  }, [queue, state.status]);
 
   useEffect(() => {
     const update = (): void => setOnline(window.navigator.onLine);
@@ -144,7 +282,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
     return (
       <section className="card">
         <h2>{messages.today}</h2>
-        <p>{messages.employeeRequiredForPunch}</p>
+        <p>{messages.networkError}</p>
       </section>
     );
   }
@@ -166,7 +304,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
       eventType: event.eventType,
       occurredAt: new Date(event.occurredAt),
     })),
-    ...pending.map((entry) => ({
+    ...snapshot.pending.map((entry) => ({
       eventType: entry.eventType,
       occurredAt: new Date(entry.occurredAt),
     })),
@@ -177,7 +315,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
     setError(null);
     promise
       .then((result) => {
-        setState({ status: 'ready', day: result.day });
+        applyCurrentDay(result.day);
         setDraft(null);
       })
       .catch((cause: unknown) => {
@@ -188,6 +326,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
   }
 
   function punch(eventType: AttendanceEventType): void {
+    if (queue === null) return;
     setError(null);
     void queue.enqueue(eventType, new Date());
   }
@@ -195,13 +334,12 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
   function reload(): void {
     setSubmitting(true);
     setError(null);
-    api
-      .getTodayAttendance()
-      .then((next) => setState({ status: 'ready', day: next }))
-      .catch((cause: unknown) => {
+    void readCurrentDay({
+      onDay: (next) => setState({ status: 'ready', day: next }),
+      onFailure: (cause) => {
         setError(cause instanceof ApiRequestError ? cause.message : messages.networkError);
-      })
-      .finally(() => setSubmitting(false));
+      },
+    }).finally(() => setSubmitting(false));
   }
 
   function submitRequest(): void {
@@ -252,7 +390,10 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
     displayState === 'not_started' ? 'clock_in' : displayState === 'working' ? 'clock_out' : null;
   const secondary: AttendanceEventType | null =
     displayState === 'working' ? 'break_start' : displayState === 'on_break' ? 'break_end' : null;
-  const punchDisabled = !day.editable;
+  // 保存内容を確認できていない間は、同じ打刻を二重に作らないよう受け付けない。
+  const canPunch = acceptsNewPunch(snapshot);
+  // 打刻の操作を出せるかどうか。理由が違うため、説明文の表示条件とは分けて持つ。
+  const punchControlsDisabled = !day.editable || !canPunch;
 
   return (
     <section className="card punch-card">
@@ -268,15 +409,59 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
         </p>
       )}
 
-      {pending.length > 0 && (
+      {snapshot.pending.length > 0 && (
         <p className="pending-banner" role="status">
-          {messages.pendingPunches(pending.length)}
+          {messages.pendingPunches(snapshot.pending.length)}
         </p>
       )}
 
-      {punchDisabled && <p className="notice">{messages.editingLocked}</p>}
+      {snapshot.blocked !== null && (
+        <p className="blocked-banner" role="status">
+          {blockedLabel(snapshot.blocked.reason, snapshot.pending.length, messages)}
+        </p>
+      )}
 
-      {!punchDisabled && primary !== null && (
+      {snapshot.hasUnreadableEntries && (
+        <p className="legacy-banner" role="status">
+          {messages.unreadablePendingPunches}
+        </p>
+      )}
+
+      {snapshot.hasLegacyEntries && (
+        <p className="legacy-banner" role="status">
+          {messages.legacyPendingPunches}
+        </p>
+      )}
+
+      {!canPunch && (
+        <button
+          type="button"
+          className="recheck-button"
+          onClick={() => {
+            setError(null);
+            void queue?.flush();
+          }}
+        >
+          {messages.recheckStoredPunches}
+        </button>
+      )}
+
+      {canPunch && online && snapshot.pending.length > 0 && (
+        <button
+          type="button"
+          className="retry-button"
+          onClick={() => {
+            setError(null);
+            void queue?.flush();
+          }}
+        >
+          {messages.retryPendingPunches}
+        </button>
+      )}
+
+      {!day.editable && <p className="notice">{messages.editingLocked}</p>}
+
+      {!punchControlsDisabled && primary !== null && (
         <button
           type="button"
           className="punch-button"
@@ -287,7 +472,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
         </button>
       )}
 
-      {!punchDisabled && secondary !== null && (
+      {!punchControlsDisabled && secondary !== null && (
         <button
           type="button"
           className="break-button"
@@ -556,7 +741,7 @@ export function TodayAttendance({ session }: { session: SessionResponse }): Reac
       </details>
 
       <p className="notice">
-        {session.employee?.employeeNumber} / {day.businessDate}
+        {employee.employeeNumber} / {day.businessDate}
       </p>
     </section>
   );

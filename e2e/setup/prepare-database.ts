@@ -35,7 +35,73 @@ export const E2E_MOBILE_EMPLOYEE: SeededAccount = {
   displayName: '検証 花子',
 };
 
-const SEEDED_ACCOUNTS = [E2E_EMPLOYEE, E2E_MOBILE_EMPLOYEE];
+/** セッションが切れた後の送信待ち打刻を確かめるための従業員。 */
+export const E2E_PENDING_PUNCH_EMPLOYEE: SeededAccount = {
+  email: 'pending-punch@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E003',
+  displayName: '検証 三郎',
+};
+
+/** 送信待ち打刻の持ち主。同じ端末を後から使う利用者と対にして使う。 */
+export const E2E_PUNCH_OWNER_EMPLOYEE: SeededAccount = {
+  email: 'punch-owner@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E004',
+  displayName: '検証 四郎',
+};
+
+/** 上の従業員の打刻を送ってはならない、同じ端末の別の利用者。 */
+export const E2E_PUNCH_BYSTANDER_EMPLOYEE: SeededAccount = {
+  email: 'punch-bystander@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E005',
+  displayName: '検証 五郎',
+};
+
+/** 遅れて届いた勤務日で画面が巻き戻らないことを確かめるための従業員。 */
+export const E2E_STALE_DAY_EMPLOYEE: SeededAccount = {
+  email: 'stale-day@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E006',
+  displayName: '検証 六郎',
+};
+
+/** 端末へ保存できない状況を確かめるための従業員。 */
+export const E2E_STORAGE_FAILURE_EMPLOYEE: SeededAccount = {
+  email: 'storage-failure@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E007',
+  displayName: '検証 七郎',
+};
+
+/** 保存内容を読み込めない状況からの復旧を確かめるための従業員。 */
+export const E2E_STORAGE_READ_EMPLOYEE: SeededAccount = {
+  email: 'storage-read@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E008',
+  displayName: '検証 八郎',
+};
+
+/** 保存済み打刻がある状態での読み込み障害を確かめるための従業員。 */
+export const E2E_STORED_PUNCH_EMPLOYEE: SeededAccount = {
+  email: 'stored-punch@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E009',
+  displayName: '検証 九郎',
+};
+
+const SEEDED_ACCOUNTS = [
+  E2E_EMPLOYEE,
+  E2E_MOBILE_EMPLOYEE,
+  E2E_PENDING_PUNCH_EMPLOYEE,
+  E2E_PUNCH_OWNER_EMPLOYEE,
+  E2E_PUNCH_BYSTANDER_EMPLOYEE,
+  E2E_STALE_DAY_EMPLOYEE,
+  E2E_STORAGE_FAILURE_EMPLOYEE,
+  E2E_STORAGE_READ_EMPLOYEE,
+  E2E_STORED_PUNCH_EMPLOYEE,
+];
 
 export function e2eDatabaseUrl(): string {
   const base = process.env.DATABASE_URL;
