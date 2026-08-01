@@ -8,6 +8,7 @@ import type {
 import {
   closeMonthRequestSchema,
   decideDailyRequestRequestSchema,
+  honoPath,
   listDailyRequestsQuerySchema,
   listMonthlyClosingsQuerySchema,
   operations,
@@ -20,7 +21,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
 import { invalidRequest } from '../shared/errors.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { ApprovalService } from './service.js';
 
 export interface ApprovalRouteDependencies {
@@ -52,22 +53,22 @@ export function createApprovalRoutes(deps: ApprovalRouteDependencies): Hono<AppE
     return c.json({ requests: await service.listRequests(auth, query) }, 200);
   });
 
-  app.post('/attendance/requests/:requestId/approve', async (c) => {
+  app.post(honoPath(operations.approveDailyRequest), async (c) => {
     const auth = currentAuth(c);
     const body = await readBody<DecideDailyRequestRequest>(c, decideDailyRequestRequestSchema);
-    return c.json(await service.decide(auth, c.req.param('requestId'), 'APPROVE', body), 200);
+    return c.json(await service.decide(auth, pathParam(c, 'requestId'), 'APPROVE', body), 200);
   });
 
-  app.post('/attendance/requests/:requestId/return', async (c) => {
+  app.post(honoPath(operations.returnDailyRequest), async (c) => {
     const auth = currentAuth(c);
     const body = await readBody<DecideDailyRequestRequest>(c, decideDailyRequestRequestSchema);
-    return c.json(await service.decide(auth, c.req.param('requestId'), 'RETURN', body), 200);
+    return c.json(await service.decide(auth, pathParam(c, 'requestId'), 'RETURN', body), 200);
   });
 
-  app.post('/attendance/requests/:requestId/cancel', async (c) => {
+  app.post(honoPath(operations.cancelDailyRequest), async (c) => {
     const auth = currentAuth(c);
     const body = await readBody<DecideDailyRequestRequest>(c, decideDailyRequestRequestSchema);
-    return c.json(await service.decide(auth, c.req.param('requestId'), 'CANCEL', body), 200);
+    return c.json(await service.decide(auth, pathParam(c, 'requestId'), 'CANCEL', body), 200);
   });
 
   app.get(operations.listMonthlyClosings.path, async (c) => {

@@ -6,6 +6,7 @@ import type {
 import {
   deviceEventRequestSchema,
   enrollDeviceRequestSchema,
+  honoPath,
   operations,
   registerDeviceRequestSchema,
 } from '@staffweave/contracts';
@@ -13,7 +14,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { requirePermission } from '../shared/context.js';
 import { ApiError } from '../shared/errors.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { DeviceService } from './service.js';
 
 export const DEVICE_ID_HEADER = 'x-staffweave-device';
@@ -38,14 +39,14 @@ export function createDeviceRoutes(deps: DeviceRouteDependencies): Hono<AppEnv> 
     return c.json(await service.register(auth, body), 201);
   });
 
-  app.post('/devices/:deviceId/revoke', async (c) => {
+  app.post(honoPath(operations.revokeDevice), async (c) => {
     const auth = requirePermission(c, 'organization.manage');
-    return c.json(await service.revoke(auth, c.req.param('deviceId')), 200);
+    return c.json(await service.revoke(auth, pathParam(c, 'deviceId')), 200);
   });
 
-  app.get('/devices/:deviceId/receipts', async (c) => {
+  app.get(honoPath(operations.listDeviceReceipts), async (c) => {
     const auth = requirePermission(c, 'organization.read');
-    return c.json({ receipts: await service.listReceipts(auth, c.req.param('deviceId')) }, 200);
+    return c.json({ receipts: await service.listReceipts(auth, pathParam(c, 'deviceId')) }, 200);
   });
 
   // Agent 向けの経路。セッションではなく端末の資格情報で認証する。

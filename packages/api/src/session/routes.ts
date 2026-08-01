@@ -1,5 +1,6 @@
 import type { JsonSchema, RecordSessionObservationsRequest } from '@staffweave/contracts';
 import {
+  honoPath,
   listSessionObservationsQuerySchema,
   operations,
   recordSessionObservationsRequestSchema,
@@ -11,7 +12,7 @@ import { DEVICE_ID_HEADER, DEVICE_SIGNATURE_HEADER } from '../device/routes.js';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
 import { ApiError, invalidRequest } from '../shared/errors.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { SessionService } from './service.js';
 
 export interface SessionRouteDependencies {
@@ -51,11 +52,11 @@ export function createSessionRoutes(deps: SessionRouteDependencies): Hono<AppEnv
     return c.json({ observations: await service.listObservations(auth, query) }, 200);
   });
 
-  app.get('/attendance/days/:businessDate/discrepancies', async (c) => {
+  app.get(honoPath(operations.getDiscrepancyReport), async (c) => {
     const auth = currentAuth(c);
     const employeeId = new URL(c.req.url).searchParams.get('employeeId') ?? undefined;
     return c.json(
-      await service.getDiscrepancyReport(auth, c.req.param('businessDate'), employeeId),
+      await service.getDiscrepancyReport(auth, pathParam(c, 'businessDate'), employeeId),
       200,
     );
   });

@@ -1,4 +1,4 @@
-import { operations } from '@staffweave/contracts';
+import { honoPath, operations } from '@staffweave/contracts';
 import type { ApiScope, EmployeeVisibility } from '@staffweave/domain';
 import { parseCsv } from '@staffweave/domain';
 import type { Context } from 'hono';
@@ -8,6 +8,7 @@ import type { AppEnv } from '../shared/context.js';
 import { currentAuth, requirePermission } from '../shared/context.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { invalidRequest } from '../shared/errors.js';
+import { pathParam } from '../shared/request.js';
 import type { ExportService } from './export-service.js';
 import type { IntegrationService } from './service.js';
 
@@ -51,7 +52,7 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
     return { workspaceId: auth.workspace.id, visibility: deps.visibility.of(auth) };
   }
 
-  app.get('/exports/attendance.csv', async (c) => {
+  app.get(honoPath(operations.exportAttendanceCsv), async (c) => {
     const url = new URL(c.req.url);
     const target = resolveExportTarget(c, 'attendance:read');
     const csv = await deps.exports.attendanceCsv(target.workspaceId, target.visibility, {
@@ -64,7 +65,7 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
     });
   });
 
-  app.get('/exports/payroll.csv', async (c) => {
+  app.get(honoPath(operations.exportPayrollCsv), async (c) => {
     const url = new URL(c.req.url);
     const target = resolveExportTarget(c, 'payroll:read');
     const csv = await deps.exports.payrollCsv(target.workspaceId, target.visibility, {
@@ -76,7 +77,7 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
     });
   });
 
-  app.post('/imports/employees', async (c) => {
+  app.post(honoPath(operations.importEmployeesCsv), async (c) => {
     const auth = requirePermission(c, 'employee.manage');
     const text = await c.req.text();
     const parsed = parseCsv(text);
@@ -147,10 +148,10 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
     return c.json(result, 201);
   });
 
-  app.post('/api-keys/:apiKeyId/revoke', async (c) => {
+  app.post(honoPath(operations.revokeApiKey), async (c) => {
     const auth = requirePermission(c, 'user.manage');
     return c.json(
-      await deps.integration.revokeApiKey(auth.workspace.id, c.req.param('apiKeyId')),
+      await deps.integration.revokeApiKey(auth.workspace.id, pathParam(c, 'apiKeyId')),
       200,
     );
   });
@@ -180,7 +181,7 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
     return c.json(result, 201);
   });
 
-  app.get('/webhook-deliveries', async (c) => {
+  app.get(honoPath(operations.listWebhookDeliveries), async (c) => {
     const auth = currentAuth(c);
     requirePermission(c, 'user.manage');
     return c.json({ deliveries: await deps.integration.listDeliveries(auth.workspace.id) }, 200);
