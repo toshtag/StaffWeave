@@ -4,7 +4,11 @@ import type {
   UserScopeRecord,
 } from '@staffweave/contracts';
 import type { Queryable } from '@staffweave/db';
-import type { BusinessDate } from '@staffweave/domain';
+import type {
+  BusinessDate,
+  EmployeeOrganizationView,
+  HostOrganizationPeriod,
+} from '@staffweave/domain';
 
 /**
  * 契約・配属・閲覧範囲の永続化。
@@ -61,9 +65,7 @@ export interface AssignmentRepository {
    * 従業員ごとの「雇用元」と「受入組織」。
    * 勤務先別の閲覧権限を判定するために使う。
    */
-  listEmployeeOrganizations(
-    workspaceId: string,
-  ): Promise<Map<string, { employerOrganizationId: string; hostOrganizationIds: string[] }>>;
+  listEmployeeOrganizations(workspaceId: string): Promise<Map<string, EmployeeOrganizationView>>;
 }
 
 interface ContractRow {
@@ -251,15 +253,20 @@ export function createAssignmentRepository(db: Queryable): AssignmentRepository 
     },
 
     async listEmployeeOrganizations(workspaceId) {
+      // 受入組織との関わりは、契約と配属の両方が続いているあいだだけ。
+      // どちらか一方でも終わっていれば、その日には関わりが無い。
       const rows = await db.query<{
         employee_id: string;
         employer_organization_id: string;
-        host_organization_ids: string[] | null;
+        host_organization_id: string | null;
+        starts_on: string | null;
+        ends_on: string | null;
       }>(
         `SELECT employees.id AS employee_id,
                 employees.organization_id AS employer_organization_id,
-                array_remove(array_agg(DISTINCT contracts.host_organization_id), NULL)
-                  AS host_organization_ids
+                contracts.host_organization_id,
+                greatest(assignments.starts_on, contracts.starts_on) AS starts_on,
+                least(assignments.ends_on, contracts.ends_on) AS ends_on
            FROM employees
            LEFT JOIN employee_assignments AS assignments
              ON assignments.employee_id = employees.id
@@ -267,18 +274,28 @@ export function createAssignmentRepository(db: Queryable): AssignmentRepository 
            LEFT JOIN assignment_contracts AS contracts
              ON contracts.id = assignments.assignment_contract_id
             AND contracts.workspace_id = employees.workspace_id
-          WHERE employees.workspace_id = $1
-          GROUP BY employees.id, employees.organization_id`,
+          WHERE employees.workspace_id = $1`,
         [workspaceId],
       );
 
+      const employers = new Map<string, string>();
+      const hosts = new Map<string, HostOrganizationPeriod[]>();
+      for (const row of rows) {
+        employers.set(row.employee_id, row.employer_organization_id);
+        if (row.host_organization_id === null || row.starts_on === null) continue;
+        const periods = hosts.get(row.employee_id) ?? [];
+        periods.push({
+          organizationId: row.host_organization_id,
+          startsOn: row.starts_on,
+          endsOn: row.ends_on,
+        });
+        hosts.set(row.employee_id, periods);
+      }
+
       return new Map(
-        rows.map((row) => [
-          row.employee_id,
-          {
-            employerOrganizationId: row.employer_organization_id,
-            hostOrganizationIds: row.host_organization_ids ?? [],
-          },
+        [...employers].map(([employeeId, employerOrganizationId]) => [
+          employeeId,
+          { employerOrganizationId, hostOrganizations: hosts.get(employeeId) ?? [] },
         ]),
       );
     },

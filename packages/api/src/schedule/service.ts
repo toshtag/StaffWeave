@@ -146,7 +146,8 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
       if (from > to) {
         throw invalidRequest([{ field: 'to', message: '終了日は開始日以降にしてください' }]);
       }
-      await deps.visibility.requireVisibleEmployee(context, query.employeeId);
+      // 勤務予定は期間を対象にする。その期間に関わりがあった相手だけを返す。
+      await deps.visibility.requireVisibleEmployee(context, query.employeeId, { from, to });
       return schedule.listWorkSchedules(context.workspace.id, query.employeeId, from, to);
     },
 

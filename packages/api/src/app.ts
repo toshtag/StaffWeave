@@ -85,7 +85,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const assignmentRepository = createAssignmentRepository(deps.db);
   // 従業員データを見てよい相手の判断は、どの機能からも同じ実装を通す。
-  const visibility = createEmployeeVisibilityGuard(assignmentRepository);
+  const visibility = createEmployeeVisibilityGuard({ assignments: assignmentRepository, now });
 
   const organizationService = createOrganizationService({
     repository: createOrganizationRepository(deps.db),

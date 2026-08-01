@@ -120,7 +120,10 @@ function serviceWith(cards: Partial<CardRepository>): Harness {
   const service = createCardService({
     cards: repositories.cards,
     devices,
-    visibility: createEmployeeVisibilityGuard(createAssignmentRepository(unusedDatabase)),
+    visibility: createEmployeeVisibilityGuard({
+      assignments: createAssignmentRepository(unusedDatabase),
+      now: () => NOW,
+    }),
     now: () => NOW,
     transaction: (fn) => fn(repositories),
   });

@@ -266,7 +266,10 @@ export function createSessionService(deps: SessionServiceDependencies): SessionS
     async listObservations(context, query) {
       const employeeId = resolveEmployeeId(context, query.employeeId);
       if (employeeId !== undefined) {
-        await deps.visibility.requireVisibleEmployee(context, employeeId);
+        await deps.visibility.requireVisibleEmployee(context, employeeId, {
+          from: query.from,
+          to: query.to,
+        });
       }
 
       const observations = await deps.observations.listForRange(context.workspace.id, {
@@ -275,10 +278,12 @@ export function createSessionService(deps: SessionServiceDependencies): SessionS
         to: query.to,
       });
 
+      // 観測は業務日に紐づく。その日に関わりがあった相手の分だけを返す。
       return deps.visibility.filterVisible(
         context,
         observations,
         (observation) => observation.employeeId,
+        (observation) => ({ from: observation.businessDate, to: observation.businessDate }),
       );
     },
 
@@ -293,7 +298,10 @@ export function createSessionService(deps: SessionServiceDependencies): SessionS
       if (employeeId === undefined) {
         throw invalidRequest([{ field: 'employeeId', message: '従業員を指定してください' }]);
       }
-      await deps.visibility.requireVisibleEmployee(context, employeeId);
+      await deps.visibility.requireVisibleEmployee(context, employeeId, {
+        from: businessDate,
+        to: businessDate,
+      });
 
       const workspaceId = context.workspace.id;
       const timeZone = await resolveTimeZoneForEmployee(

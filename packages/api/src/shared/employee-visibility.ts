@@ -8,8 +8,9 @@
  * 認証コンテキストからの変換と、DB への問い合わせを受け持つ。
  */
 import type { QueryParameter } from '@staffweave/db';
-import type { EmployeeVisibility } from '@staffweave/domain';
+import type { AccessPeriod, EmployeeVisibility } from '@staffweave/domain';
 import {
+  businessDateOf,
   isEmployeeVisible,
   resolveEmployeeVisibility,
   seesWholeWorkspace,
@@ -29,50 +30,84 @@ export function employeeVisibilityOf(context: AuthenticatedContext): EmployeeVis
 
 export interface EmployeeVisibilityGuard {
   of(context: AuthenticatedContext): EmployeeVisibility;
-  /** 特定の従業員を対象にする処理の入口で使う。見られない相手なら 403。 */
-  requireVisibleEmployee(context: AuthenticatedContext, employeeId: string): Promise<void>;
+  /**
+   * 特定の従業員を対象にする処理の入口で使う。見られない相手なら 403。
+   * `period` はどの期間の関わりで判断するか。省略すると現在日で判断する。
+   */
+  requireVisibleEmployee(
+    context: AuthenticatedContext,
+    employeeId: string,
+    period?: AccessPeriod,
+  ): Promise<void>;
   /**
    * 一覧から見てよい行だけを残す。
    * `employeeIdOf` が null を返す行は、特定の従業員に紐づかないものとして残す。
+   * `periodOf` を渡すと、行ごとにその期間の関わりで判断する。
    */
   filterVisible<T>(
     context: AuthenticatedContext,
     items: readonly T[],
     employeeIdOf: (item: T) => string | null,
+    periodOf?: (item: T) => AccessPeriod,
   ): Promise<T[]>;
 }
 
+export interface EmployeeVisibilityGuardDependencies {
+  assignments: AssignmentRepository;
+  /** 基準日を決めるための現在時刻。 */
+  now: () => Date;
+}
+
 export function createEmployeeVisibilityGuard(
-  assignments: AssignmentRepository,
+  deps: EmployeeVisibilityGuardDependencies,
 ): EmployeeVisibilityGuard {
+  /** 期間を指定しない問い合わせの基準日。ワークスペースの時間帯で今日を決める。 */
+  const today = (context: AuthenticatedContext): AccessPeriod => {
+    const date = businessDateOf(deps.now(), context.workspace.timeZone);
+    return { from: date, to: date };
+  };
+
   return {
     of: employeeVisibilityOf,
 
-    async requireVisibleEmployee(context, employeeId) {
+    async requireVisibleEmployee(context, employeeId, period) {
       const visibility = employeeVisibilityOf(context);
       // 組織の対応を読まずに判断できる場合は、問い合わせを省く。
       if (isEmployeeVisible(visibility, employeeId)) return;
       if (visibility.kind !== 'organizations') throw forbidden();
 
-      const organizations = await assignments.listEmployeeOrganizations(context.workspace.id);
-      if (!isEmployeeVisible(visibility, employeeId, organizations.get(employeeId))) {
+      const organizations = await deps.assignments.listEmployeeOrganizations(context.workspace.id);
+      if (
+        !isEmployeeVisible(
+          visibility,
+          employeeId,
+          organizations.get(employeeId),
+          period ?? today(context),
+        )
+      ) {
         throw forbidden();
       }
     },
 
-    async filterVisible(context, items, employeeIdOf) {
+    async filterVisible(context, items, employeeIdOf, periodOf) {
       const visibility = employeeVisibilityOf(context);
       if (seesWholeWorkspace(visibility)) return [...items];
 
       const organizations =
         visibility.kind === 'organizations'
-          ? await assignments.listEmployeeOrganizations(context.workspace.id)
+          ? await deps.assignments.listEmployeeOrganizations(context.workspace.id)
           : undefined;
+      const fallback = today(context);
 
       return items.filter((item) => {
         const employeeId = employeeIdOf(item);
         if (employeeId === null) return true;
-        return isEmployeeVisible(visibility, employeeId, organizations?.get(employeeId));
+        return isEmployeeVisible(
+          visibility,
+          employeeId,
+          organizations?.get(employeeId),
+          periodOf?.(item) ?? fallback,
+        );
       });
     },
   };
@@ -83,6 +118,12 @@ export interface VisibilityConditionOptions {
   employeeIdExpression: string;
   /** ワークスペース ID を表す SQL 式。例: `employees.workspace_id` */
   workspaceIdExpression: string;
+  /**
+   * どの期間の関わりで判断するかを表す SQL 式の組。
+   * 行ごとに日付を持つ出力では行の日付を両方へ、期間を対象にする出力では期間の端を渡す。
+   * 例: `{ fromExpression: 'calculations.business_date', toExpression: 'calculations.business_date' }`
+   */
+  period: { fromExpression: string; toExpression: string };
   /** この条件で使い始める位置パラメータの番号。 */
   firstParameterIndex: number;
 }
@@ -94,13 +135,14 @@ export interface VisibilityConditionOptions {
  * DB の側で絞り込む。読み込まなかったものは、取り違えようがない。
  *
  * 判定の意味は {@link AssignmentRepository.listEmployeeOrganizations} と同じにする。
- * 雇用元は従業員の所属組織、受入組織は配属された契約の受入先を指す。
+ * 雇用元は従業員の所属組織で期間に左右されず、受入組織は配属と契約が続いている
+ * あいだだけ関わりを持つ。
  */
 export function employeeVisibilityCondition(
   visibility: EmployeeVisibility,
   options: VisibilityConditionOptions,
 ): { sql: string; parameters: QueryParameter[] } {
-  const { employeeIdExpression, workspaceIdExpression, firstParameterIndex } = options;
+  const { employeeIdExpression, workspaceIdExpression, period, firstParameterIndex } = options;
 
   switch (visibility.kind) {
     case 'workspace':
@@ -135,6 +177,13 @@ export function employeeVisibilityCondition(
                   WHERE visible_assignment.employee_id = visible_employee.id
                     AND visible_assignment.workspace_id = visible_employee.workspace_id
                     AND visible_contract.host_organization_id = ANY($${index}::uuid[])
+                    -- 受入組織との関わりは、契約と配属の両方が続いているあいだだけ。
+                    AND visible_assignment.starts_on <= ${period.toExpression}
+                    AND (visible_assignment.ends_on IS NULL
+                         OR ${period.fromExpression} <= visible_assignment.ends_on)
+                    AND visible_contract.starts_on <= ${period.toExpression}
+                    AND (visible_contract.ends_on IS NULL
+                         OR ${period.fromExpression} <= visible_contract.ends_on)
                )
              )
         )`);

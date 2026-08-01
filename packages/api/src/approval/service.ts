@@ -6,8 +6,9 @@ import type {
   ReopenMonthRequest,
   SubmitDailyRequestRequest,
 } from '@staffweave/contracts';
-import type { DailyRequestEventType, DailyRequestState } from '@staffweave/domain';
+import type { AccessPeriod, DailyRequestEventType, DailyRequestState } from '@staffweave/domain';
 import {
+  addDaysToBusinessDate,
   applyDailyRequestEvent,
   applyMonthlyClosingEvent,
   closingPeriodOf,
@@ -93,6 +94,20 @@ function resolveTargetEmployeeId(
   return requested;
 }
 
+/**
+ * 締めの対象月（その月の 1 日）を、閲覧の判断に使う期間へ直す。
+ * 月の一部でも関わりがあれば、その月の締めは見える。
+ */
+function monthPeriodOf(period: string): AccessPeriod {
+  const [year, month] = period.split('-').map(Number);
+  if (year === undefined || month === undefined) {
+    throw new Error(`締め期間として解釈できません: ${period}`);
+  }
+  const nextMonth =
+    month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  return { from: period, to: addDaysToBusinessDate(nextMonth, -1) };
+}
+
 export function createApprovalService(deps: ApprovalServiceDependencies): ApprovalService {
   /**
    * 承認・締めの相手として指定してよいかを、閲覧範囲で判断する。
@@ -101,7 +116,8 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
   const requireEmployeeInScope = (
     context: AuthenticatedContext,
     employeeId: string,
-  ): Promise<void> => deps.visibility.requireVisibleEmployee(context, employeeId);
+    period?: AccessPeriod,
+  ): Promise<void> => deps.visibility.requireVisibleEmployee(context, employeeId, period);
 
   return {
     async submit(context, input) {
@@ -189,7 +205,11 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
         } else if (existing.employeeId === context.employee?.id) {
           throw new ApiError('forbidden', '自分の申請は自分で承認・差し戻しできません');
         } else {
-          await requireEmployeeInScope(context, existing.employeeId);
+          // 承認・差し戻しは申請の業務日で判断する。
+          await requireEmployeeInScope(context, existing.employeeId, {
+            from: existing.businessDate,
+            to: existing.businessDate,
+          });
         }
 
         const next = applyDailyRequestEvent(
@@ -272,7 +292,9 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
       if (query.state !== undefined && !isDailyRequestState(query.state)) {
         throw invalidRequest([{ field: 'state', message: '未知の状態です' }]);
       }
-      if (employeeId !== undefined) await requireEmployeeInScope(context, employeeId);
+      if (employeeId !== undefined) {
+        await requireEmployeeInScope(context, employeeId, { from: query.from, to: query.to });
+      }
 
       const requests = await deps.repository.listRequests(context.workspace.id, {
         ...(employeeId === undefined ? {} : { employeeId }),
@@ -281,12 +303,20 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
         ...(query.state === undefined ? {} : { state: query.state as DailyRequestState }),
       });
 
-      return deps.visibility.filterVisible(context, requests, (request) => request.employeeId);
+      // 申請は業務日に紐づく。その日に関わりがあった相手の分だけを返す。
+      return deps.visibility.filterVisible(
+        context,
+        requests,
+        (request) => request.employeeId,
+        (request) => ({ from: request.businessDate, to: request.businessDate }),
+      );
     },
 
     async listClosings(context, query) {
       const employeeId = resolveTargetEmployeeId(context, query.employeeId);
-      if (employeeId !== undefined) await requireEmployeeInScope(context, employeeId);
+      if (employeeId !== undefined) {
+        await requireEmployeeInScope(context, employeeId, { from: query.from, to: query.to });
+      }
 
       const closings = await deps.repository.listClosings(context.workspace.id, {
         ...(employeeId === undefined ? {} : { employeeId }),
@@ -294,12 +324,18 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
         to: query.to,
       });
 
-      return deps.visibility.filterVisible(context, closings, (closing) => closing.employeeId);
+      // 締めは月に紐づく。その月のいずれかの日に関わりがあった相手の分だけを返す。
+      return deps.visibility.filterVisible(
+        context,
+        closings,
+        (closing) => closing.employeeId,
+        (closing) => monthPeriodOf(closing.period),
+      );
     },
 
     async close(context, input) {
       if (!hasPermission(context.roles, 'attendance.close')) throw forbidden();
-      await requireEmployeeInScope(context, input.employeeId);
+      await requireEmployeeInScope(context, input.employeeId, monthPeriodOf(input.period));
       const workspaceId = context.workspace.id;
 
       return deps.transaction(async ({ approval, audit, outbox }) => {
@@ -359,7 +395,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
 
     async reopen(context, input) {
       if (!hasPermission(context.roles, 'attendance.close')) throw forbidden();
-      await requireEmployeeInScope(context, input.employeeId);
+      await requireEmployeeInScope(context, input.employeeId, monthPeriodOf(input.period));
       const workspaceId = context.workspace.id;
 
       if (input.reason.trim().length < 2) {

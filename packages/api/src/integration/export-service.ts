@@ -43,9 +43,14 @@ export function createExportService(db: Queryable): ExportService {
         throw invalidRequest([{ field: 'to', message: '終了日は開始日以降にしてください' }]);
       }
 
+      // 日次の出力は行ごとの業務日で判断する。配属されていた日の行だけを出す。
       const visible = employeeVisibilityCondition(visibility, {
         employeeIdExpression: 'employees.id',
         workspaceIdExpression: 'employees.workspace_id',
+        period: {
+          fromExpression: 'calculations.business_date',
+          toExpression: 'calculations.business_date',
+        },
         firstParameterIndex: 4,
       });
 
@@ -155,9 +160,14 @@ export function createExportService(db: Queryable): ExportService {
     async payrollCsv(workspaceId, visibility, query) {
       const period = requireDate(query.period, 'period');
 
+      // 月次の出力は対象月のいずれかの日で判断する。月の一部でも配属されていれば出す。
       const visible = employeeVisibilityCondition(visibility, {
         employeeIdExpression: 'employees.id',
         workspaceIdExpression: 'employees.workspace_id',
+        period: {
+          fromExpression: '$2::date',
+          toExpression: "($2::date + interval '1 month' - interval '1 day')::date",
+        },
         firstParameterIndex: 3,
       });
 
