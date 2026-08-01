@@ -1,5 +1,6 @@
 import type { APIResponse, Page, Route } from '@playwright/test';
 import { devices, expect, test } from '@playwright/test';
+import type { RecordAttendanceEventResponse } from '@staffweave/contracts';
 import type { PunchQueueOwner } from '../packages/web/src/offline/punch-queue.ts';
 import { storageKeyOf } from '../packages/web/src/offline/punch-queue.ts';
 import type { SeededAccount } from './setup/prepare-database.js';
@@ -109,14 +110,20 @@ async function recoverStorageRead(page: Page): Promise<void> {
 }
 
 /**
- * 打刻の送信が終わるまで待つ。
+ * 打刻がサーバーへ受け付けられるまで待つ。
+ *
  * 画面の状態は端末に残した打刻でも変わるため、表示だけでは送信できたことにならない。
+ * 応答が返ったことだけでも足りない。断られた応答でも待機は終わってしまう。
  */
-function waitForPunchRecorded(page: Page): Promise<unknown> {
-  return page.waitForResponse(
-    (response) =>
-      response.url().includes('/api/attendance/events') && response.request().method() === 'POST',
+async function waitForAcceptedPunch(page: Page): Promise<void> {
+  const response = await page.waitForResponse(
+    (candidate) =>
+      candidate.url().includes('/api/attendance/events') && candidate.request().method() === 'POST',
   );
+
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as RecordAttendanceEventResponse;
+  expect(body.duplicate).toBe(false);
 }
 
 /** React の描画が落ち着くまで待つ。時間ではなく描画の回数で区切る。 */
@@ -350,7 +357,7 @@ test.describe('送信待ち打刻の所有者', () => {
     ).toHaveCount(0);
     expect(sent).toHaveLength(0);
 
-    const recorded = waitForPunchRecorded(page);
+    const recorded = waitForAcceptedPunch(page);
     await page.getByRole('button', { name: '出勤', exact: true }).click();
 
     await expect(page.locator('.work-state')).toHaveText('勤務中');
@@ -385,7 +392,7 @@ test.describe('送信待ち打刻の所有者', () => {
     expect(sent).toHaveLength(0);
 
     await recoverStorageRead(page);
-    const recorded = waitForPunchRecorded(page);
+    const recorded = waitForAcceptedPunch(page);
     await page.getByRole('button', { name: '保存内容を再確認' }).click();
 
     // 保存されていた打刻だけが送られ、同じ打刻を二度作らない。
