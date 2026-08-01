@@ -39,6 +39,37 @@ describe('loadApiConfig', () => {
     );
   });
 
+  describe('IC カードの指紋鍵', () => {
+    const key = (raw: string | undefined) =>
+      loadApiConfig({
+        DATABASE_URL: 'postgres://x',
+        ...(raw === undefined ? {} : { CARD_FINGERPRINT_KEY: raw }),
+      }).cardFingerprintKey;
+
+    // 空文字を鍵として通すと、鍵を知らない相手でも同じ指紋を計算できる。
+    it.each(['', '   '])('空の値 %j は未設定として扱う', (raw) => {
+      expect(key(raw)).toBeNull();
+    });
+
+    it('短すぎる鍵では起動しない', () => {
+      expect(() => key('short-key')).toThrow(ConfigurationError);
+      expect(() => key('short-key')).toThrow(/32 文字以上/);
+    });
+
+    // 公開されている見本は秘密ではない。長さを満たしていても鍵として使わせない。
+    it('見本のままの鍵では起動しない', () => {
+      expect(() => key('change-me-to-a-long-random-value')).toThrow(/見本のまま/);
+    });
+
+    it('十分な長さの鍵を読む', () => {
+      expect(key('a'.repeat(32))).toBe('a'.repeat(32));
+    });
+
+    it('前後の空白を落とす', () => {
+      expect(key(`  ${'b'.repeat(40)}  `)).toBe('b'.repeat(40));
+    });
+  });
+
   it('Webhook ワーカーの設定が不正でも API は起動できる', () => {
     // API は Webhook を送らない。ワーカーの設定ミスで API まで止めない。
     const config = loadApiConfig({

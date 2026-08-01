@@ -74,7 +74,7 @@ function serviceWith(devices: Partial<DeviceRepository>): {
     repository: createDeviceRepository(unusedDatabase),
     attendance: repositories.attendance,
     now: () => NOW,
-    cardFingerprintKey: null,
+    cardFingerprintMasterKey: null,
     transaction: (fn) => fn(repositories),
   });
 

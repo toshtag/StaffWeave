@@ -142,7 +142,7 @@ function deviceServiceWith(hooks: Hooks = {}) {
     repository: createDeviceRepository(db),
     attendance: createAttendanceRepository(db),
     now: () => NOW,
-    cardFingerprintKey: null,
+    cardFingerprintMasterKey: null,
     transaction: transactionWith(hooks),
   });
 }

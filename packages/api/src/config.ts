@@ -16,8 +16,10 @@ export interface ApiConfig {
   /** ログイン時にワークスペースが指定されなかった場合の既定値。 */
   defaultWorkspaceSlug: string;
   /**
-   * IC カードの指紋を計算するための鍵。
-   * データベースへは保存せず、登録時に Agent へ渡す。未設定ならカード機能は使えない。
+   * IC カードの指紋鍵の元になる共通の鍵。
+   *
+   * データベースへは保存しない。端末へ渡すのはここから Workspace ごとに導出した鍵で、
+   * この値そのものではない。未設定ならカード機能は無効になる。
    */
   cardFingerprintKey: string | null;
   /** ビルド済みの Web を配信する場合の場所。未設定なら配信しない。 */
@@ -68,6 +70,18 @@ const WEBHOOK_WORKER_SETTINGS = {
  */
 const MIN_WEBHOOK_COMPLETION_GRACE_MS = 5_000;
 
+/**
+ * IC カードの指紋鍵に求める最小の長さ。
+ * 短い鍵は総当たりで求められ、指紋から元のカード識別子を言い当てられる。
+ */
+const MIN_CARD_FINGERPRINT_KEY_LENGTH = 32;
+
+/**
+ * 鍵として受け付けない値。
+ * 0.0.0 の .env.example が配っていた見本で、公開されているため秘密ではない。
+ */
+const PUBLISHED_CARD_FINGERPRINT_KEYS: readonly string[] = ['change-me-to-a-long-random-value'];
+
 function readDatabaseUrl(env: NodeJS.ProcessEnv): string {
   const databaseUrl = env.DATABASE_URL;
   if (!databaseUrl) {
@@ -112,6 +126,31 @@ function readWebhookNetworkPolicy(raw: string | undefined): WebhookNetworkPolicy
   );
 }
 
+/**
+ * IC カードの指紋鍵。
+ *
+ * 空白だけの値は未設定として扱う。`??` では空文字が鍵として通り、
+ * 鍵を知らない相手でも同じ指紋を計算できる状態のまま起動してしまうため。
+ * 未設定ならカード機能を無効にし、短すぎる値は起動時に断る。
+ */
+function readCardFingerprintKey(raw: string | undefined): string | null {
+  const value = raw?.trim() ?? '';
+  if (value === '') return null;
+  if (value.length < MIN_CARD_FINGERPRINT_KEY_LENGTH) {
+    throw new ConfigurationError(
+      `CARD_FINGERPRINT_KEY が短すぎます（${MIN_CARD_FINGERPRINT_KEY_LENGTH} 文字以上）。` +
+        'openssl rand -hex 32 の出力のような、推測できない値を設定してください。',
+    );
+  }
+  if (PUBLISHED_CARD_FINGERPRINT_KEYS.includes(value)) {
+    throw new ConfigurationError(
+      'CARD_FINGERPRINT_KEY が見本のままです。' +
+        'openssl rand -hex 32 の出力のような、推測できない値を設定してください。',
+    );
+  }
+  return value;
+}
+
 function readEnvironment(raw: string | undefined): ApiConfig['environment'] {
   if (raw === undefined || raw === '') return 'development';
   if (raw === 'development' || raw === 'test' || raw === 'production') return raw;
@@ -125,7 +164,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     port: readPort(env.API_PORT, 8787),
     environment: readEnvironment(env.NODE_ENV),
     defaultWorkspaceSlug: env.DEFAULT_WORKSPACE_SLUG ?? 'default',
-    cardFingerprintKey: env.CARD_FINGERPRINT_KEY ?? null,
+    cardFingerprintKey: readCardFingerprintKey(env.CARD_FINGERPRINT_KEY),
     webDistPath: env.WEB_DIST_PATH ?? null,
     webhookNetworkPolicy: readWebhookNetworkPolicy(env.WEBHOOK_NETWORK_POLICY),
     webhookTargetValidationTimeoutMs: readInteger(

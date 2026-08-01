@@ -23,6 +23,7 @@ import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation } from '../shared/database-errors.js';
 import { ApiError, invalidRequest, notFound } from '../shared/errors.js';
+import { deriveCardFingerprintKey } from '../shared/security/card-fingerprint-key.js';
 import { hashToken } from '../shared/security/tokens.js';
 import { rejectionOf } from './receipt.js';
 import type { DeviceRepository } from './repository.js';
@@ -37,8 +38,11 @@ export interface DeviceServiceDependencies {
   repository: DeviceRepository;
   attendance: AttendanceRepositories['attendance'];
   now: () => Date;
-  /** 登録時に Agent へ渡す、IC カードの指紋を計算するための鍵。 */
-  cardFingerprintKey: string | null;
+  /**
+   * IC カードの指紋鍵の元になる共通の鍵。
+   * 端末へ渡すのは、この値から Workspace ごとに導出した鍵。未設定なら渡さない。
+   */
+  cardFingerprintMasterKey: string | null;
   transaction<T>(fn: (repositories: DeviceRepositories) => Promise<T>): Promise<T>;
 }
 
@@ -165,9 +169,15 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
           deviceId: device.id,
           workspaceSlug: found.workspaceSlug,
           device,
-          ...(deps.cardFingerprintKey === null
+          // 端末へ渡す鍵は、その端末が属する Workspace のものに限る。
+          ...(deps.cardFingerprintMasterKey === null
             ? {}
-            : { cardFingerprintKey: deps.cardFingerprintKey }),
+            : {
+                cardFingerprintKey: deriveCardFingerprintKey(
+                  deps.cardFingerprintMasterKey,
+                  found.workspaceId,
+                ),
+              }),
         };
       });
     },

@@ -16,7 +16,8 @@ env:
   # CI では既定のポートをそのまま使う（開発機のような衝突が起きないため）。
   DATABASE_URL: postgres://staffweave:staffweave@localhost:5432/staffweave
   TEST_DATABASE_URL: postgres://staffweave:staffweave@localhost:5432/staffweave_test
-  CARD_FINGERPRINT_KEY: ci-card-fingerprint-key
+  # 検証用の値。32 文字以上でなければ API は起動しない。
+  CARD_FINGERPRINT_KEY: ci-card-fingerprint-key-not-a-secret
 
 jobs:
   static:

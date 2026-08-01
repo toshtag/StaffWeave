@@ -37,17 +37,19 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # IC カードの指紋鍵だけは値を書かない形にするため、この service は一覧で指定する。
     environment:
-      DATABASE_URL: postgres://staffweave:staffweave@db:5432/staffweave
-      API_HOST: 0.0.0.0
-      API_PORT: '8787'
-      NODE_ENV: production
-      DEFAULT_WORKSPACE_SLUG: ${DEFAULT_WORKSPACE_SLUG:-default}
-      CARD_FINGERPRINT_KEY: ${CARD_FINGERPRINT_KEY:-}
-      WEB_DIST_PATH: /app/packages/web/dist
+      - DATABASE_URL=postgres://staffweave:staffweave@db:5432/staffweave
+      - API_HOST=0.0.0.0
+      - API_PORT=8787
+      - NODE_ENV=production
+      - DEFAULT_WORKSPACE_SLUG=${DEFAULT_WORKSPACE_SLUG:-default}
+      - WEB_DIST_PATH=/app/packages/web/dist
       # 送信先の制限は API とワーカーで同じ値にする。片方だけ緩い状態を作らない。
-      WEBHOOK_NETWORK_POLICY: ${WEBHOOK_NETWORK_POLICY:-public-only}
-      WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: ${WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS:-3000}
+      - WEBHOOK_NETWORK_POLICY=${WEBHOOK_NETWORK_POLICY:-public-only}
+      - WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS=${WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS:-3000}
+      # ホスト側に設定があるときだけ渡す。既定値を書くと、空の鍵のまま起動してしまう。
+      - CARD_FINGERPRINT_KEY
     ports:
       - '${APP_HOST_PORT:-8787}:8787'
 

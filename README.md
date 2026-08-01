@@ -113,9 +113,18 @@ pnpm agent session-observe --employee E001 --type sign_in
 ```
 
 IC カードの生の識別子は端末の中で一方向の指紋へ変換され、サーバーへは送られません。
-指紋の計算には `.env` の `CARD_FINGERPRINT_KEY` を使います。この鍵はデータベースへ保存されないため、
-データベースの内容だけでは物理カードと結び付けられません。
-鍵を変更すると既存のカード登録は使えなくなります。
+指紋の計算に使う鍵は、`.env` の `CARD_FINGERPRINT_KEY` から Workspace ごとに導出し、
+端末の登録時に渡します。共通の鍵そのものは端末へ渡りません。
+この鍵はデータベースへ保存されないため、データベースの内容だけでは物理カードと結び付けられません。
+
+```sh
+openssl rand -hex 32   # CARD_FINGERPRINT_KEY へ設定する値を作る
+```
+
+`CARD_FINGERPRINT_KEY` が未設定なら、IC カードの経路は 404 で断ります。
+32 文字未満の値や見本のままの値では API は起動しません。
+鍵を変更すると導出後の鍵も変わり、登録済みのカードは登録し直しになります。
+詳細は [docs/security/card-fingerprint-key.md](docs/security/card-fingerprint-key.md) を参照してください。
 
 秘密鍵は Agent 側のファイルにのみ保存され、サーバーへは公開鍵しか渡りません。
 資格情報のファイルは `.gitignore` に登録済みです。
@@ -243,6 +252,7 @@ pnpm restore backups/staffweave-<日時>.dump         # 復元（既存データ
 
 `CARD_FINGERPRINT_KEY` はバックアップに含まれません。
 復元後に IC カード機能を使うには、同じ鍵を環境変数へ設定する必要があります。
+別の鍵で復元すると、登録済みのカードはどれも一致しなくなります。
 
 ### Docker だけで動かす
 
@@ -260,7 +270,7 @@ docker compose exec app pnpm bootstrap --email admin@example.com
 
 公開する場合は次を必ず行ってください。
 
-- `.env` の `CARD_FINGERPRINT_KEY` を十分に長い秘密の値へ変更する
+- IC カードを使う場合は `.env` の `CARD_FINGERPRINT_KEY` を `openssl rand -hex 32` の出力にする
 - PostgreSQL のパスワードを変更する
 - HTTPS で終端する（`NODE_ENV=production` のとき、セッション Cookie に `Secure` が付きます）
 
@@ -308,6 +318,7 @@ staffweave は不正打刻の完全な防止や、特定の国・地域の労働
 | [docs/roadmap.md](docs/roadmap.md) | P0〜P22 のロードマップ |
 | [docs/security/webhook-target-policy.md](docs/security/webhook-target-policy.md) | Webhook 送信先のネットワーク方針 |
 | [docs/security/webhook-signing.md](docs/security/webhook-signing.md) | Webhook 署名鍵の保存と検証手順 |
+| [docs/security/card-fingerprint-key.md](docs/security/card-fingerprint-key.md) | IC カード指紋鍵の設定と Workspace ごとの分離 |
 
 ## ライセンス
 
