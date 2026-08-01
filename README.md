@@ -296,6 +296,27 @@ docker compose exec app pnpm bootstrap --email admin@example.com
 - PostgreSQL のパスワードを変更する
 - HTTPS で終端する（`NODE_ENV=production` のとき、セッション Cookie に `Secure` が付きます）
 
+#### 応答のヘッダー
+
+API と画面のどちらの応答にも、次のヘッダーを製品の側で付けます。逆プロキシ側の設定は要りません。
+
+| ヘッダー | 値 |
+| --- | --- |
+| `Content-Security-Policy` | 自分自身からの取得だけを許し、埋め込みを拒む |
+| `X-Frame-Options` | `DENY` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `no-referrer` |
+| `Cross-Origin-Resource-Policy` / `Cross-Origin-Opener-Policy` | `same-origin` |
+| `Cache-Control`（`/api` の応答） | `no-store` |
+| `Strict-Transport-Security` | `NODE_ENV=production` のときだけ送る |
+
+逆プロキシで同じヘッダーを付ける場合は、値を二重に送らないようにしてください。
+`Strict-Transport-Security` は HTTPS で終端している構成でだけ送ります。
+HTTP で動かす構成へ送ると、その後 HTTPS へ移すまで画面を開けなくなります。
+
+画面へ外部の資材（CDN のフォント、外部の画像、別ホストの API）を足す場合は、
+`packages/api/src/shared/security/headers.ts` の取得先を広げる必要があります。
+
 ### 検証
 
 ```sh
