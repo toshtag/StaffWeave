@@ -30,6 +30,29 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 - **対象を検査する**: `requireVisibleEmployee` で、範囲外なら `403`。`404` へは偽装しない。
 - **SQL で絞る**: `employeeVisibilityCondition` で、件数が多い出力を DB の側で絞り込む。
 
+## 期間の扱い
+
+雇用元は期間で絞りません。所属している限り、雇用元はその従業員を自社の従業員として扱います。
+退職者も所属が残っているあいだは雇用元から見えます。
+
+受入組織は、配属と契約の両方が続いているあいだだけ関わりを持ちます。
+開始前と終了後は見られません。判断に使う期間は経路の種類で決めます。
+
+| 経路の種類 | 基準にする期間 | 例 |
+| --- | --- | --- |
+| 期間を持たない | 現在日（ワークスペースの時間帯） | `listEmployees`, `listCardCredentials`, `listEmployeeAssignments`, `listAnomalies`, `listEmployeeWorkCycles` |
+| 1 日を対象にする | その業務日 | `getDiscrepancyReport`, 申請の承認・差し戻し |
+| 期間を対象にする | 対象期間と重なるか | `listWorkSchedules`, `listSessionObservations`, `listDailyRequests`, `listMonthlyClosings` の事前検査 |
+| 行ごとに日付を持つ | 行の業務日 | `listDailyRequests`, `listSessionObservations` の絞り込み、`exportAttendanceCsv` |
+| 月を対象にする | その月のいずれかの日 | `listMonthlyClosings` の絞り込み、`closeMonth`, `reopenMonth`, `exportPayrollCsv` |
+
+期間を対象にする経路では、事前検査を「期間と重なるか」で行い、
+行ごとの絞り込みで実際に見せる範囲を決めます。
+検査だけを通っても、配属されていなかった日の行は返しません。
+
+契約終了後の猶予期間は設けません。締めや給与の処理が終わっていない場合は、
+配属の終了日を実態に合わせて設定してください。
+
 ## 記号
 
 | 記号 | 意味 |
@@ -82,8 +105,10 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 | `createEmployee` | POST | `/employees` | `employee.manage` | — |
 | `upsertWorkSchedule` | PUT | `/work-schedules` | `employee.manage` | — |
 | `assignWorkCycle` | POST | `/employee-work-cycles` | `employee.manage` | — |
+| `endWorkCycleAssignment` | POST | `/employee-work-cycles/{employeeWorkCycleId}/end` | `employee.manage` | 期間の重なりを避けるための終了日 |
 | `generateWorkSchedules` | POST | `/work-schedules/generate` | `employee.manage` | — |
 | `createEmployeeAssignment` | POST | `/employee-assignments` | `employee.manage` | — |
+| `endEmployeeAssignment` | POST | `/employee-assignments/{employeeAssignmentId}/end` | `employee.manage` | 期間の重なりを避けるための終了日 |
 | `createCardRegistration` | POST | `/card-credentials/registrations` | `employee.manage` | — |
 | `revokeCardCredential` | POST | `/card-credentials/{cardCredentialId}/revoke` | `employee.manage` | — |
 | `importEmployeesCsv` | POST | `/imports/employees` | `employee.manage` | — |
@@ -129,23 +154,6 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 この判断は今回の共通修正の対象外とし、
 [Issue #35](https://github.com/toshtag/staffweave/issues/35) に記録しています。
 
-### 配属の期間を見ていない
-
-従業員と受入組織の対応を作る `listEmployeeOrganizations`
-（`packages/api/src/organization/assignment-repository.ts`）と、
-CSV 用の `employeeVisibilityCondition`
-（`packages/api/src/shared/employee-visibility.ts`）は、
-契約と配属の `starts_on` / `ends_on` を条件に含めていません。
-
-そのため、将来開始する配属や終了済みの配属だけを根拠として、
-受入組織の管理者が現在の従業員データを閲覧できます。
-
-基準日を何にするかは API ごとに判断が分かれるため
-（日次は業務日、CSV は出力対象日、基本情報は現在日など）、
-この文書だけでは決められません。公開前の release-blocker として
-[Issue #37](https://github.com/toshtag/staffweave/issues/37) に登録し、
-API 種別ごとの基準日を仕様化してから着手します。
-
 ## 歴史的な記録
 
 `packages/db/migrations/0012_create_assignments_and_scopes.sql` のコメントには、
@@ -175,5 +183,9 @@ API 種別ごとの基準日を仕様化してから着手します。
 
 CSV は SQL 側で絞り込むため、インメモリの判定とは別実装になります。
 受入組織を経由する許可と、本人だけを見る場合の 2 つの分岐を、CSV でも検証しています。
+
+配属の期間については、終了済み・期間内・開始前の 3 通りを別の従業員で用意し、
+従業員一覧・勤怠 CSV・給与 CSV・勤務予定のそれぞれで、
+期間内の従業員だけが見えることを確かめています。
 
 閲覧範囲のモデルを旧動作へ戻すか、いずれかの絞り込みを外すと、このテストは失敗します。

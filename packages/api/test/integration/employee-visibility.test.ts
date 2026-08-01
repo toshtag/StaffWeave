@@ -850,3 +850,192 @@ describe('従業員データの閲覧範囲', () => {
     });
   });
 });
+
+/**
+ * 受入組織が従業員データを見られるのは、配属されている期間だけであることを固定する。
+ *
+ * 開始前と終了後にも見えてしまうと、契約が終わった後も勤怠を読み続けられる。
+ * 判定はインメモリの絞り込みと CSV の SQL で別々に実装しているため、両方を確かめる。
+ */
+describe('配属の期間と閲覧範囲', () => {
+  const WORK_DATE = '2026-04-15';
+
+  interface PeriodFixture {
+    managerHCookie: string;
+    adminCookie: string;
+  }
+
+  /** 受入組織 H へ、指定した期間だけ配属された従業員を作る。 */
+  async function assignForPeriod(
+    instance: App,
+    adminCookie: string,
+    input: {
+      workspaceId: string;
+      employerOrganizationId: string;
+      hostOrganizationId: string;
+      employeeId: string;
+      code: string;
+      startsOn: string;
+      endsOn?: string;
+    },
+  ): Promise<void> {
+    const contract = (await (
+      await expectOk(
+        await instance.request(
+          '/api/assignment-contracts',
+          authorized(adminCookie, {
+            method: 'POST',
+            body: {
+              code: input.code,
+              name: `${input.code} の契約`,
+              employerOrganizationId: input.employerOrganizationId,
+              hostOrganizationId: input.hostOrganizationId,
+              startsOn: input.startsOn,
+              ...(input.endsOn === undefined ? {} : { endsOn: input.endsOn }),
+            },
+          }),
+        ),
+        `契約 ${input.code} の登録`,
+      )
+    ).json()) as AssignmentContractRecord;
+
+    await expectOk(
+      await instance.request(
+        '/api/employee-assignments',
+        authorized(adminCookie, {
+          method: 'POST',
+          body: {
+            employeeId: input.employeeId,
+            assignmentContractId: contract.id,
+            startsOn: input.startsOn,
+            ...(input.endsOn === undefined ? {} : { endsOn: input.endsOn }),
+          },
+        }),
+      ),
+      `契約 ${input.code} への配属`,
+    );
+  }
+
+  let fixture: PeriodFixture;
+
+  beforeEach(async () => {
+    const db = testDatabase();
+    const workspaceId = await createWorkspace(db, { slug: 'default' });
+    const employerId = await createOrganization(db, workspaceId, { code: 'EMPLOYER' });
+    const hostId = await createOrganization(db, workspaceId, { code: 'HOST' });
+
+    await createUser(db, workspaceId, { email: 'admin@example.com', roles: ['workspace_admin'] });
+    const managerHUserId = await createUser(db, workspaceId, {
+      email: 'manager-h@example.com',
+      roles: ['organization_manager'],
+    });
+    await grantOrganizationScope(db, workspaceId, {
+      userId: managerHUserId,
+      organizationId: hostId,
+    });
+
+    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const adminCookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    // 終了済み・期間内・開始前の 3 通りを、それぞれ別の従業員で用意する。
+    const cases = [
+      { number: 'E001', code: 'C-PAST', startsOn: '2026-01-01', endsOn: '2026-03-31' },
+      { number: 'E002', code: 'C-NOW', startsOn: '2026-04-01', endsOn: '2026-04-30' },
+      { number: 'E003', code: 'C-FUTURE', startsOn: '2026-06-01', endsOn: undefined },
+    ];
+
+    for (const entry of cases) {
+      const employee = await createEmployeeWithAccount(db, workspaceId, {
+        organizationId: employerId,
+        employeeNumber: entry.number,
+        displayName: `従業員 ${entry.number}`,
+        email: `${entry.number.toLowerCase()}@example.com`,
+      });
+      await assignForPeriod(instance, adminCookie, {
+        workspaceId,
+        employerOrganizationId: employerId,
+        hostOrganizationId: hostId,
+        employeeId: employee.employeeId,
+        code: entry.code,
+        startsOn: entry.startsOn,
+        ...(entry.endsOn === undefined ? {} : { endsOn: entry.endsOn }),
+      });
+
+      // 認可の対象になる勤怠を、期間の内外に関わらず同じ日で用意する。
+      await db.query(
+        `INSERT INTO attendance_calculations
+           (workspace_id, employee_id, business_date, version, worked_minutes, attended_minutes,
+            break_minutes, scheduled_minutes, within_schedule_minutes, outside_schedule_minutes,
+            night_minutes, non_working_day_minutes, leave_minutes, absence_minutes,
+            input_fingerprint, rule_version, basis)
+         VALUES ($1, $2, $3::date, 1, 480, 540, 60, 480, 480, 0, 0, 0, 0, 0,
+                 'visibility-test', 'v1', '{}'::jsonb)`,
+        [workspaceId, employee.employeeId, WORK_DATE],
+      );
+    }
+
+    fixture = {
+      adminCookie,
+      managerHCookie: await loginAndGetCookie(instance, {
+        email: 'manager-h@example.com',
+      }),
+    };
+  });
+
+  it('従業員一覧には、いま配属されている従業員だけが現れる', async () => {
+    const response = await app(`${WORK_DATE}T09:00:00.000Z`).request(
+      '/api/employees',
+      authorized(fixture.managerHCookie),
+    );
+
+    expect(employeeNumbersOf((await response.json()) as EmployeeList)).toEqual(['E002']);
+  });
+
+  it('勤怠 CSV には、その日に配属されていた従業員だけが現れる', async () => {
+    const response = await app(`${WORK_DATE}T09:00:00.000Z`).request(
+      `/api/exports/attendance.csv?from=${WORK_DATE}&to=${WORK_DATE}`,
+      authorized(fixture.managerHCookie),
+    );
+
+    expect(csvEmployeeNumbers(await response.text())).toEqual(['E002']);
+  });
+
+  it('給与 CSV には、その月に配属されていた従業員だけが現れる', async () => {
+    const response = await app(`${WORK_DATE}T09:00:00.000Z`).request(
+      '/api/exports/payroll.csv?period=2026-04-01',
+      authorized(fixture.managerHCookie),
+    );
+
+    expect(csvEmployeeNumbers(await response.text())).toEqual(['E002']);
+  });
+
+  it('終了した配属の期間を指定しても、いまの勤務予定は取得できない', async () => {
+    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const employees = (await (
+      await instance.request('/api/employees', authorized(fixture.adminCookie))
+    ).json()) as EmployeeList;
+    const past = employees.employees.find((employee) => employee.employeeNumber === 'E001');
+
+    const response = await instance.request(
+      `/api/work-schedules?employeeId=${past?.id}&from=${WORK_DATE}&to=${WORK_DATE}`,
+      authorized(fixture.managerHCookie),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it('配属されていた期間の勤務予定は取得できる', async () => {
+    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const employees = (await (
+      await instance.request('/api/employees', authorized(fixture.adminCookie))
+    ).json()) as EmployeeList;
+    const past = employees.employees.find((employee) => employee.employeeNumber === 'E001');
+
+    const response = await instance.request(
+      `/api/work-schedules?employeeId=${past?.id}&from=2026-02-01&to=2026-02-28`,
+      authorized(fixture.managerHCookie),
+    );
+
+    expect(response.status).toBe(200);
+  });
+});

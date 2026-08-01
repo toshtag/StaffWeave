@@ -130,7 +130,10 @@ function sessionServiceWith(hooks: Hooks = {}) {
     },
     observations: createSessionObservationRepository(db),
     devices: createDeviceRepository(db),
-    visibility: createEmployeeVisibilityGuard(createAssignmentRepository(db)),
+    visibility: createEmployeeVisibilityGuard({
+      assignments: createAssignmentRepository(db),
+      now: () => NOW,
+    }),
     now: () => NOW,
     transaction: transactionWith(hooks),
   });
@@ -152,7 +155,10 @@ function cardServiceWith(hooks: Hooks = {}) {
   return createCardService({
     cards: createCardRepository(db),
     devices: createDeviceRepository(db),
-    visibility: createEmployeeVisibilityGuard(createAssignmentRepository(db)),
+    visibility: createEmployeeVisibilityGuard({
+      assignments: createAssignmentRepository(db),
+      now: () => NOW,
+    }),
     now: () => NOW,
     transaction: transactionWith(hooks),
   });
