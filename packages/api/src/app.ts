@@ -13,7 +13,7 @@ import { createAnomalyService } from './audit/anomaly-service.js';
 import { createAuditRepository } from './audit/repository.js';
 import { createAuditRoutes } from './audit/routes.js';
 import { createCardRepository } from './card/repository.js';
-import { createCardRoutes } from './card/routes.js';
+import { createCardRoutes, createDisabledCardRoutes } from './card/routes.js';
 import { createCardService } from './card/service.js';
 import { createDeviceRepository } from './device/repository.js';
 import { createDeviceRoutes } from './device/routes.js';
@@ -62,7 +62,7 @@ export interface AppDependencies {
   useSecureCookie?: boolean;
   /**
    * IC カードの指紋鍵の元になる共通の鍵。
-   * 端末へ渡すのは、ここから Workspace ごとに導出した鍵。未設定ならカード機能は使えない。
+   * 未設定ならカードの経路を無効にする。鍵なしで計算した指紋を受け取らないため。
    */
   cardFingerprintMasterKey?: string | null;
   /** Webhook 送信先として許すネットワークの範囲。既定は公開ネットワークだけ。 */
@@ -235,7 +235,14 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));
-  api.route('/', createCardRoutes({ service: cardService }));
+  // 指紋鍵が無い構成では、カードの経路を受け付けない。
+  // 鍵なしで計算した指紋は、保存した値からカードを言い当てられる。
+  api.route(
+    '/',
+    cardFingerprintMasterKey === null
+      ? createDisabledCardRoutes()
+      : createCardRoutes({ service: cardService }),
+  );
   api.route('/', createSessionRoutes({ service: sessionService }));
 
   const app = new Hono<AppEnv>();

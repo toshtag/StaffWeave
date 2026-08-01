@@ -61,6 +61,8 @@ function app(now: string = CLOCK_OUT_AT) {
     db: testDatabase(),
     defaultWorkspaceSlug: 'default',
     now: () => new Date(now),
+    // IC カードの閲覧範囲もここで確かめるため、カードの経路を有効にする。
+    cardFingerprintMasterKey: 'visibility-test-card-fingerprint-master-key',
   });
 }
 
