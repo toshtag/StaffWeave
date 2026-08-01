@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { LocaleSwitcher } from '../components/LocaleSwitcher.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
+import { businessToday } from '../session/business-date.ts';
 import { useSession } from '../session/SessionProvider.tsx';
 import { AnomalyPanel } from './AnomalyPanel.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
@@ -100,9 +101,7 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
       <main id="main">
         <TodayAttendance session={session} />
 
-        {session.employee !== null && (
-          <DiscrepancyPanel businessDate={new Date().toISOString().slice(0, 10)} />
-        )}
+        {session.employee !== null && <DiscrepancyPanel businessDate={businessToday(session)} />}
 
         <PendingApprovals session={session} />
 

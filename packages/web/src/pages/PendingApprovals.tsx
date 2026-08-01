@@ -2,14 +2,10 @@ import type { DailyRequestRecord, SessionResponse } from '@staffweave/contracts'
 import { useCallback, useEffect, useId, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
+import { recentBusinessDateRange } from '../session/business-date.ts';
 
 /** 直近 3 か月分を承認対象として見る。 */
-function defaultRange(): { from: string; to: string } {
-  const today = new Date();
-  const to = today.toISOString().slice(0, 10);
-  const fromDate = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
-  return { from: fromDate.toISOString().slice(0, 10), to };
-}
+const APPROVAL_RANGE_DAYS = 90;
 
 /**
  * 承認待ちの申請。
@@ -31,10 +27,13 @@ export function PendingApprovals({
   const load = useCallback(() => {
     if (!canApprove) return;
     api
-      .listDailyRequests({ ...defaultRange(), state: 'submitted' })
+      .listDailyRequests({
+        ...recentBusinessDateRange(session, APPROVAL_RANGE_DAYS),
+        state: 'submitted',
+      })
       .then((body) => setRequests(body.requests))
       .catch(() => setRequests([]));
-  }, [canApprove]);
+  }, [canApprove, session]);
 
   useEffect(load, [load]);
 

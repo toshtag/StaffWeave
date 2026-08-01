@@ -2,13 +2,10 @@ import type { AnomalyRecord, SessionResponse } from '@staffweave/contracts';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
+import { recentBusinessDateRange } from '../session/business-date.ts';
 
 /** 直近 1 か月を確認の対象にする。 */
-function defaultRange(): { from: string; to: string } {
-  const today = new Date();
-  const from = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-  return { from: from.toISOString().slice(0, 10), to: today.toISOString().slice(0, 10) };
-}
+const ANOMALY_RANGE_DAYS = 30;
 
 /**
  * 確認が必要な記録。
@@ -17,7 +14,7 @@ function defaultRange(): { from: string; to: string } {
 export function AnomalyPanel({ session }: { session: SessionResponse }): React.JSX.Element | null {
   const { messages } = useLocale();
   const [anomalies, setAnomalies] = useState<AnomalyRecord[] | null>(null);
-  const range = useMemo(defaultRange, []);
+  const range = useMemo(() => recentBusinessDateRange(session, ANOMALY_RANGE_DAYS), [session]);
 
   const canRead = session.user.permissions.includes('employee.read');
 
