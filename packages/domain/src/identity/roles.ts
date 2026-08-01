@@ -28,6 +28,8 @@ export const PERMISSIONS = [
   'attendance.approve',
   /** 月次締めと締め解除 */
   'attendance.close',
+  /** 監査記録の閲覧 */
+  'audit.read',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -41,6 +43,7 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'user.manage',
     'attendance.approve',
     'attendance.close',
+    'audit.read',
   ],
   organization_manager: ['organization.read', 'employee.read', 'attendance.approve'],
   employee: [],

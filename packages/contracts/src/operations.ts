@@ -1162,7 +1162,7 @@ export const operations = {
     operationId: 'listAuditLogs',
     method: 'get',
     path: '/audit/logs',
-    summary: '監査記録を一覧する',
+    summary: '監査記録を一覧する（ワークスペース管理者のみ）',
     tags: ['audit'],
     security: 'session',
     responses: [

@@ -34,6 +34,13 @@ describe('permissionsOf', () => {
     const permissions = permissionsOf(['organization_manager', 'organization_manager']);
     expect(permissions).toEqual(['organization.read', 'employee.read', 'attendance.approve']);
   });
+
+  // 監査記録は従業員に紐づかない操作も含み、閲覧範囲で絞れない。
+  it('監査記録を読めるのはワークスペース管理者だけ', () => {
+    expect(hasPermission(['workspace_admin'], 'audit.read')).toBe(true);
+    expect(hasPermission(['organization_manager'], 'audit.read')).toBe(false);
+    expect(hasPermission(['employee'], 'audit.read')).toBe(false);
+  });
 });
 
 describe('isRole', () => {
