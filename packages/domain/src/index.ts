@@ -176,6 +176,8 @@ export {
   normalizeEmail,
   validatePassword,
 } from './identity/credentials.js';
+export type { LoginAttemptPolicy, LoginAttemptState } from './identity/login-attempts.js';
+export { afterLoginFailure, isLoginBlocked } from './identity/login-attempts.js';
 export type { Permission, Role } from './identity/roles.js';
 export { hasPermission, isRole, PERMISSIONS, permissionsOf, ROLES } from './identity/roles.js';
 export type { SessionPeriod, SessionState } from './identity/session.js';

@@ -1,9 +1,11 @@
+import { getConnInfo } from '@hono/node-server/conninfo';
 import type { LoginRequest, UpdatePreferencesRequest } from '@staffweave/contracts';
 import {
   loginRequestSchema,
   operations,
   updatePreferencesRequestSchema,
 } from '@staffweave/contracts';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { AppEnv } from '../shared/context.js';
@@ -18,6 +20,35 @@ export interface IdentityRouteDependencies {
   service: IdentityService;
   /** 本番環境では Cookie に Secure を付ける。 */
   useSecureCookie: boolean;
+  /**
+   * 逆プロキシが付ける転送元の頭書き（`X-Forwarded-For`）を信用するか。
+   *
+   * 信用すると、送信元は要求の頭書きが決める。前段が値を上書きする構成でだけ有効にする。
+   * 直接受ける構成で信用すると、送信元を自由に名乗れてしまい、数える意味がなくなる。
+   */
+  trustProxyForClientAddress: boolean;
+}
+
+/**
+ * 失敗を数える単位としての送信元。
+ *
+ * 分からなければ `undefined` を返す。既定値へ丸めると、
+ * 分からない要求どうしが同じ単位に入り、無関係な利用者を巻き込んで断ってしまう。
+ */
+function clientAddress(c: Context<AppEnv>, trustProxy: boolean): string | undefined {
+  if (trustProxy) {
+    // 前段が付ける一覧の先頭が、前段から見た送信元。
+    const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+    return forwarded === undefined || forwarded === '' ? undefined : forwarded;
+  }
+
+  try {
+    const address = getConnInfo(c).remote.address;
+    return address === undefined || address === '' ? undefined : address;
+  } catch {
+    // 接続の情報を取れない実行環境（テストの直接呼び出しなど）では数えない。
+    return undefined;
+  }
 }
 
 export function createIdentityRoutes(deps: IdentityRouteDependencies): Hono<AppEnv> {
@@ -25,7 +56,11 @@ export function createIdentityRoutes(deps: IdentityRouteDependencies): Hono<AppE
 
   app.post(operations.login.path, async (c) => {
     const body = await readBody<LoginRequest>(c, loginRequestSchema);
-    const result = await deps.service.login(body);
+    const source = clientAddress(c, deps.trustProxyForClientAddress);
+    const result = await deps.service.login({
+      ...body,
+      ...(source === undefined ? {} : { source }),
+    });
 
     setCookie(c, SESSION_COOKIE_NAME, result.token, {
       httpOnly: true,

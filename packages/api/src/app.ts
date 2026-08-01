@@ -20,6 +20,7 @@ import { createCardService } from './card/service.js';
 import { createDeviceRepository } from './device/repository.js';
 import { createDeviceRoutes } from './device/routes.js';
 import { createDeviceService } from './device/service.js';
+import { createLoginAttemptRepository } from './identity/login-attempt-repository.js';
 import { createIdentityRepository } from './identity/repository.js';
 import { createIdentityRoutes, SESSION_COOKIE_NAME } from './identity/routes.js';
 import { createIdentityService } from './identity/service.js';
@@ -61,6 +62,8 @@ import {
   DEFAULT_REQUEST_BODY_MAX_BYTES,
 } from './shared/security/body-limit.js';
 import { securityHeaderOptions } from './shared/security/headers.js';
+import type { LoginAttemptPolicies } from './shared/security/login-attempts.js';
+import { DEFAULT_LOGIN_ATTEMPT_POLICY } from './shared/security/login-attempts.js';
 import { createOriginCheck } from './shared/security/origin.js';
 import { createSystemRoutes } from './system/routes.js';
 
@@ -97,6 +100,10 @@ export interface AppDependencies {
    * 空なら、要求が届いた宛先と同じホストだけを許す。
    */
   allowedOrigins?: readonly string[];
+  /** ログインの失敗を何回まで受け付けるか。 */
+  loginAttemptPolicy?: LoginAttemptPolicies;
+  /** 逆プロキシが付ける転送元の頭書きを信用するか。 */
+  trustProxyForClientAddress?: boolean;
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -108,6 +115,9 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     repository: createIdentityRepository(deps.db),
     now,
     defaultWorkspaceSlug: deps.defaultWorkspaceSlug ?? 'default',
+    loginAttempts: createLoginAttemptRepository(deps.db),
+    loginAttemptPolicy: deps.loginAttemptPolicy ?? DEFAULT_LOGIN_ATTEMPT_POLICY,
+    logger,
   });
 
   const assignmentRepository = createAssignmentRepository(deps.db);
@@ -252,6 +262,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     createIdentityRoutes({
       service: identityService,
       useSecureCookie: deps.useSecureCookie ?? false,
+      trustProxyForClientAddress: deps.trustProxyForClientAddress ?? false,
     }),
   );
   api.route('/', createOrganizationRoutes({ service: organizationService }));
