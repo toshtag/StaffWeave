@@ -404,6 +404,128 @@ describe('カードによる打刻', () => {
     expect(rows[0]?.count).toBe(1);
   });
 
+  it('別の経路で勤務状態が変わっても、再送は最初の応答を返す', async () => {
+    const instance = app();
+    const first = await tapCard(instance, fixture, {
+      sequence: 1,
+      requestId: 'card-replay-in',
+      rawCardId: 'EMPLOYEE-CARD',
+    });
+    const firstBody = (await first.json()) as CardEventResponse;
+    expect(firstBody.eventType).toBe('clock_in');
+
+    // 最初の送信のあとに、別の要求で退勤まで進める。
+    const clockOut = await tapCard(instance, fixture, {
+      sequence: 2,
+      requestId: 'card-replay-out',
+      rawCardId: 'EMPLOYEE-CARD',
+    });
+    expect(((await clockOut.json()) as CardEventResponse).eventType).toBe('clock_out');
+
+    const resent = await tapCard(instance, fixture, {
+      sequence: 1,
+      requestId: 'card-replay-in',
+      rawCardId: 'EMPLOYEE-CARD',
+    });
+    const resentBody = (await resent.json()) as CardEventResponse;
+
+    expect(resent.status).toBe(200);
+    expect(resentBody).toEqual({ ...firstBody, outcome: 'duplicate' });
+  });
+
+  it('断った要求の再送は、あいだにカードを登録しても同じ理由で断る', async () => {
+    const instance = app();
+    const rejected = await tapCard(instance, fixture, {
+      sequence: 1,
+      requestId: 'card-late-registration',
+      rawCardId: 'LATE-CARD',
+    });
+    const reason = ((await rejected.json()) as { error: { message: string } }).error.message;
+    expect(rejected.status).toBe(404);
+
+    const token = await issueRegistrationToken(instance, fixture, fixture.secondEmployeeId);
+    await registerCard(instance, fixture, { registrationToken: token, rawCardId: 'LATE-CARD' });
+
+    const resent = await tapCard(instance, fixture, {
+      sequence: 1,
+      requestId: 'card-late-registration',
+      rawCardId: 'LATE-CARD',
+    });
+
+    expect(resent.status).toBe(404);
+    expect(((await resent.json()) as { error: { message: string } }).error.message).toBe(reason);
+
+    const rows = await testDatabase().query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM attendance_events',
+    );
+    expect(rows[0]?.count).toBe(0);
+  });
+
+  it('打刻を断った要求も記録に残し、再送へ同じ理由を返す', async () => {
+    const instance = app();
+    for (const [index, requestId] of ['card-closed-in', 'card-closed-out'].entries()) {
+      await tapCard(instance, fixture, {
+        sequence: index + 1,
+        requestId,
+        rawCardId: 'EMPLOYEE-CARD',
+      });
+    }
+
+    const input = { sequence: 3, requestId: 'card-closed-again', rawCardId: 'EMPLOYEE-CARD' };
+    const rejected = await tapCard(instance, fixture, input);
+    const reason = ((await rejected.json()) as { error: { message: string } }).error.message;
+    expect(rejected.status).toBe(409);
+
+    const resent = await tapCard(instance, fixture, input);
+    expect(resent.status).toBe(409);
+    expect(((await resent.json()) as { error: { message: string } }).error.message).toBe(reason);
+
+    const receipts = await testDatabase().query<{
+      outcome: string;
+      rejection_code: string | null;
+      rejection_message: string | null;
+    }>(
+      `SELECT outcome, rejection_code, rejection_message FROM device_event_receipts
+        WHERE request_id = $1`,
+      [input.requestId],
+    );
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toMatchObject({
+      outcome: 'rejected',
+      rejection_code: 'conflict',
+      rejection_message: reason,
+    });
+  });
+
+  it('受領記録に応答の再現へ必要な値を残す', async () => {
+    const response = await tapCard(app(), fixture, {
+      sequence: 1,
+      requestId: 'card-receipt-values',
+      rawCardId: 'EMPLOYEE-CARD',
+    });
+    const body = (await response.json()) as CardEventResponse;
+
+    const receipts = await testDatabase().query<{
+      attendance_event_id: string | null;
+      business_date: string;
+      event_type: string | null;
+      outcome: string;
+      rejection_code: string | null;
+    }>(
+      `SELECT attendance_event_id, to_char(business_date, 'YYYY-MM-DD') AS business_date,
+              event_type, outcome, rejection_code
+         FROM device_event_receipts`,
+    );
+
+    expect(receipts[0]).toEqual({
+      attendance_event_id: body.attendanceEventId,
+      business_date: body.businessDate,
+      event_type: 'clock_in',
+      outcome: 'accepted',
+      rejection_code: null,
+    });
+  });
+
   it('登録されていないカードは受け付けない', async () => {
     const response = await tapCard(app(), fixture, {
       sequence: 1,
