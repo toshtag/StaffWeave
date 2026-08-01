@@ -50,6 +50,9 @@ jobs:
       - name: リポジトリの決めごと
         run: pnpm check:policy
 
+      - name: 依存の脆弱性
+        run: pnpm check:audit
+
   database:
     name: マイグレーションと統合テスト
     runs-on: ubuntu-latest

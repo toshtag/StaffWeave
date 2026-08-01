@@ -105,6 +105,7 @@ staffweave の実装判断で迷ったとき、この文書が優先されます
 | 画面テスト | `pnpm test:e2e` |
 | マイグレーション | `pnpm db:migrate`（二度実行）、`pnpm db:verify` |
 | リポジトリの決めごと | `pnpm check:policy` |
+| 依存の脆弱性 | `pnpm check:audit` |
 | コンテナのビルド | `docker build -f docker/api.Dockerfile` |
 
 `pnpm check:policy` が見るのは、レビューで見落としやすく、後から直すと影響が大きいものだけです。
@@ -115,3 +116,8 @@ staffweave の実装判断で迷ったとき、この文書が優先されます
 - マイグレーションの版番号とファイル名が規約どおりか
 - ドメイン層がフレームワークや上位パッケージへ依存していないか
 - パッケージの依存方向が [module-boundaries.md](module-boundaries.md) のとおりか
+
+`pnpm check:audit` は、依存に moderate 以上の既知脆弱性があれば失敗させます。
+すぐに直せないものは `scripts/audit-exceptions.txt` へ、勧告 ID・期限・理由を書いて見送れます。
+期限を過ぎた見送りは、勧告が残っているかどうかに関わらず失敗します。
+期限のない見送りを作らないためです。

@@ -320,13 +320,14 @@ HTTP で動かす構成へ送ると、その後 HTTPS へ移すまで画面を�
 ### 検証
 
 ```sh
-pnpm verify            # 下の 6 つをこの順で実行する（DB 必要）
+pnpm verify            # 下の 7 つをこの順で実行する（DB 必要）
 pnpm lint              # 書式と静的検査
 pnpm typecheck         # 型検査
 pnpm test              # 単体 + 統合（DB 必要）
 pnpm test:e2e          # ブラウザによる E2E（DB 必要）
 pnpm db:verify         # マイグレーションの適用漏れと内容の変更を検査
 pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・依存方向・マイグレーション）を検査
+pnpm check:audit       # 依存の既知脆弱性（moderate 以上があれば失敗）
 
 pnpm test:unit         # 単体テストのみ（DB 不要）
 pnpm test:integration  # 統合テストのみ（DB 必要）
@@ -335,6 +336,10 @@ pnpm test:integration  # 統合テストのみ（DB 必要）
 `pnpm verify` は CI が実行する検証と同じ内容です。
 手元で通れば CI でも通る状態にするため、片方だけに項目を足しません。
 コンテナのビルドだけは CI で行います（`docker build -f docker/api.Dockerfile`）。
+
+`pnpm check:audit` はレジストリへ問い合わせるため、ネットワークが要ります。
+すぐに直せない勧告は `scripts/audit-exceptions.txt` へ、勧告 ID・期限・理由を書いて見送れます。
+期限を過ぎた見送りは、勧告が残っているかどうかに関わらず失敗します。
 
 統合テストは `TEST_DATABASE_URL` のデータベースを使い、実行のたびにデータを消去します。
 開発用データベースを誤って指さないよう、名前が `_test` で終わることを実行時に検査します。
