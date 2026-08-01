@@ -647,6 +647,10 @@ export interface EmployeeAssignmentList {
   assignments: EmployeeAssignmentRecord[];
 }
 
+export interface EndEmployeeAssignmentRequest {
+  endsOn: string;
+}
+
 export interface CreateEmployeeAssignmentRequest {
   employeeId: string;
   assignmentContractId: string;

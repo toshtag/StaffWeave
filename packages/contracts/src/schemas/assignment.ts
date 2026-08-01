@@ -78,6 +78,14 @@ export const createEmployeeAssignmentRequestSchema = objectSchema({
   required: ['employeeId', 'assignmentContractId', 'startsOn'],
 });
 
+export const endEmployeeAssignmentRequestSchema = objectSchema({
+  description: '配属に終了日を設定する。契約を切り替えるときに、次の配属と期間を重ねないため',
+  properties: {
+    endsOn: businessDateSchema,
+  },
+  required: ['endsOn'],
+});
+
 export const userScopeSchema = objectSchema({
   description: ORGANIZATION_SCOPE_DESCRIPTION,
   properties: {

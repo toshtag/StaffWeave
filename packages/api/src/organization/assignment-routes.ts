@@ -1,11 +1,13 @@
 import type {
   CreateAssignmentContractRequest,
   CreateEmployeeAssignmentRequest,
+  EndEmployeeAssignmentRequest,
   GrantUserScopeRequest,
 } from '@staffweave/contracts';
 import {
   createAssignmentContractRequestSchema,
   createEmployeeAssignmentRequestSchema,
+  endEmployeeAssignmentRequestSchema,
   grantUserScopeRequestSchema,
   operations,
 } from '@staffweave/contracts';
@@ -49,6 +51,18 @@ export function createAssignmentRoutes(deps: AssignmentRouteDependencies): Hono<
       createEmployeeAssignmentRequestSchema,
     );
     return c.json(await service.createAssignment(auth.workspace.id, body), 201);
+  });
+
+  app.post('/employee-assignments/:employeeAssignmentId/end', async (c) => {
+    const auth = requirePermission(c, 'employee.manage');
+    const body = await readBody<EndEmployeeAssignmentRequest>(
+      c,
+      endEmployeeAssignmentRequestSchema,
+    );
+    return c.json(
+      await service.endAssignment(auth.workspace.id, c.req.param('employeeAssignmentId'), body),
+      200,
+    );
   });
 
   app.get(operations.listUserScopes.path, async (c) => {
