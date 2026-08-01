@@ -133,6 +133,15 @@ describe('selectAssignment', () => {
     const overlapping: WorkCycleAssignment = { ...second, effectiveFrom: '2026-02-01' };
     expect(selectAssignment([first, overlapping], '2026-02-15')?.workCycleId).toBe('cycle-2');
   });
+
+  // 期間が重ならないことは DB の制約で決めているが、選び方まで並び順に委ねない。
+  it('開始日が同じ割当でも渡す順序で結果が変わらない', () => {
+    const sameDay: WorkCycleAssignment = { ...second, workCycleId: 'cycle-3' };
+
+    expect(selectAssignment([second, sameDay], '2026-05-01')?.workCycleId).toBe(
+      selectAssignment([sameDay, second], '2026-05-01')?.workCycleId,
+    );
+  });
 });
 
 describe('validateWorkCycle', () => {
