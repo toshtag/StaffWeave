@@ -24,13 +24,14 @@
     "webhook:worker": "pnpm --filter \"@staffweave/api\" webhook-worker",
     "db:migrate": "pnpm --filter \"@staffweave/db\" migrate",
     "db:status": "pnpm --filter \"@staffweave/db\" status",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm db:verify && pnpm check:policy",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm db:verify && pnpm check:policy && pnpm check:audit",
     "test:e2e": "playwright test",
     "agent": "pnpm --filter \"@staffweave/agent\" start",
     "seed:demo": "pnpm --filter \"@staffweave/api\" seed:demo",
     "backup": "./scripts/backup.sh",
     "restore": "./scripts/restore.sh",
     "check:policy": "./scripts/check-policy.sh",
+    "check:audit": "./scripts/check-audit.sh",
     "db:verify": "pnpm --filter \"@staffweave/db\" verify"
   },
   "devDependencies": {
