@@ -859,6 +859,8 @@ describe('従業員データの閲覧範囲', () => {
  */
 describe('配属の期間と閲覧範囲', () => {
   const WORK_DATE = '2026-04-15';
+  /** 終了した配属（2026-01-01〜2026-03-31）の中にある業務日。 */
+  const PAST_DATE = '2026-02-15';
 
   interface PeriodFixture {
     managerHCookie: string;
@@ -972,6 +974,25 @@ describe('配属の期間と閲覧範囲', () => {
                  'visibility-test', 'v1', '{}'::jsonb)`,
         [workspaceId, employee.employeeId, WORK_DATE],
       );
+
+      // 異常として検出させるため、修正の多発を 2 つの業務日で用意する。
+      // 一方は終了した配属の期間の中、もう一方はその外にある。
+      for (const businessDate of [PAST_DATE, WORK_DATE]) {
+        for (let index = 0; index < 4; index += 1) {
+          await db.query(
+            `INSERT INTO attendance_events
+               (workspace_id, employee_id, event_type, occurred_at, business_date, source,
+                request_id, correction_action, correction_reason)
+             VALUES ($1, $2, 'clock_in', $3::timestamptz, $3::date, 'correction', $4, 'add', '検証')`,
+            [
+              workspaceId,
+              employee.employeeId,
+              `${businessDate}T00:00:00.000Z`,
+              `correction-${entry.number}-${businessDate}-${index}`,
+            ],
+          );
+        }
+      }
     }
 
     fixture = {
@@ -1037,5 +1058,73 @@ describe('配属の期間と閲覧範囲', () => {
     );
 
     expect(response.status).toBe(200);
+  });
+
+  /** 異常の一覧に現れた従業員を、従業員番号へ直して並べる。 */
+  async function anomalyEmployeeNumbers(instance: App, range: string): Promise<string[]> {
+    const employees = (await (
+      await instance.request('/api/employees', authorized(fixture.adminCookie))
+    ).json()) as EmployeeList;
+    const numberById = new Map(
+      employees.employees.map((employee) => [employee.id, employee.employeeNumber]),
+    );
+
+    const response = await instance.request(
+      `/api/audit/anomalies?${range}`,
+      authorized(fixture.managerHCookie),
+    );
+    const body = (await response.json()) as AnomalyList;
+
+    return [
+      ...new Set(
+        body.anomalies
+          .map((anomaly) =>
+            anomaly.employeeId === null ? null : numberById.get(anomaly.employeeId),
+          )
+          .filter((number): number is string => number !== undefined && number !== null),
+      ),
+    ].sort();
+  }
+
+  it('異常の一覧には、その業務日に配属されていた従業員だけが現れる', async () => {
+    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+
+    expect(await anomalyEmployeeNumbers(instance, `from=${PAST_DATE}&to=${PAST_DATE}`)).toEqual([
+      'E001',
+    ]);
+    expect(await anomalyEmployeeNumbers(instance, `from=${WORK_DATE}&to=${WORK_DATE}`)).toEqual([
+      'E002',
+    ]);
+  });
+
+  it('配属される前の期間を指定しても、その従業員の異常は取得できない', async () => {
+    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const employees = (await (
+      await instance.request('/api/employees', authorized(fixture.adminCookie))
+    ).json()) as EmployeeList;
+    const current = employees.employees.find((employee) => employee.employeeNumber === 'E002');
+
+    const response = await instance.request(
+      `/api/audit/anomalies?employeeId=${current?.id}&from=${PAST_DATE}&to=${PAST_DATE}`,
+      authorized(fixture.managerHCookie),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it('配属されていた期間の異常は取得できる', async () => {
+    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const employees = (await (
+      await instance.request('/api/employees', authorized(fixture.adminCookie))
+    ).json()) as EmployeeList;
+    const past = employees.employees.find((employee) => employee.employeeNumber === 'E001');
+
+    const response = await instance.request(
+      `/api/audit/anomalies?employeeId=${past?.id}&from=${PAST_DATE}&to=${PAST_DATE}`,
+      authorized(fixture.managerHCookie),
+    );
+
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as AnomalyList).anomalies.length).toBeGreaterThan(0);
   });
 });
