@@ -21,6 +21,11 @@ describe('loadApiConfig', () => {
       maxRequestBodyBytes: 256 * 1024,
       maxBulkRequestBodyBytes: 8 * 1024 * 1024,
       allowedOrigins: [],
+      loginAttemptPolicy: {
+        account: { maxFailures: 5, windowMs: 900_000, blockMs: 900_000 },
+        source: { maxFailures: 50, windowMs: 900_000, blockMs: 900_000 },
+      },
+      trustProxyForClientAddress: false,
     });
   });
 
@@ -161,6 +166,44 @@ describe('loadApiConfig', () => {
       );
     },
   );
+
+  it('ログイン試行の基準を読む', () => {
+    const policy = loadApiConfig({
+      DATABASE_URL: 'postgres://x',
+      LOGIN_MAX_FAILURES_PER_ACCOUNT: '10',
+      LOGIN_MAX_FAILURES_PER_SOURCE: '200',
+      LOGIN_FAILURE_WINDOW_MS: '600000',
+      LOGIN_BLOCK_MS: '1800000',
+    }).loginAttemptPolicy;
+
+    expect(policy.account).toEqual({ maxFailures: 10, windowMs: 600_000, blockMs: 1_800_000 });
+    expect(policy.source).toEqual({ maxFailures: 200, windowMs: 600_000, blockMs: 1_800_000 });
+  });
+
+  it.each(['2', '101', '5.5', 'すこし'])('利用者ごとの上限が %s なら設定エラーになる', (raw) => {
+    expect(() =>
+      loadApiConfig({ DATABASE_URL: 'postgres://x', LOGIN_MAX_FAILURES_PER_ACCOUNT: raw }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it('転送元の頭書きを信用するかを読む', () => {
+    const trust = (raw?: string) =>
+      loadApiConfig({
+        DATABASE_URL: 'postgres://x',
+        ...(raw === undefined ? {} : { TRUST_PROXY_FOR_CLIENT_ADDRESS: raw }),
+      }).trustProxyForClientAddress;
+
+    expect(trust()).toBe(false);
+    expect(trust('true')).toBe(true);
+    expect(trust('false')).toBe(false);
+  });
+
+  // 直接受ける構成で信用すると、送信元を自由に名乗れて数える意味がなくなる。
+  it.each(['yes', '1', 'True'])('転送元の設定が %s なら設定エラーになる', (raw) => {
+    expect(() =>
+      loadApiConfig({ DATABASE_URL: 'postgres://x', TRUST_PROXY_FOR_CLIENT_ADDRESS: raw }),
+    ).toThrow(ConfigurationError);
+  });
 
   it('経路を含む指定はオリジンだけを見る', () => {
     expect(
