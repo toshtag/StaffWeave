@@ -18,6 +18,7 @@ const app = createApp({
     defaultMaxBytes: config.maxRequestBodyBytes,
     bulkMaxBytes: config.maxBulkRequestBodyBytes,
   },
+  allowedOrigins: config.allowedOrigins,
 });
 
 // セルフホストでは、ビルド済みの Web を同じプロセスから配信できるようにする。

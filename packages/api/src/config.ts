@@ -11,6 +11,7 @@ import {
   DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
   DEFAULT_REQUEST_BODY_MAX_BYTES,
 } from './shared/security/body-limit.js';
+import { normalizeOrigin } from './shared/security/origin.js';
 
 export interface ApiConfig {
   databaseUrl: string;
@@ -36,6 +37,11 @@ export interface ApiConfig {
   maxRequestBodyBytes: number;
   /** CSV の取り込みなど、まとまった量を受け取る要求の本文の上限。 */
   maxBulkRequestBodyBytes: number;
+  /**
+   * Cookie の資格情報を使う要求で許す送信元。
+   * 空なら、要求が届いた宛先と同じホストだけを許す。
+   */
+  allowedOrigins: string[];
 }
 
 /** Webhook 送信ワーカーの動作設定。既定値と許容範囲はこの一箇所で決める。 */
@@ -171,6 +177,31 @@ function readCardFingerprintKey(raw: string | undefined): string | null {
   return value;
 }
 
+/**
+ * 許す送信元の一覧。
+ *
+ * 逆プロキシが `Host` を書き換える構成では、実際に画面が置かれるオリジンを並べる。
+ * 誤った値では起動させない。黙って読み飛ばすと、意図した送信元だけを許したつもりで
+ * すべての送信元を許した状態になる。
+ */
+function readAllowedOrigins(raw: string | undefined): string[] {
+  const values = (raw ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value !== '');
+
+  return values.map((value) => {
+    const normalized = normalizeOrigin(value);
+    if (normalized === null) {
+      throw new ConfigurationError(
+        `ALLOWED_ORIGINS に解釈できない値があります: ${value}` +
+          '（https://example.com のような、経路を含まない形で指定してください）',
+      );
+    }
+    return normalized;
+  });
+}
+
 function readEnvironment(raw: string | undefined): ApiConfig['environment'] {
   if (raw === undefined || raw === '') return 'development';
   if (raw === 'development' || raw === 'test' || raw === 'production') return raw;
@@ -202,6 +233,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       env.MAX_BULK_REQUEST_BODY_BYTES,
       API_SETTINGS.MAX_BULK_REQUEST_BODY_BYTES,
     ),
+    allowedOrigins: readAllowedOrigins(env.ALLOWED_ORIGINS),
   };
 }
 
