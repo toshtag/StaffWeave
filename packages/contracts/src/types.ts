@@ -274,6 +274,10 @@ export interface AssignWorkCycleRequest {
   effectiveTo?: string;
 }
 
+export interface EndWorkCycleAssignmentRequest {
+  effectiveTo: string;
+}
+
 export interface GenerateWorkSchedulesRequest {
   employeeId: string;
   from: string;

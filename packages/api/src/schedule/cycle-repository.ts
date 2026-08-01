@@ -31,6 +31,16 @@ export interface WorkCycleRepository {
   ): Promise<WorkCycleRecord>;
 
   listAssignments(workspaceId: string, employeeId: string): Promise<EmployeeWorkCycleRecord[]>;
+  findAssignment(
+    workspaceId: string,
+    employeeWorkCycleId: string,
+  ): Promise<EmployeeWorkCycleRecord | null>;
+  /** 割当に終了日を設定する。制度を切り替えるとき、次の割当と期間が重ならないようにする。 */
+  endAssignment(
+    workspaceId: string,
+    employeeWorkCycleId: string,
+    effectiveTo: BusinessDate,
+  ): Promise<EmployeeWorkCycleRecord>;
   createAssignment(
     workspaceId: string,
     input: {
@@ -211,10 +221,35 @@ export function createWorkCycleRepository(db: Queryable): WorkCycleRepository {
         `SELECT id, employee_id, work_cycle_id, anchor_date, effective_from, effective_to
            FROM employee_work_cycles
           WHERE workspace_id = $1 AND employee_id = $2
-          ORDER BY effective_from`,
+          -- 期間が重ならないことは制約で決めているが、並び順まで開始日だけに委ねない。
+          ORDER BY effective_from, work_cycle_id`,
         [workspaceId, employeeId],
       );
       return rows.map(toAssignment);
+    },
+
+    async findAssignment(workspaceId, employeeWorkCycleId) {
+      const rows = await db.query<AssignmentRow>(
+        `SELECT id, employee_id, work_cycle_id, anchor_date, effective_from, effective_to
+           FROM employee_work_cycles
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, employeeWorkCycleId],
+      );
+      const row = rows[0];
+      return row ? toAssignment(row) : null;
+    },
+
+    async endAssignment(workspaceId, employeeWorkCycleId, effectiveTo) {
+      const rows = await db.query<AssignmentRow>(
+        `UPDATE employee_work_cycles
+            SET effective_to = $3
+          WHERE workspace_id = $1 AND id = $2
+          RETURNING id, employee_id, work_cycle_id, anchor_date, effective_from, effective_to`,
+        [workspaceId, employeeWorkCycleId, effectiveTo],
+      );
+      const row = rows[0];
+      if (!row) throw new Error('勤務周期の割当を更新できませんでした');
+      return toAssignment(row);
     },
 
     async createAssignment(workspaceId, input) {

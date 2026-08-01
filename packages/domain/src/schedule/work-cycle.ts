@@ -59,7 +59,10 @@ export function cyclePositionOf(
 
 /**
  * 有効期間から、その業務日に適用する割当を選ぶ。
- * 期間が重なっている場合は、開始日が後のものを採用する。
+ *
+ * 同じ従業員の期間が重ならないことは DB の制約で決めている。
+ * それでもここでは開始日が並んだ場合の順序を固定し、渡された順序で結果が変わらないようにする。
+ * 勤務予定は同じ入力から常に同じ結果になる必要があるため。
  */
 export function selectAssignment(
   assignments: readonly WorkCycleAssignment[],
@@ -72,9 +75,20 @@ export function selectAssignment(
   );
   if (applicable.length === 0) return null;
 
-  return applicable.reduce((latest, assignment) =>
-    assignment.effectiveFrom > latest.effectiveFrom ? assignment : latest,
+  return applicable.reduce((selected, assignment) =>
+    isPreferredAssignment(assignment, selected) ? assignment : selected,
   );
+}
+
+/** 開始日が後のものを採る。並んだ場合は周期の識別子で決め、選択が順序に左右されないようにする。 */
+function isPreferredAssignment(
+  candidate: WorkCycleAssignment,
+  selected: WorkCycleAssignment,
+): boolean {
+  if (candidate.effectiveFrom !== selected.effectiveFrom) {
+    return candidate.effectiveFrom > selected.effectiveFrom;
+  }
+  return candidate.workCycleId > selected.workCycleId;
 }
 
 export interface ResolvedCycleDay {

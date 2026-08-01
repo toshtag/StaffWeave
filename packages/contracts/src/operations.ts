@@ -92,6 +92,7 @@ import {
   createWorkPatternRequestSchema,
   employeeWorkCycleListSchema,
   employeeWorkCycleSchema,
+  endWorkCycleAssignmentRequestSchema,
   generateWorkSchedulesRequestSchema,
   generateWorkSchedulesResponseSchema,
   leaveTypeListSchema,
@@ -976,6 +977,30 @@ export const operations = {
       {
         status: 404,
         description: '従業員または勤務周期が見つからない',
+        schema: errorResponseSchema,
+      },
+    ],
+  },
+  endWorkCycleAssignment: {
+    operationId: 'endWorkCycleAssignment',
+    method: 'post',
+    path: '/employee-work-cycles/{employeeWorkCycleId}/end',
+    summary: '勤務周期の割当に終了日を設定する',
+    tags: ['schedule'],
+    security: 'session',
+    pathParameters: [
+      { name: 'employeeWorkCycleId', description: '割当の識別子', schema: uuidSchema },
+    ],
+    requestBody: endWorkCycleAssignmentRequestSchema,
+    responses: [
+      { status: 200, description: '終了日を設定した割当', schema: employeeWorkCycleSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '割当が見つからない', schema: errorResponseSchema },
+      {
+        status: 409,
+        description: '他の割当と有効期間が重なる',
         schema: errorResponseSchema,
       },
     ],

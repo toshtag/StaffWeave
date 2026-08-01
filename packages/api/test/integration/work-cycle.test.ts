@@ -419,6 +419,106 @@ describe('勤務周期の割当と予定の生成', () => {
     expect(response.status).toBe(404);
   });
 
+  it('期間が重なる割当は受け付けない', async () => {
+    const instance = app();
+    await assign(instance, {
+      employeeId: fixture.employeeId,
+      workCycleId: cycleId,
+      anchorDate: '2026-04-01',
+      effectiveFrom: '2026-04-01',
+    });
+
+    // 終わりの無い割当があるため、以降のどの期間とも重なる。
+    const response = await instance.request(
+      '/api/employee-work-cycles',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          employeeId: fixture.employeeId,
+          workCycleId: cycleId,
+          anchorDate: '2026-04-01',
+          effectiveFrom: '2026-04-01',
+          effectiveTo: '2026-04-30',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { error: { message: string } }).error.message).toContain(
+      '終了日を設定してください',
+    );
+
+    const rows = await testDatabase().query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM employee_work_cycles WHERE employee_id = $1',
+      [fixture.employeeId],
+    );
+    expect(rows[0]?.count).toBe(1);
+  });
+
+  it('前の割当へ終了日を設定してから次を割り当てられる', async () => {
+    const instance = app();
+    const first = await assign(instance, {
+      employeeId: fixture.employeeId,
+      workCycleId: cycleId,
+      anchorDate: '2026-04-01',
+      effectiveFrom: '2026-04-01',
+    });
+
+    const ended = await instance.request(
+      `/api/employee-work-cycles/${first.id}/end`,
+      authorized(fixture.adminCookie, { method: 'POST', body: { effectiveTo: '2026-04-07' } }),
+    );
+    expect(ended.status).toBe(200);
+    expect(((await ended.json()) as EmployeeWorkCycleRecord).effectiveTo).toBe('2026-04-07');
+
+    const next = await instance.request(
+      '/api/employee-work-cycles',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          employeeId: fixture.employeeId,
+          workCycleId: cycleId,
+          anchorDate: '2026-04-08',
+          effectiveFrom: '2026-04-08',
+        },
+      }),
+    );
+    expect(next.status).toBe(201);
+  });
+
+  it('終了日を伸ばして次の割当と重ねられない', async () => {
+    const instance = app();
+    const first = await assign(instance, {
+      employeeId: fixture.employeeId,
+      workCycleId: cycleId,
+      anchorDate: '2026-04-01',
+      effectiveFrom: '2026-04-01',
+      effectiveTo: '2026-04-07',
+    });
+    await assign(instance, {
+      employeeId: fixture.employeeId,
+      workCycleId: cycleId,
+      anchorDate: '2026-04-08',
+      effectiveFrom: '2026-04-08',
+    });
+
+    const response = await instance.request(
+      `/api/employee-work-cycles/${first.id}/end`,
+      authorized(fixture.adminCookie, { method: 'POST', body: { effectiveTo: '2026-04-30' } }),
+    );
+
+    expect(response.status).toBe(409);
+  });
+
+  it('存在しない割当には終了日を設定できない', async () => {
+    const response = await app().request(
+      '/api/employee-work-cycles/00000000-0000-4000-8000-000000000000/end',
+      authorized(fixture.adminCookie, { method: 'POST', body: { effectiveTo: '2026-04-30' } }),
+    );
+
+    expect(response.status).toBe(404);
+  });
+
   it('終了日が開始日より前なら受け付けない', async () => {
     const response = await app().request(
       '/api/employee-work-cycles',

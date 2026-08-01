@@ -26,6 +26,12 @@ export function isForeignKeyViolation(error: unknown): boolean {
   return errorCodeOf(error) === '23503';
 }
 
+/** 排他制約違反（23P01）。期間の重なりのように、行どうしの関係を禁じる制約で起きる。 */
+export function isExclusionViolation(error: unknown, constraint?: string): boolean {
+  if (errorCodeOf(error) !== '23P01') return false;
+  return constraint === undefined || constraintOf(error) === constraint;
+}
+
 /** 検査制約違反（23514）。 */
 export function isCheckViolation(error: unknown): boolean {
   return errorCodeOf(error) === '23514';
