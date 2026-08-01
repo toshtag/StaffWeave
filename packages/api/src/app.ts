@@ -1,6 +1,7 @@
 import type { Database } from '@staffweave/db';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
+import { secureHeaders } from 'hono/secure-headers';
 import { createApprovalRepository } from './approval/repository.js';
 import { createApprovalRoutes } from './approval/routes.js';
 import { createApprovalService } from './approval/service.js';
@@ -53,6 +54,7 @@ import { createEmployeeVisibilityGuard } from './shared/employee-visibility.js';
 import { ApiError } from './shared/errors.js';
 import type { StructuredLogger } from './shared/logger.js';
 import { createConsoleLogger } from './shared/logger.js';
+import { securityHeaderOptions } from './shared/security/headers.js';
 import { createSystemRoutes } from './system/routes.js';
 
 export interface AppDependencies {
@@ -214,6 +216,8 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     c.set('auth', await identityService.authenticate(getCookie(c, SESSION_COOKIE_NAME)));
     c.set('apiKey', await integrationService.authenticate(c.req.header('authorization')));
     await next();
+    // 認証した相手向けの応答は保管させない。共有端末の戻る操作や中間の控えに残さないため。
+    c.header('cache-control', 'no-store');
   });
 
   api.route('/', createSystemRoutes({ db: deps.db, now, logger }));
@@ -254,6 +258,11 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createSessionRoutes({ service: sessionService }));
 
   const app = new Hono<AppEnv>();
+
+  // 防御用のヘッダーは、この 1 箇所で全部の応答へ付ける。
+  // セルフホストでは同じプロセスが API と画面の両方を返すため、経路ごとには分けない。
+  app.use('*', secureHeaders(securityHeaderOptions(deps.useSecureCookie ?? false)));
+
   app.route('/api', api);
 
   app.notFound((c) =>
