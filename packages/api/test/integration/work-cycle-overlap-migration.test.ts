@@ -212,6 +212,9 @@ describe('重複が残っているデータベース', () => {
         WHERE effective_to IS NULL`,
     );
 
-    await expect(migrate(overlapping)).resolves.toEqual({ appliedVersions: [19] });
+    // 後から足した版も一緒に適用されるため、この移行が通ったことだけを見る。
+    await expect(migrate(overlapping)).resolves.toEqual(
+      expect.objectContaining({ appliedVersions: expect.arrayContaining([19]) }),
+    );
   });
 });
