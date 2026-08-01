@@ -26,6 +26,35 @@ export const apiKeyListSchema = objectSchema({
   required: ['apiKeys'],
 });
 
+export const webhookDeliverySchema = objectSchema({
+  description: 'Webhook の送信結果。送信ワーカーが記録する',
+  properties: {
+    id: uuidSchema,
+    endpointId: uuidSchema,
+    eventType: { type: 'string', enum: [...WEBHOOK_EVENT_TYPES] },
+    eventId: uuidSchema,
+    attemptedAt: timestampSchema,
+    statusCode: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    outcome: { type: 'string', enum: ['delivered', 'failed', 'skipped'] },
+    errorMessage: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+  },
+  required: [
+    'id',
+    'endpointId',
+    'eventType',
+    'eventId',
+    'attemptedAt',
+    'statusCode',
+    'outcome',
+    'errorMessage',
+  ],
+});
+
+export const webhookDeliveryListSchema = objectSchema({
+  properties: { deliveries: arraySchema(webhookDeliverySchema) },
+  required: ['deliveries'],
+});
+
 export const createApiKeyRequestSchema = objectSchema({
   properties: {
     name: nameSchema,
@@ -102,6 +131,23 @@ export const importResultSchema = objectSchema({
   },
   required: ['created', 'problems'],
 });
+
+/**
+ * 従業員取り込みの CSV。
+ *
+ * 契約として示すのは、見出しの名前と必須の列、文字コードだけ。
+ * 実際の解釈は API が行うため、ここでは行の形を JSON Schema へ写さない。
+ */
+export const employeeImportCsvSchema = {
+  type: 'string',
+  description: [
+    'UTF-8 の CSV。1 行目は見出し。',
+    '必須の列: organization_code, employee_number, display_name。',
+    '任意の列: hired_on（YYYY-MM-DD）。',
+    '見出しに必須の列が無い場合は 400 を返す。',
+    '行ごとの失敗は取り込みを止めず、応答の problems へ行番号と理由を入れる。',
+  ].join(''),
+} as const;
 
 export const exportAttendanceQuerySchema = objectSchema({
   properties: { from: businessDateSchema, to: businessDateSchema },

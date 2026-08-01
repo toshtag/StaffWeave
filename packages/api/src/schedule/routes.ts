@@ -14,6 +14,7 @@ import {
   createWorkPatternRequestSchema,
   endWorkCycleAssignmentRequestSchema,
   generateWorkSchedulesRequestSchema,
+  honoPath,
   listWorkSchedulesQuerySchema,
   operations,
   upsertWorkScheduleRequestSchema,
@@ -23,7 +24,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { requirePermission } from '../shared/context.js';
 import { invalidRequest } from '../shared/errors.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { ScheduleService } from './service.js';
 
 export interface ScheduleRouteDependencies {
@@ -98,7 +99,7 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
     return c.json(await service.assignWorkCycle(auth.workspace.id, body), 201);
   });
 
-  app.post('/employee-work-cycles/:employeeWorkCycleId/end', async (c) => {
+  app.post(honoPath(operations.endWorkCycleAssignment), async (c) => {
     const auth = requirePermission(c, 'employee.manage');
     const body = await readBody<EndWorkCycleAssignmentRequest>(
       c,
@@ -107,7 +108,7 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
     return c.json(
       await service.endWorkCycleAssignment(
         auth.workspace.id,
-        c.req.param('employeeWorkCycleId'),
+        pathParam(c, 'employeeWorkCycleId'),
         body,
       ),
       200,

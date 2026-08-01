@@ -6,6 +6,7 @@ import type {
 import {
   cardEventRequestSchema,
   createCardRegistrationRequestSchema,
+  honoPath,
   operations,
   registerCardRequestSchema,
 } from '@staffweave/contracts';
@@ -14,7 +15,7 @@ import { DEVICE_ID_HEADER, DEVICE_SIGNATURE_HEADER } from '../device/routes.js';
 import type { AppEnv } from '../shared/context.js';
 import { requirePermission } from '../shared/context.js';
 import { ApiError } from '../shared/errors.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { CardService } from './service.js';
 
 export interface CardRouteDependencies {
@@ -22,7 +23,7 @@ export interface CardRouteDependencies {
 }
 
 /** 失効は経路に識別子を含むため、OpenAPI の表記ではなく Hono の書き方で持つ。 */
-const CARD_REVOKE_PATH = '/card-credentials/:cardCredentialId/revoke';
+const CARD_REVOKE_PATH = honoPath(operations.revokeCardCredential);
 
 /** カードの経路。有効なときと無効なときで同じ組を扱えるよう、一箇所に並べる。 */
 const CARD_PATHS = [
@@ -69,7 +70,7 @@ export function createCardRoutes(deps: CardRouteDependencies): Hono<AppEnv> {
 
   app.post(CARD_REVOKE_PATH, async (c) => {
     const auth = requirePermission(c, 'employee.manage');
-    return c.json(await service.revokeCredential(auth, c.req.param('cardCredentialId')), 200);
+    return c.json(await service.revokeCredential(auth, pathParam(c, 'cardCredentialId')), 200);
   });
 
   app.post(operations.registerCard.path, async (c) => {

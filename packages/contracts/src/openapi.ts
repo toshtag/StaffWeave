@@ -42,11 +42,18 @@ function toOpenApiOperation(operation: OperationContract): OpenApiOperation {
     ...queryParametersOf(operation.query),
   ];
   for (const response of operation.responses) {
+    // 応答の内容種別は操作が決める。失敗の応答はいつも JSON の error を返す。
+    const contentType =
+      response.status >= 400
+        ? 'application/json'
+        : (operation.responseContentType ?? 'application/json');
     responses[String(response.status)] = {
       description: response.description,
       ...(response.schema === undefined
-        ? {}
-        : { content: { 'application/json': { schema: response.schema } } }),
+        ? contentType === 'text/csv'
+          ? { content: { 'text/csv': { schema: { type: 'string' } } } }
+          : {}
+        : { content: { [contentType]: { schema: response.schema } } }),
     };
   }
 
@@ -58,17 +65,36 @@ function toOpenApiOperation(operation: OperationContract): OpenApiOperation {
     ...(operation.security === 'deviceSignature'
       ? { security: [{ deviceId: [], deviceSignature: [] }] }
       : {}),
+    // どちらか一方で呼べることを、security の配列（OR）で表す。
+    ...(operation.security === 'sessionOrApiKey'
+      ? { security: [{ sessionCookie: [] }, { apiKey: [] }] }
+      : {}),
     ...(parameters.length === 0 ? {} : { parameters }),
     ...(operation.requestBody === undefined
       ? {}
       : {
           requestBody: {
             required: true,
-            content: { 'application/json': { schema: operation.requestBody } },
+            content: {
+              [operation.requestContentType ?? 'application/json']: {
+                schema: operation.requestBody,
+              },
+            },
           },
         }),
     responses,
   };
+}
+
+/**
+ * 契約のパスを Hono の書き方へ直す。
+ *
+ * 契約は `/employees/{employeeId}`、Hono は `/employees/:employeeId` と書く。
+ * ルート側で文字列を書き直すと、片方だけを変えたときに気付けないため、
+ * 変換をここに置いて両方が同じ定義から出るようにする。
+ */
+export function honoPath(operation: { path: string }): string {
+  return operation.path.replaceAll(/\{([a-zA-Z0-9_]+)\}/g, ':$1');
 }
 
 /**
@@ -108,6 +134,13 @@ export function buildOpenApiDocument(version: string): Record<string, unknown> {
           in: 'header',
           name: 'x-staffweave-device',
           description: '打刻端末の識別子',
+        },
+        apiKey: {
+          type: 'http',
+          scheme: 'bearer',
+          description:
+            '外部連携用の API キー。Authorization: Bearer <key> で渡す。' +
+            'ワークスペース単位のスコープを持ち、組織単位の制限は持たない',
         },
         deviceSignature: {
           type: 'apiKey',

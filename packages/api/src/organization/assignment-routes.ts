@@ -9,12 +9,13 @@ import {
   createEmployeeAssignmentRequestSchema,
   endEmployeeAssignmentRequestSchema,
   grantUserScopeRequestSchema,
+  honoPath,
   operations,
 } from '@staffweave/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { requirePermission } from '../shared/context.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { AssignmentService } from './assignment-service.js';
 
 export interface AssignmentRouteDependencies {
@@ -53,14 +54,14 @@ export function createAssignmentRoutes(deps: AssignmentRouteDependencies): Hono<
     return c.json(await service.createAssignment(auth.workspace.id, body), 201);
   });
 
-  app.post('/employee-assignments/:employeeAssignmentId/end', async (c) => {
+  app.post(honoPath(operations.endEmployeeAssignment), async (c) => {
     const auth = requirePermission(c, 'employee.manage');
     const body = await readBody<EndEmployeeAssignmentRequest>(
       c,
       endEmployeeAssignmentRequestSchema,
     );
     return c.json(
-      await service.endAssignment(auth.workspace.id, c.req.param('employeeAssignmentId'), body),
+      await service.endAssignment(auth.workspace.id, pathParam(c, 'employeeAssignmentId'), body),
       200,
     );
   });

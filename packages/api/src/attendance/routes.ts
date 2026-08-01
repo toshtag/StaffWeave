@@ -1,13 +1,14 @@
 import type { CorrectAttendanceRequest, RecordAttendanceEventRequest } from '@staffweave/contracts';
 import {
   correctAttendanceRequestSchema,
+  honoPath,
   operations,
   recordAttendanceEventRequestSchema,
 } from '@staffweave/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { AttendanceService } from './service.js';
 
 export interface AttendanceRouteDependencies {
@@ -39,8 +40,8 @@ export function createAttendanceRoutes(deps: AttendanceRouteDependencies): Hono<
     c.json(await deps.service.getToday(currentAuth(c)), 200),
   );
 
-  app.get('/attendance/days/:businessDate', async (c) =>
-    c.json(await deps.service.getDay(currentAuth(c), c.req.param('businessDate')), 200),
+  app.get(honoPath(operations.getAttendanceDay), async (c) =>
+    c.json(await deps.service.getDay(currentAuth(c), pathParam(c, 'businessDate')), 200),
   );
 
   return app;
