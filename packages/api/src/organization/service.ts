@@ -108,6 +108,11 @@ export function createOrganizationService(
           name: input.name,
         });
       } catch (error) {
+        if (isForeignKeyViolation(error, 'departments_parent_fkey')) {
+          throw invalidRequest([
+            { field: 'parentDepartmentId', message: '親部門は同じ組織の部門から選んでください' },
+          ]);
+        }
         if (isUniqueViolation(error)) {
           throw conflict(`コード ${code} の部門はすでに登録されています`);
         }
@@ -184,9 +189,30 @@ export function createOrganizationService(
         if (isUniqueViolation(error)) {
           throw conflict(`従業員番号 ${employeeNumber} はすでに使われています`);
         }
-        if (isForeignKeyViolation(error)) throw notFound('組織・拠点・部門のいずれか');
-        throw error;
+        throw employeeReferenceError(error);
       }
     },
   };
+}
+
+/**
+ * 従業員の参照先が受け付けられなかった理由を、利用者に分かる形へ直す。
+ *
+ * 主拠点と主部門は所属組織のものに限る。制約は DB が持つため、
+ * 存在しない拠点も、別の組織の拠点も、同じ外部キー違反として届く。
+ * どちらであっても「所属組織の拠点ではない」ことに変わりはないため、そう伝える。
+ */
+function employeeReferenceError(error: unknown): unknown {
+  if (isForeignKeyViolation(error, 'employees_site_fkey')) {
+    return invalidRequest([
+      { field: 'primarySiteId', message: '主拠点は所属組織の拠点から選んでください' },
+    ]);
+  }
+  if (isForeignKeyViolation(error, 'employees_department_fkey')) {
+    return invalidRequest([
+      { field: 'primaryDepartmentId', message: '主部門は所属組織の部門から選んでください' },
+    ]);
+  }
+  if (isForeignKeyViolation(error)) return notFound('組織・拠点・部門のいずれか');
+  return error;
 }
