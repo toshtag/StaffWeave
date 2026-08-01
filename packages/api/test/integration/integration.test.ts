@@ -154,6 +154,26 @@ describe('CSV 出力', () => {
     );
     expect(response.status).toBe(403);
   });
+
+  it('表計算で数式として動く表示名を、そのままの値として出す', async () => {
+    // 表示名は登録できる文字を選べる。出力を開く相手の画面で数式が動かないようにする。
+    const formulaName = '=HYPERLINK("http://example.com","社内資料")';
+    await testDatabase().query(
+      'UPDATE employees SET display_name = $1 WHERE employee_number = $2',
+      [formulaName, 'E001'],
+    );
+
+    for (const path of [
+      '/api/exports/attendance.csv?from=2026-04-01&to=2026-04-30',
+      '/api/exports/payroll.csv?period=2026-04-01',
+    ]) {
+      const csv = await (await app().request(path, authorized(fixture.adminCookie))).text();
+
+      // 出力の中では印が付き、読み戻すと元の値へ戻る。
+      expect(csv).toContain('"\'=HYPERLINK');
+      expect(parseCsv(csv).rows[0]?.display_name).toBe(formulaName);
+    }
+  });
 });
 
 describe('CSV 取り込み', () => {

@@ -27,6 +27,36 @@ describe('toCsv', () => {
   });
 });
 
+describe('表計算で数式として動く値', () => {
+  it.each(['=1+1', '+1', '-1', '@SUM(A1)', '\tA1', '\rA1'])('%j に印を付ける', (value) => {
+    expect(toCsvValue(value)).toBe(`"'${value.replaceAll('"', '""')}"`);
+  });
+
+  it('数式にならない値へは印を付けない', () => {
+    expect(toCsvValue('勤怠 花子')).toBe('"勤怠 花子"');
+    expect(toCsvValue('E001')).toBe('"E001"');
+  });
+
+  it('数値はそのまま書く', () => {
+    expect(toCsvValue(-1)).toBe('"-1"');
+    expect(toCsvValue(480)).toBe('"480"');
+  });
+
+  it('見出しにも同じ規則を適用する', () => {
+    expect(toCsv(['=cmd'], [])).toBe('"\'=cmd"');
+  });
+
+  it('印を付けた値を読み戻すと元の値になる', () => {
+    const csv = toCsv(['display_name'], [['=HYPERLINK("http://example.com","社内資料")']]);
+    expect(parseCsv(csv).rows[0]?.display_name).toBe('=HYPERLINK("http://example.com","社内資料")');
+  });
+
+  it('印に見える文字で始まるだけの値は変えない', () => {
+    const csv = toCsv(['note'], [["'ないしょ"]]);
+    expect(parseCsv(csv).rows[0]?.note).toBe("'ないしょ");
+  });
+});
+
 describe('parseCsv', () => {
   it('見出しと行を読み取る', () => {
     const result = parseCsv('"code","name"\n"E001","勤怠 花子"');
