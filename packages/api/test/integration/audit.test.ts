@@ -334,4 +334,15 @@ describe('監査記録', () => {
     const response = await app().request('/api/audit/logs', authorized(fixture.employeeCookie));
     expect(response.status).toBe(403);
   });
+
+  // 記録には従業員に紐づかない操作が混ざり、要約には氏名がそのまま入る。
+  // 閲覧範囲で機械的に絞れないため、組織管理者にも見せない。
+  it('組織管理者は閲覧範囲を持っていても監査記録を見られない', async () => {
+    const instance = app();
+    await punch(instance, fixture.employeeCookie, 'clock_in', 'audit-scope-in', CLOCK_IN_AT);
+
+    const response = await instance.request('/api/audit/logs', authorized(fixture.approverCookie));
+
+    expect(response.status).toBe(403);
+  });
 });

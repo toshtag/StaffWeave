@@ -130,6 +130,7 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 | `listAssignmentContracts` | GET | `/assignment-contracts` | `organization.read` | 組織間の契約。従業員は含まない |
 | `createAssignmentContract` | POST | `/assignment-contracts` | `organization.manage` | — |
 | `listUserScopes` / `grantUserScope` | GET / POST | `/user-scopes` | `user.manage` | 閲覧範囲そのものの管理 |
+| `listAuditLogs` | GET | `/audit/logs` | `audit.read` | ワークスペース管理者のみ。上の「監査記録」を参照 |
 | `listDevices` / `listDeviceReceipts` | GET | `/devices`, `/devices/{deviceId}/receipts` | `organization.read` | 端末と受領記録 |
 | `registerDevice` / `revokeDevice` | POST | `/devices`, `/devices/{deviceId}/revoke` | `organization.manage` | — |
 | `listApiKeys` / `createApiKey` | GET / POST | `/api-keys` | `user.manage` | — |
@@ -140,19 +141,16 @@ API キーで呼べる出力は、そのワークスペースの全従業員を�
 | `enrollDevice` / `recordDeviceEvent` / `registerCard` / `recordCardEvent` / `recordSessionObservations` | POST | `/device-agent/*` | 端末の署名 | セッションを使わない |
 | — | GET | `/health`, `/ready`, `/openapi.json` | — | 認証不要 |
 
-## 未解決
+## 監査記録
 
-### 監査ログに閲覧範囲を適用していない
+`listAuditLogs`（`GET /audit/logs`）はワークスペース管理者だけが読めます（`audit.read`）。
 
-`listAuditLogs`（`GET /audit/logs`、`organization.read`）は、ワークスペース全体の監査記録を返します。
-記録の `summary` には従業員の氏名が含まれることがあります。
+記録には従業員に紐づかない操作（端末の登録、API キーの発行、Webhook の設定）が混ざり、
+`summary` は自由文で氏名がそのまま入ります。従業員 ID で絞っても、
+要約に他の従業員の名前が含まれる記録を機械的に取り除けません。
+そのため閲覧範囲での絞り込みは行わず、読める相手をロールで限ります。
 
-組織管理者に監査記録を見せるべきかどうかは、業務上の判断を要します。
-「範囲内の従業員に関する記録だけを見せる」のか、「そもそも見せない」のかで扱いが変わり、
-記録には従業員に紐づかない操作（端末の登録、API キーの発行など）も混ざります。
-
-この判断は今回の共通修正の対象外とし、
-[Issue #35](https://github.com/toshtag/staffweave/issues/35) に記録しています。
+組織管理者向けに範囲内の記録だけを見せる表示は、管理画面（P17）で扱います。
 
 ## 歴史的な記録
 
