@@ -147,6 +147,18 @@ describe('CSV 出力', () => {
     expect(response.status).toBe(400);
   });
 
+  // 契約は from・to・period を必須にしている。読み落として空文字で先へ進めない。
+  it.each([
+    ['/api/exports/attendance.csv', '期間を指定しない勤怠の出力'],
+    ['/api/exports/attendance.csv?from=2026-04-01', '終わりを指定しない勤怠の出力'],
+    ['/api/exports/attendance.csv?from=2026-04-01&to=2026-04', '日付として読めない終わり'],
+    ['/api/exports/payroll.csv', '対象月を指定しない給与連携の出力'],
+    ['/api/exports/payroll.csv?period=2026-04-15', '月の 1 日ではない対象月'],
+  ])('%s は 400 を返す（%s）', async (path) => {
+    const response = await app().request(path, authorized(fixture.adminCookie));
+    expect(response.status).toBe(400);
+  });
+
   it('従業員ロールは出力できない', async () => {
     const response = await app().request(
       '/api/exports/attendance.csv?from=2026-04-01&to=2026-04-30',

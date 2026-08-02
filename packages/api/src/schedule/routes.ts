@@ -15,16 +15,15 @@ import {
   endWorkCycleAssignmentRequestSchema,
   generateWorkSchedulesRequestSchema,
   honoPath,
+  listEmployeeWorkCyclesQuerySchema,
   listWorkSchedulesQuerySchema,
   operations,
   upsertWorkScheduleRequestSchema,
-  validate,
 } from '@staffweave/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { requirePermission } from '../shared/context.js';
-import { invalidRequest } from '../shared/errors.js';
-import { pathParam, readBody } from '../shared/request.js';
+import { pathParam, readBody, readQuery } from '../shared/request.js';
 import type { ScheduleService } from './service.js';
 
 export interface ScheduleRouteDependencies {
@@ -48,12 +47,11 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
 
   app.get(operations.listWorkSchedules.path, async (c) => {
     const auth = requirePermission(c, 'employee.read');
-    const query = validate<{ employeeId: string; from: string; to: string }>(
+    const query = readQuery<{ employeeId: string; from: string; to: string }>(
+      c,
       listWorkSchedulesQuerySchema,
-      Object.fromEntries(new URL(c.req.url).searchParams),
     );
-    if (!query.valid) throw invalidRequest(query.problems);
-    return c.json({ workSchedules: await service.listWorkSchedules(auth, query.value) }, 200);
+    return c.json({ workSchedules: await service.listWorkSchedules(auth, query) }, 200);
   });
 
   app.put(operations.upsertWorkSchedule.path, async (c) => {
@@ -86,11 +84,8 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
 
   app.get(operations.listEmployeeWorkCycles.path, async (c) => {
     const auth = requirePermission(c, 'employee.read');
-    const employeeId = new URL(c.req.url).searchParams.get('employeeId');
-    if (employeeId === null) {
-      throw invalidRequest([{ field: 'employeeId', message: '従業員を指定してください' }]);
-    }
-    return c.json({ assignments: await service.listAssignments(auth, employeeId) }, 200);
+    const query = readQuery<{ employeeId: string }>(c, listEmployeeWorkCyclesQuerySchema);
+    return c.json({ assignments: await service.listAssignments(auth, query.employeeId) }, 200);
   });
 
   app.post(operations.assignWorkCycle.path, async (c) => {

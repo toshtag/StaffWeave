@@ -541,6 +541,15 @@ describe('勤怠との乖離', () => {
     expect(response.status).toBe(400);
   });
 
+  // 従業員の指定は任意だが、渡された値の形は契約どおりに確かめる。
+  it('従業員の識別子の形式が不正なら 400 を返す', async () => {
+    const response = await app().request(
+      `/api/attendance/days/${BUSINESS_DATE}/discrepancies?employeeId=not-a-uuid`,
+      authorized(fixture.adminCookie),
+    );
+    expect(response.status).toBe(400);
+  });
+
   it('乖離を示しても打刻や計算は変わらない', async () => {
     const instance = app();
     const before = await testDatabase().query<{ count: number }>(

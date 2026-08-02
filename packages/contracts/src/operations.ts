@@ -101,6 +101,7 @@ import {
   generateWorkSchedulesResponseSchema,
   leaveTypeListSchema,
   leaveTypeSchema,
+  listEmployeeWorkCyclesQuerySchema,
   listWorkSchedulesQuerySchema,
   upsertWorkScheduleRequestSchema,
   workCycleListSchema,
@@ -112,6 +113,7 @@ import {
 } from './schemas/schedule.js';
 import {
   discrepancyReportSchema,
+  getDiscrepancyReportQuerySchema,
   listSessionObservationsQuerySchema,
   recordSessionObservationsRequestSchema,
   recordSessionObservationsResponseSchema,
@@ -892,6 +894,7 @@ export const operations = {
     pathParameters: [
       { name: 'businessDate', description: '業務日（YYYY-MM-DD）', schema: businessDateSchema },
     ],
+    query: getDiscrepancyReportQuerySchema,
     responses: [
       { status: 200, description: '食い違いと根拠', schema: discrepancyReportSchema },
       invalidRequest,
@@ -965,7 +968,7 @@ export const operations = {
     summary: '従業員への勤務周期の割当を一覧する',
     tags: ['schedule'],
     security: 'session',
-    query: listWorkSchedulesQuerySchema,
+    query: listEmployeeWorkCyclesQuerySchema,
     responses: [
       { status: 200, description: '割当の一覧', schema: employeeWorkCycleListSchema },
       invalidRequest,
