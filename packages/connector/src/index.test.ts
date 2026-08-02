@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { createConnector, deriveWebhookSigningKey, verifyWebhook } from './index.js';
+import { createServer, type Server } from 'node:http';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  ConnectorError,
+  createConnector,
+  deriveWebhookSigningKey,
+  verifyWebhook,
+} from './index.js';
 
 /**
  * 受け取り側の計算を固定値で押さえる。
@@ -150,5 +156,80 @@ describe('createConnector', () => {
     })();
 
     expect(error?.message).not.toContain(apiKey);
+  });
+});
+
+/**
+ * 検査していない宛先へ API キーと要求を出さないことを固定する。
+ *
+ * 接続先を確かめられるのは、渡された URL に対してだけ。
+ * リダイレクトへ追従すると、確かめていない宛先へ要求が届く。
+ *
+ * 通信はループバックの中だけで完結させ、外部のサーバーへは接続しない。
+ */
+describe('リダイレクトの扱い', () => {
+  const apiKey = 'connector-test-api-key';
+  const servers: Server[] = [];
+
+  async function listen(handler: Parameters<typeof createServer>[1]): Promise<number> {
+    const server = createServer(handler);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    return (server.address() as { port: number }).port;
+  }
+
+  afterEach(async () => {
+    await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+    servers.length = 0;
+  });
+
+  it.each([301, 302, 303, 307, 308])('%d に追従せず、転送先へ要求を出さない', async (status) => {
+    const arrived: string[] = [];
+    const target = await listen((request, response) => {
+      arrived.push(request.url ?? '');
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{}');
+    });
+    const redirector = await listen((_request, response) => {
+      response.writeHead(status, { location: `http://127.0.0.1:${target}/moved` });
+      response.end();
+    });
+
+    const error = await createConnector({ baseUrl: `http://127.0.0.1:${redirector}`, apiKey })
+      .get('/attendance/today')
+      .catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(ConnectorError);
+    expect(error).toMatchObject({ status });
+    expect(arrived).toEqual([]);
+  });
+
+  it('断る理由に API キーも転送先も含めない', async () => {
+    const target = await listen((_request, response) => response.end());
+    const location = `http://127.0.0.1:${target}/moved`;
+    const redirector = await listen((_request, response) => {
+      response.writeHead(307, { location });
+      response.end();
+    });
+
+    const error = (await createConnector({ baseUrl: `http://127.0.0.1:${redirector}`, apiKey })
+      .get('/attendance/today')
+      .catch((thrown: unknown) => thrown)) as ConnectorError;
+
+    expect(error.message).not.toContain(apiKey);
+    expect(error.message).not.toContain(location);
+  });
+
+  it('転送でない応答はこれまでどおり扱う', async () => {
+    const server = await listen((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{"businessDate":"2026-04-01"}');
+    });
+
+    const body = await createConnector({ baseUrl: `http://127.0.0.1:${server}`, apiKey }).get<{
+      businessDate: string;
+    }>('/attendance/today');
+
+    expect(body.businessDate).toBe('2026-04-01');
   });
 });
