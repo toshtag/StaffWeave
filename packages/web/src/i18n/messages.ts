@@ -27,6 +27,13 @@ export interface Messages {
   noOrganizations: string;
   unimplementedNotice: string;
   sessionExpiresAt: string;
+  changePassword: string;
+  currentPassword: string;
+  newPassword: string;
+  changingPassword: string;
+  passwordChanged: string;
+  passwordChangeFailed: string;
+  otherSessionsSignedOut: string;
   today: string;
   clockIn: string;
   clockOut: string;
@@ -134,6 +141,13 @@ const ja: Messages = {
   noOrganizations: '組織はまだ登録されていません',
   unimplementedNotice: '休憩、勤務時間の計算、申請・承認はまだ実装されていません。',
   sessionExpiresAt: 'セッション有効期限',
+  changePassword: 'パスワードの変更',
+  currentPassword: '現在のパスワード',
+  newPassword: '新しいパスワード',
+  changingPassword: '変更しています…',
+  passwordChanged: 'パスワードを変更しました',
+  passwordChangeFailed: 'パスワードを変更できませんでした',
+  otherSessionsSignedOut: '他の端末のセッションはログアウトしました。',
   today: '本日の勤怠',
   clockIn: '出勤',
   clockOut: '退勤',
@@ -251,6 +265,13 @@ const en: Messages = {
   noOrganizations: 'No organizations have been registered yet',
   unimplementedNotice: 'Breaks, worked-time calculation, and approvals are not implemented yet.',
   sessionExpiresAt: 'Session expires at',
+  changePassword: 'Change password',
+  currentPassword: 'Current password',
+  newPassword: 'New password',
+  changingPassword: 'Changing…',
+  passwordChanged: 'Password changed',
+  passwordChangeFailed: 'Could not change the password',
+  otherSessionsSignedOut: 'Sessions on other devices have been signed out.',
   today: "Today's attendance",
   clockIn: 'Clock in',
   clockOut: 'Clock out',

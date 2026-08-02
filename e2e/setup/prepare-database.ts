@@ -91,6 +91,18 @@ export const E2E_STORED_PUNCH_EMPLOYEE: SeededAccount = {
   displayName: '検証 九郎',
 };
 
+/**
+ * パスワード変更を確かめるための従業員。
+ *
+ * 変更すると以後ログインできなくなるため、他の画面テストと共有しない。
+ */
+export const E2E_PASSWORD_EMPLOYEE: SeededAccount = {
+  email: 'password@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E010',
+  displayName: '検証 十郎',
+};
+
 const SEEDED_ACCOUNTS = [
   E2E_EMPLOYEE,
   E2E_MOBILE_EMPLOYEE,
@@ -101,6 +113,7 @@ const SEEDED_ACCOUNTS = [
   E2E_STORAGE_FAILURE_EMPLOYEE,
   E2E_STORAGE_READ_EMPLOYEE,
   E2E_STORED_PUNCH_EMPLOYEE,
+  E2E_PASSWORD_EMPLOYEE,
 ];
 
 export function e2eDatabaseUrl(): string {

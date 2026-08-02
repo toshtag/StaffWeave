@@ -1,5 +1,6 @@
 import type {
   AnomalyList,
+  ChangePasswordRequest,
   CloseMonthRequest,
   CorrectAttendanceRequest,
   CorrectAttendanceResponse,
@@ -68,6 +69,8 @@ export const api = {
   login: (input: LoginRequest) =>
     request<SessionResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
+  changePassword: (input: ChangePasswordRequest) =>
+    request<void>('/auth/password', { method: 'POST', body: JSON.stringify(input) }),
   updatePreferences: (input: UpdatePreferencesRequest) =>
     request<SessionResponse>('/auth/preferences', {
       method: 'PATCH',
