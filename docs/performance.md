@@ -51,6 +51,23 @@ SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred
 セッションの延長は、要否を判断してから書きます（`shouldRenew`）。
 要求のたびに書くと、読み取りだけの要求にも書き込みの待ち時間が乗ります。
 
+### 繰り返しの中で変わらないもの
+
+複数の日をまとめて処理する経路では、日ごとに変わらない問い合わせを繰り返しの外へ出します。
+勤務予定の生成（`generateWorkSchedules`）は、次を期間ごとに 1 回だけ読みます。
+
+| 読むもの | なぜ 1 回でよいか |
+| --- | --- |
+| 計算ルール（`calculation_rule_sets`） | ワークスペース単位の設定で、日によって変わらない |
+| 業務日のタイムゾーン | 従業員の主たる拠点で決まり、日によって変わらない |
+| すでにある予定（`work_schedules`） | 期間分をまとめて読み、日付の集合として持てる |
+
+計算ルールは `recalculateWorkDay` の引数として渡します。
+1 日分だけを処理する経路（打刻・修正・予定の変更）は、これまでどおり自分で読みます。
+
+繰り返しの中は 1 つのトランザクションです。往復が増えるほど接続を長く占有し、
+その間は掃除できない行が積み上がります。
+
 ### 閲覧範囲の判定
 
 「誰の勤怠を見てよいか」の判定材料は、対象の従業員の分だけを読みます。
@@ -135,6 +152,12 @@ UPDATE api_keys SET last_used_at = $2
 - `packages/api/src/identity/service.test.ts`
 - `packages/api/src/integration/service.test.ts`
 - `packages/api/src/shared/employee-visibility.test.ts`
+
+問い合わせの回数が入力の大きさで決まる経路では、大きさを変えて比べます。
+実行された SQL を数える覆いを本物のデータベースへかぶせ、
+日数を変えても増えないことを確かめます。
+
+- `packages/api/test/integration/schedule-generation-queries.test.ts`
 
 この形のテストは、回数そのものを主張します。
 「件数を増やしても回数が変わらない」ことを確かめるため、
