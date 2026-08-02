@@ -69,6 +69,23 @@ export const loginRequestSchema = objectSchema({
   required: ['email', 'password'],
 });
 
+export const changePasswordRequestSchema = objectSchema({
+  description: '本人によるパスワードの変更。現在のパスワードの確認を必須にする',
+  properties: {
+    currentPassword: {
+      type: 'string',
+      minLength: MINIMUM_PASSWORD_LENGTH,
+      maxLength: MAXIMUM_PASSWORD_LENGTH,
+    },
+    newPassword: {
+      type: 'string',
+      minLength: MINIMUM_PASSWORD_LENGTH,
+      maxLength: MAXIMUM_PASSWORD_LENGTH,
+    },
+  },
+  required: ['currentPassword', 'newPassword'],
+});
+
 export const updatePreferencesRequestSchema = objectSchema({
   description: '利用者の表示設定',
   properties: {

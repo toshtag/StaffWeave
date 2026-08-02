@@ -66,6 +66,7 @@ export interface IdentityRepository {
   listOrganizationScopes(workspaceId: string, userId: string): Promise<string[]>;
   findEmployeeByUserId(workspaceId: string, userId: string): Promise<EmployeeLinkRecord | null>;
   updateUserLocale(workspaceId: string, userId: string, locale: Locale): Promise<void>;
+  updateUserPassword(workspaceId: string, userId: string, passwordHash: string): Promise<void>;
   createSession(input: {
     workspaceId: string;
     userId: string;
@@ -81,6 +82,18 @@ export interface IdentityRepository {
   findSessionContextByTokenHash(tokenHash: string): Promise<SessionContextRecord | null>;
   renewSession(sessionId: string, expiresAt: Date, seenAt: Date): Promise<void>;
   revokeSessionByTokenHash(tokenHash: string, revokedAt: Date): Promise<void>;
+  /**
+   * 利用者のセッションをまとめて失効させる。
+   *
+   * `exceptTokenHash` を渡すと、そのセッションだけ残す。
+   * パスワードを変えた本人を、その場でログアウトさせないため。
+   */
+  revokeSessionsOfUser(input: {
+    workspaceId: string;
+    userId: string;
+    revokedAt: Date;
+    exceptTokenHash?: string;
+  }): Promise<number>;
 }
 
 interface WorkspaceRow {
@@ -254,6 +267,13 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
       );
     },
 
+    async updateUserPassword(workspaceId, userId, passwordHash) {
+      await db.query(
+        'UPDATE users SET password_hash = $3, updated_at = now() WHERE workspace_id = $1 AND id = $2',
+        [workspaceId, userId, passwordHash],
+      );
+    },
+
     async createSession(input) {
       const rows = await db.query<SessionRow>(
         `INSERT INTO sessions (workspace_id, user_id, token_hash, issued_at, expires_at, last_seen_at)
@@ -323,6 +343,20 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
         expiresAt,
         seenAt,
       ]);
+    },
+
+    async revokeSessionsOfUser(input) {
+      const rows = await db.query<{ id: string }>(
+        `UPDATE sessions
+            SET revoked_at = $3
+          WHERE workspace_id = $1
+            AND user_id = $2
+            AND revoked_at IS NULL
+            AND ($4::text IS NULL OR token_hash <> $4)
+          RETURNING id`,
+        [input.workspaceId, input.userId, input.revokedAt, input.exceptTokenHash ?? null],
+      );
+      return rows.length;
     },
 
     async revokeSessionByTokenHash(tokenHash, revokedAt) {

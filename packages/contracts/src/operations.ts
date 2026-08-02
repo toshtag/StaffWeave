@@ -36,6 +36,7 @@ import {
   listAnomaliesQuerySchema,
 } from './schemas/audit.js';
 import {
+  changePasswordRequestSchema,
   loginRequestSchema,
   sessionResponseSchema,
   updatePreferencesRequestSchema,
@@ -213,6 +214,20 @@ export const operations = {
     security: 'session',
     responses: [
       { status: 200, description: '有効なセッション', schema: sessionResponseSchema },
+      unauthorized,
+    ],
+  },
+  changePassword: {
+    operationId: 'changePassword',
+    method: 'post',
+    path: '/auth/password',
+    summary: '現在のパスワードを確認したうえで、自分のパスワードを変更する',
+    tags: ['auth'],
+    security: 'session',
+    requestBody: changePasswordRequestSchema,
+    responses: [
+      { status: 204, description: '変更済み。他のセッションは失効する' },
+      invalidRequest,
       unauthorized,
     ],
   },

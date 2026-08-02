@@ -120,6 +120,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     loginAttempts: createLoginAttemptRepository(deps.db),
     loginAttemptPolicy: deps.loginAttemptPolicy ?? DEFAULT_LOGIN_ATTEMPT_POLICY,
     logger,
+    audit: createAuditRepository(deps.db),
   });
 
   const assignmentRepository = createAssignmentRepository(deps.db);

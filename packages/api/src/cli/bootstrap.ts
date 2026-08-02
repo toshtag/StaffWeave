@@ -106,7 +106,9 @@ async function main(): Promise<void> {
     if (generated) {
       console.log('');
       console.log(`初期パスワード: ${password}`);
-      console.log('この値は再表示できません。ログイン後に変更してください。');
+      console.log(
+        'この値は再表示できません。ログイン後、画面の「パスワードの変更」から変えてください。',
+      );
     }
   } finally {
     await db.close();

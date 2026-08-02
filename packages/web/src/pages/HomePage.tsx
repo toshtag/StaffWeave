@@ -6,6 +6,7 @@ import { useLocale } from '../i18n/LocaleProvider.tsx';
 import { businessToday } from '../session/business-date.ts';
 import { useSession } from '../session/SessionProvider.tsx';
 import { AnomalyPanel } from './AnomalyPanel.tsx';
+import { ChangePassword } from './ChangePassword.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
 import { PendingApprovals } from './PendingApprovals.tsx';
 import { TodayAttendance } from './TodayAttendance.tsx';
@@ -120,6 +121,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
             <dd>{new Date(session.expiresAt).toLocaleString(locale)}</dd>
           </dl>
         </section>
+
+        <ChangePassword />
 
         <OrganizationTable session={session} />
 
