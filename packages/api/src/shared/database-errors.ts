@@ -35,8 +35,3 @@ export function isExclusionViolation(error: unknown, constraint?: string): boole
   if (errorCodeOf(error) !== '23P01') return false;
   return constraint === undefined || constraintOf(error) === constraint;
 }
-
-/** 検査制約違反（23514）。 */
-export function isCheckViolation(error: unknown): boolean {
-  return errorCodeOf(error) === '23514';
-}
