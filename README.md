@@ -434,6 +434,7 @@ staffweave は不正打刻の完全な防止や、特定の国・地域の労働
 | [docs/module-boundaries.md](docs/module-boundaries.md) | パッケージ構成と依存方向 |
 | [docs/glossary.md](docs/glossary.md) | 日英用語集（識別子・API・DB 名の基準） |
 | [docs/roadmap.md](docs/roadmap.md) | P0〜P22 のロードマップ |
+| [docs/performance.md](docs/performance.md) | 問い合わせ回数と索引の決めごと |
 | [docs/security/webhook-target-policy.md](docs/security/webhook-target-policy.md) | Webhook 送信先のネットワーク方針 |
 | [docs/security/webhook-signing.md](docs/security/webhook-signing.md) | Webhook 署名鍵の保存と検証手順 |
 | [docs/security/card-fingerprint-key.md](docs/security/card-fingerprint-key.md) | IC カード指紋鍵の設定と Workspace ごとの分離 |
