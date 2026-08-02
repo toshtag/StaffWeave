@@ -36,6 +36,21 @@ SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred
 
 対象の申請が 0 件なら、遷移は問い合わせません。
 
+### 認証
+
+認証は `/api` のすべての要求で通ります。ここでかかる往復は、
+処理そのものが軽い要求（打刻の状態確認、セッションの確認）でも応答時間の下限になります。
+
+セッション・ワークスペース・利用者・ロール・従業員・閲覧範囲は、
+すべてセッションから外部キーでたどれます。分けて引く理由がないため、
+`findSessionContextByTokenHash` の 1 回で読みます。
+
+ロールと閲覧範囲は `array_agg(… ORDER BY …)` で集めます。
+並び順は応答へそのまま出るため、分けて引いていたときと同じ順序にします。
+
+セッションの延長は、要否を判断してから書きます（`shouldRenew`）。
+要求のたびに書くと、読み取りだけの要求にも書き込みの待ち時間が乗ります。
+
 ## 読む量を期間に比例させる
 
 期間を指定した検索は、期間に比例した行だけを読む。
@@ -72,6 +87,7 @@ SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred
 `Queryable` を差し替えて実行された SQL を記録する単体テストで固定します。
 
 - `packages/api/src/approval/repository.test.ts`
+- `packages/api/src/identity/service.test.ts`
 
 この形のテストは、回数そのものを主張します。
 「件数を増やしても回数が変わらない」ことを確かめるため、

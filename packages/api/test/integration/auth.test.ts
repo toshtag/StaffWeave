@@ -4,8 +4,11 @@ import { testDatabase } from '../../../../test/integration-setup.js';
 import { createApp } from '../../src/app.js';
 import {
   authorized,
+  createEmployeeWithAccount,
+  createOrganization,
   createUser,
   createWorkspace,
+  grantOrganizationScope,
   login,
   loginAndGetCookie,
   sessionCookieOf,
@@ -150,6 +153,50 @@ describe('セッション', () => {
     });
 
     expect((await later.request('/api/auth/session', authorized(cookie))).status).toBe(401);
+  });
+
+  it('ログイン後に停止された利用者は、同じ Cookie を使えない', async () => {
+    const instance = app();
+    const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    await testDatabase().query("UPDATE users SET status = 'suspended' WHERE email = $1", [
+      'admin@example.com',
+    ]);
+
+    expect((await instance.request('/api/auth/session', authorized(cookie))).status).toBe(401);
+  });
+
+  it('ロール・閲覧範囲・従業員の紐づけを、要求のたびに同じ内容で復元する', async () => {
+    const workspaceId = await createWorkspace(testDatabase(), { slug: 'scoped' });
+    const first = await createOrganization(testDatabase(), workspaceId, { code: 'AAA' });
+    const second = await createOrganization(testDatabase(), workspaceId, { code: 'BBB' });
+    const { userId } = await createEmployeeWithAccount(testDatabase(), workspaceId, {
+      organizationId: first,
+      employeeNumber: 'E001',
+      displayName: '勤怠 花子',
+      email: 'hanako@example.com',
+      roles: ['employee', 'organization_manager'],
+    });
+    // 与える順序と返す順序を分けるため、後ろの組織を先に与える。
+    await grantOrganizationScope(testDatabase(), workspaceId, {
+      userId,
+      organizationId: second,
+    });
+    await grantOrganizationScope(testDatabase(), workspaceId, { userId, organizationId: first });
+
+    const instance = app();
+    const cookie = await loginAndGetCookie(instance, {
+      email: 'hanako@example.com',
+      workspaceSlug: 'scoped',
+    });
+    const response = await instance.request('/api/auth/session', authorized(cookie));
+    const body = (await response.json()) as SessionResponse;
+
+    expect(body.user.roles).toEqual(['employee', 'organization_manager']);
+    expect(body.user.organizationScopes).toEqual([first, second].sort());
+    expect(body.employee?.employeeNumber).toBe('E001');
+    expect(body.employee?.organizationId).toBe(first);
+    expect(body.workspace.slug).toBe('scoped');
   });
 
   it('表示言語を切り替えられる', async () => {
