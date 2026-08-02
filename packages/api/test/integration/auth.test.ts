@@ -147,10 +147,39 @@ describe('セッション', () => {
     const response = await login(instance, { email: 'admin@example.com' });
     const cookie = sessionCookieOf(response);
 
-    // 13 時間後の時計で同じ Cookie を使う（既定の有効期間は 12 時間）。
+    // 13 時間後の時計で同じ Cookie を使う（アイドル期限は 12 時間）。
     const later = createTestApp({ now: () => new Date(Date.now() + 13 * 60 * 60 * 1000) });
 
     expect((await later.request('/api/auth/session', authorized(cookie))).status).toBe(401);
+  });
+
+  // アイドル期限は操作のたびに延びるが、発行時刻からの上限は延びない。
+  it('操作を続けても、発行から 7 日を過ぎたセッションは使えない', async () => {
+    const start = new Date('2026-04-01T00:00:00.000Z');
+    const at = (hours: number) =>
+      createTestApp({ now: () => new Date(start.getTime() + hours * 60 * 60_000) });
+
+    const response = await login(at(0), { email: 'admin@example.com' });
+    const cookie = sessionCookieOf(response);
+
+    // 期限が切れる前に必ず操作する利用者を模す。11 時間ごとに使い続ける。
+    for (let hours = 11; hours < 7 * 24; hours += 11) {
+      const alive = await at(hours).request('/api/auth/session', authorized(cookie));
+      expect(alive.status).toBe(200);
+    }
+
+    expect((await at(7 * 24).request('/api/auth/session', authorized(cookie))).status).toBe(401);
+  });
+
+  // Cookie がサーバーより先に消えると、延長したセッションへ届かなくなる。
+  it('Cookie の保持期間を絶対期限に合わせる', async () => {
+    const start = new Date('2026-04-01T00:00:00.000Z');
+    const response = await login(createTestApp({ now: () => start }), {
+      email: 'admin@example.com',
+    });
+
+    const header = response.headers.get('set-cookie') ?? '';
+    expect(header).toContain(`Expires=${new Date('2026-04-08T00:00:00.000Z').toUTCString()}`);
   });
 
   it('ログイン後に停止された利用者は、同じ Cookie を使えない', async () => {
