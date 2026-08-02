@@ -1,6 +1,6 @@
 import { API_BASE_PATH, honoPath, operations } from '@staffweave/contracts';
-import type { Database, Queryable } from '@staffweave/db';
 import { describe, expect, it } from 'vitest';
+import { stubDatabase } from '../test/support/fake-database.js';
 import { createApp } from './app.js';
 
 /**
@@ -10,16 +10,6 @@ import { createApp } from './app.js';
  * 契約に無い経路があると、利用者は使える API の一部を知らないまま実装することになる。
  * 経路を足したときも消したときも、この検査が食い違いを知らせる。
  */
-
-function createStubDatabase(): Database {
-  return {
-    query: async () => [],
-    transaction: async <T>(fn: (tx: Queryable) => Promise<T>) => fn({ query: async () => [] }),
-    session: async <T>(fn: (connection: Queryable) => Promise<T>) => fn({ query: async () => [] }),
-    ping: async () => {},
-    close: async () => {},
-  };
-}
 
 /** 認証や配信の都合で足している、契約に出さない経路。 */
 const UNCONTRACTED = new Set([
@@ -33,7 +23,7 @@ const UNCONTRACTED = new Set([
 
 function registeredRoutes(): string[] {
   const app = createApp({
-    db: createStubDatabase(),
+    db: stubDatabase(),
     // カードの経路は指紋鍵がある構成でだけ有効になる。契約は両方の構成で同じ。
     cardFingerprintMasterKey: 'contract-test-card-fingerprint-master-key',
   });
