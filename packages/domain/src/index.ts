@@ -182,8 +182,11 @@ export type { Permission, Role } from './identity/roles.js';
 export { hasPermission, isRole, PERMISSIONS, permissionsOf, ROLES } from './identity/roles.js';
 export type { SessionPeriod, SessionState } from './identity/session.js';
 export {
+  absoluteExpiresAtFrom,
   expiresAtFrom,
-  SESSION_LIFETIME_MINUTES,
+  renewedExpiresAt,
+  SESSION_ABSOLUTE_LIFETIME_MINUTES,
+  SESSION_IDLE_LIFETIME_MINUTES,
   sessionStateAt,
   shouldRenew,
 } from './identity/session.js';
