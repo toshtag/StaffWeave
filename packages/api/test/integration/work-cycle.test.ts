@@ -535,6 +535,15 @@ describe('勤務周期の割当と予定の生成', () => {
     );
     expect(response.status).toBe(400);
   });
+
+  // 一覧は従業員を必須にし、値の形も契約どおりに確かめる。
+  it.each([
+    ['/api/employee-work-cycles', '従業員を指定しない'],
+    ['/api/employee-work-cycles?employeeId=not-a-uuid', '識別子の形が違う'],
+  ])('%s の一覧は 400 を返す（%s）', async (path) => {
+    const response = await app().request(path, authorized(fixture.adminCookie));
+    expect(response.status).toBe(400);
+  });
 });
 
 describe('休暇と欠勤', () => {
