@@ -46,6 +46,9 @@ function contextRow(overrides: Record<string, unknown> = {}): Record<string, unk
   };
 }
 
+/** セッションの延長として書き込まれる問い合わせ。 */
+const UPDATE_QUERY = /UPDATE sessions/;
+
 /** ログインの経路は使わないため、数える先は呼ばれない前提で置く。 */
 const unusedLoginAttempts: LoginAttemptRepository = {
   find: async () => null,
@@ -151,5 +154,38 @@ describe('authenticate', () => {
 
     await expect(service(db, BEFORE_RENEWAL).authenticate(undefined)).resolves.toBeNull();
     expect(queries).toHaveLength(0);
+  });
+
+  // 延長は保存された期限を先へ動かすが、発行時刻からの上限は動かない。
+  it('絶対期限を過ぎたセッションは、期限が先でも認証しない', async () => {
+    const { db } = recordingDatabase(
+      onlyReads([contextRow({ expires_at: new Date('2026-05-01T00:00:00.000Z') })]),
+    );
+
+    await expect(
+      service(db, new Date('2026-04-08T00:00:00.000Z')).authenticate('token'),
+    ).resolves.toBeNull();
+  });
+
+  it('延長した期限は絶対期限を超えない', async () => {
+    const { queries, db } = recordingDatabase(
+      onlyReads([contextRow({ expires_at: new Date('2026-04-07T20:00:00.000Z') })]),
+    );
+
+    const context = await service(db, new Date('2026-04-07T18:00:00.000Z')).authenticate('token');
+
+    expect(context?.sessionExpiresAt.toISOString()).toBe('2026-04-08T00:00:00.000Z');
+    const renewal = queries.find((query) => UPDATE_QUERY.test(query.text));
+    expect(renewal?.params[1]).toEqual(new Date('2026-04-08T00:00:00.000Z'));
+  });
+
+  it('絶対期限へ張り付いた後は、延長の書き込みを行わない', async () => {
+    const { queries, db } = recordingDatabase(
+      onlyReads([contextRow({ expires_at: new Date('2026-04-08T00:00:00.000Z') })]),
+    );
+
+    await service(db, new Date('2026-04-07T20:00:00.000Z')).authenticate('token');
+
+    expect(queries.filter((query) => UPDATE_QUERY.test(query.text))).toHaveLength(0);
   });
 });
