@@ -1,4 +1,9 @@
-import { honoPath, operations } from '@staffweave/contracts';
+import {
+  exportAttendanceQuerySchema,
+  exportPayrollQuerySchema,
+  honoPath,
+  operations,
+} from '@staffweave/contracts';
 import type { ApiScope, EmployeeVisibility } from '@staffweave/domain';
 import { parseCsv } from '@staffweave/domain';
 import type { Context } from 'hono';
@@ -8,7 +13,7 @@ import type { AppEnv } from '../shared/context.js';
 import { currentAuth, requirePermission } from '../shared/context.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { invalidRequest } from '../shared/errors.js';
-import { pathParam } from '../shared/request.js';
+import { pathParam, readQuery } from '../shared/request.js';
 import type { ExportService } from './export-service.js';
 import type { IntegrationService } from './service.js';
 
@@ -53,12 +58,9 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
   }
 
   app.get(honoPath(operations.exportAttendanceCsv), async (c) => {
-    const url = new URL(c.req.url);
     const target = resolveExportTarget(c, 'attendance:read');
-    const csv = await deps.exports.attendanceCsv(target.workspaceId, target.visibility, {
-      from: url.searchParams.get('from') ?? '',
-      to: url.searchParams.get('to') ?? '',
-    });
+    const query = readQuery<{ from: string; to: string }>(c, exportAttendanceQuerySchema);
+    const csv = await deps.exports.attendanceCsv(target.workspaceId, target.visibility, query);
     return c.body(csv, 200, {
       'content-type': 'text/csv; charset=utf-8',
       'content-disposition': 'attachment; filename="attendance.csv"',
@@ -66,11 +68,9 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
   });
 
   app.get(honoPath(operations.exportPayrollCsv), async (c) => {
-    const url = new URL(c.req.url);
     const target = resolveExportTarget(c, 'payroll:read');
-    const csv = await deps.exports.payrollCsv(target.workspaceId, target.visibility, {
-      period: url.searchParams.get('period') ?? '',
-    });
+    const query = readQuery<{ period: string }>(c, exportPayrollQuerySchema);
+    const csv = await deps.exports.payrollCsv(target.workspaceId, target.visibility, query);
     return c.body(csv, 200, {
       'content-type': 'text/csv; charset=utf-8',
       'content-disposition': 'attachment; filename="payroll.csv"',

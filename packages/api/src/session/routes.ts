@@ -1,28 +1,21 @@
-import type { JsonSchema, RecordSessionObservationsRequest } from '@staffweave/contracts';
+import type { RecordSessionObservationsRequest } from '@staffweave/contracts';
 import {
+  getDiscrepancyReportQuerySchema,
   honoPath,
   listSessionObservationsQuerySchema,
   operations,
   recordSessionObservationsRequestSchema,
-  validate,
 } from '@staffweave/contracts';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { DEVICE_ID_HEADER, DEVICE_SIGNATURE_HEADER } from '../device/routes.js';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
-import { ApiError, invalidRequest } from '../shared/errors.js';
-import { pathParam, readBody } from '../shared/request.js';
+import { ApiError } from '../shared/errors.js';
+import { pathParam, readBody, readQuery } from '../shared/request.js';
 import type { SessionService } from './service.js';
 
 export interface SessionRouteDependencies {
   service: SessionService;
-}
-
-function readQuery<T>(c: Context<AppEnv>, schema: JsonSchema): T {
-  const result = validate<T>(schema, Object.fromEntries(new URL(c.req.url).searchParams));
-  if (!result.valid) throw invalidRequest(result.problems);
-  return result.value;
 }
 
 export function createSessionRoutes(deps: SessionRouteDependencies): Hono<AppEnv> {
@@ -54,9 +47,9 @@ export function createSessionRoutes(deps: SessionRouteDependencies): Hono<AppEnv
 
   app.get(honoPath(operations.getDiscrepancyReport), async (c) => {
     const auth = currentAuth(c);
-    const employeeId = new URL(c.req.url).searchParams.get('employeeId') ?? undefined;
+    const query = readQuery<{ employeeId?: string }>(c, getDiscrepancyReportQuerySchema);
     return c.json(
-      await service.getDiscrepancyReport(auth, pathParam(c, 'businessDate'), employeeId),
+      await service.getDiscrepancyReport(auth, pathParam(c, 'businessDate'), query.employeeId),
       200,
     );
   });

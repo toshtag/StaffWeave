@@ -1,7 +1,6 @@
 import type {
   CloseMonthRequest,
   DecideDailyRequestRequest,
-  JsonSchema,
   ReopenMonthRequest,
   SubmitDailyRequestRequest,
 } from '@staffweave/contracts';
@@ -14,24 +13,15 @@ import {
   operations,
   reopenMonthRequestSchema,
   submitDailyRequestRequestSchema,
-  validate,
 } from '@staffweave/contracts';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
-import { invalidRequest } from '../shared/errors.js';
-import { pathParam, readBody } from '../shared/request.js';
+import { pathParam, readBody, readQuery } from '../shared/request.js';
 import type { ApprovalService } from './service.js';
 
 export interface ApprovalRouteDependencies {
   service: ApprovalService;
-}
-
-function readQuery<T>(c: Context<AppEnv>, schema: JsonSchema): T {
-  const result = validate<T>(schema, Object.fromEntries(new URL(c.req.url).searchParams));
-  if (!result.valid) throw invalidRequest(result.problems);
-  return result.value;
 }
 
 export function createApprovalRoutes(deps: ApprovalRouteDependencies): Hono<AppEnv> {

@@ -1,10 +1,8 @@
-import type { JsonSchema } from '@staffweave/contracts';
-import { listAnomaliesQuerySchema, operations, validate } from '@staffweave/contracts';
-import type { Context } from 'hono';
+import { listAnomaliesQuerySchema, operations } from '@staffweave/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { requirePermission } from '../shared/context.js';
-import { invalidRequest } from '../shared/errors.js';
+import { readQuery } from '../shared/request.js';
 import type { AnomalyService } from './anomaly-service.js';
 import { anomaliesToCsv } from './anomaly-service.js';
 import type { AuditRepository } from './repository.js';
@@ -12,12 +10,6 @@ import type { AuditRepository } from './repository.js';
 export interface AuditRouteDependencies {
   anomalies: AnomalyService;
   logs: AuditRepository;
-}
-
-function readQuery<T>(c: Context<AppEnv>, schema: JsonSchema): T {
-  const result = validate<T>(schema, Object.fromEntries(new URL(c.req.url).searchParams));
-  if (!result.valid) throw invalidRequest(result.problems);
-  return result.value;
 }
 
 export function createAuditRoutes(deps: AuditRouteDependencies): Hono<AppEnv> {

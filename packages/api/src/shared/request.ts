@@ -23,6 +23,21 @@ export async function readBody<T>(c: Context, schema: JsonSchema): Promise<T> {
 }
 
 /**
+ * クエリ文字列を契約（JSON Schema）で検証して取り出す。
+ *
+ * 検証を経路ごとに書くと、書いた経路だけが契約どおりになる。
+ * 本文と同じく、ここを通ったものだけが以降の処理へ渡る形にする。
+ *
+ * 同じ名前が複数回現れた場合は最後の値を採る。契約に配列を受ける引数は無い。
+ */
+export function readQuery<T>(c: Context, schema: JsonSchema): T {
+  const raw = Object.fromEntries(new URL(c.req.url).searchParams);
+  const result = validate<T>(schema, raw);
+  if (!result.valid) throw invalidRequest(result.problems);
+  return result.value;
+}
+
+/**
  * 経路に含まれる識別子を取り出す。
  *
  * 経路は契約から組み立てるため、Hono は名前を静的に知らず、型は省略可能になる。
