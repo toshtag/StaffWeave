@@ -41,6 +41,8 @@ describe('markEnrolledIfPending', () => {
     expect(sql).toMatch(/state = 'pending'/);
     expect(sql).toMatch(/public_key IS NULL/);
     expect(sql).toMatch(/enrollment_token_hash = \$3/);
+    // 期限も同じ条件へ入れる。読んでから更新するまでに期限が来ても断れる。
+    expect(sql).toMatch(/enrollment_token_expires_at > \$6/);
     expect(sql).toMatch(/workspace_id = \$1/);
     expect(sql).toMatch(/\bid = \$2/);
     expect(sql).toMatch(/RETURNING/);
@@ -52,6 +54,16 @@ describe('markEnrolledIfPending', () => {
       1,
       input.enrolledAt,
     ]);
+  });
+
+  it('消費したトークンと期限をどちらも空にする', async () => {
+    const { queries, db } = recordingDatabase([deviceRow]);
+
+    await createDeviceRepository(db).markEnrolledIfPending('workspace-1', 'device-1', input);
+
+    const sql = queries[0]?.text ?? '';
+    expect(sql).toMatch(/enrollment_token_hash = NULL/);
+    expect(sql).toMatch(/enrollment_token_expires_at = NULL/);
   });
 
   it('更新できた端末を返す', async () => {

@@ -54,9 +54,15 @@ export interface DeviceRepository {
   list(workspaceId: string): Promise<DeviceRecord[]>;
   findById(workspaceId: string, deviceId: string): Promise<DeviceRecord | null>;
   /** 登録トークンのハッシュから端末を引く。ワークスペースは端末から決まる。 */
-  findByEnrollmentTokenHash(
-    tokenHash: string,
-  ): Promise<(DeviceRecord & { workspaceId: string; workspaceSlug: string }) | null>;
+  findByEnrollmentTokenHash(tokenHash: string): Promise<
+    | (DeviceRecord & {
+        workspaceId: string;
+        workspaceSlug: string;
+        /** 登録トークンの期限。トークンを持つ端末では必ず入る。 */
+        enrollmentTokenExpiresAt: Date | null;
+      })
+    | null
+  >;
   findPublicKey(workspaceId: string, deviceId: string): Promise<string | null>;
   /** 署名検証のため、ワークスペース指定なしで端末と公開鍵を引く。 */
   findForSignature(deviceId: string): Promise<{
@@ -67,14 +73,19 @@ export interface DeviceRepository {
 
   create(
     workspaceId: string,
-    input: { name: string; siteId: string | null; enrollmentTokenHash: string },
+    input: {
+      name: string;
+      siteId: string | null;
+      enrollmentTokenHash: string;
+      enrollmentTokenExpiresAt: Date;
+    },
   ): Promise<DeviceRecord>;
   /**
    * 登録待ちの端末だけを有効にする。
    *
    * 一度きりの登録トークンを消費するのはこの更新であり、事前の検索ではない。
    * 同じトークンで同時に届いた要求のうち、条件に合致した 1 件だけが更新でき、
-   * 残りは `null` を受け取る。
+   * 残りは `null` を受け取る。期限の確認も同じ条件へ入れる。
    */
   markEnrolledIfPending(
     workspaceId: string,
@@ -207,11 +218,17 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
     },
 
     async findByEnrollmentTokenHash(tokenHash) {
-      const rows = await db.query<DeviceRow & { workspace_id: string; slug: string }>(
+      const rows = await db.query<
+        DeviceRow & {
+          workspace_id: string;
+          slug: string;
+          enrollment_token_expires_at: Date | null;
+        }
+      >(
         `SELECT ${DEVICE_COLUMNS.split(', ')
           .map((column) => `devices.${column.trim()}`)
           .join(', ')},
-                devices.workspace_id, workspaces.slug
+                devices.workspace_id, devices.enrollment_token_expires_at, workspaces.slug
            FROM devices
            JOIN workspaces ON workspaces.id = devices.workspace_id
           WHERE devices.enrollment_token_hash = $1`,
@@ -219,7 +236,12 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
       );
       const row = rows[0];
       if (!row) return null;
-      return { ...toDevice(row), workspaceId: row.workspace_id, workspaceSlug: row.slug };
+      return {
+        ...toDevice(row),
+        workspaceId: row.workspace_id,
+        workspaceSlug: row.slug,
+        enrollmentTokenExpiresAt: row.enrollment_token_expires_at,
+      };
     },
 
     async findPublicKey(workspaceId, deviceId) {
@@ -246,10 +268,17 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
 
     async create(workspaceId, input) {
       const rows = await db.query<DeviceRow>(
-        `INSERT INTO devices (workspace_id, site_id, name, enrollment_token_hash)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO devices
+           (workspace_id, site_id, name, enrollment_token_hash, enrollment_token_expires_at)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING ${DEVICE_COLUMNS}`,
-        [workspaceId, input.siteId, input.name, input.enrollmentTokenHash],
+        [
+          workspaceId,
+          input.siteId,
+          input.name,
+          input.enrollmentTokenHash,
+          input.enrollmentTokenExpiresAt,
+        ],
       );
       const row = rows[0];
       if (!row) throw new Error('端末を登録できませんでした');
@@ -265,6 +294,7 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
                 enrolled_at = $6,
                 -- 登録が済んだトークンは二度と使えないようにする。
                 enrollment_token_hash = NULL,
+                enrollment_token_expires_at = NULL,
                 updated_at = now()
           WHERE workspace_id = $1
             AND id = $2
@@ -273,6 +303,9 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
             AND state = 'pending'
             AND public_key IS NULL
             AND enrollment_token_hash = $3
+            -- 期限も同じ条件へ入れる。読んでから更新するまでに期限が来ても、
+            -- 更新の側で断れる。
+            AND enrollment_token_expires_at > $6
           RETURNING ${DEVICE_COLUMNS}`,
         [
           workspaceId,
