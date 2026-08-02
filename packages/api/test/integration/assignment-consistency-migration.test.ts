@@ -1,9 +1,7 @@
-import { copyFile, mkdtemp, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Database } from '@staffweave/db';
-import { createDatabase, MIGRATIONS_DIR, migrate } from '@staffweave/db';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { migrate } from '@staffweave/db';
+import { describe, expect, it } from 'vitest';
+import { migrationsUpTo, useTemporaryDatabases } from '../support/migration-database.js';
 
 /**
  * 配属を契約の組織へ閉じる制約が、すでに動いている環境で何をするかを固定する。
@@ -19,29 +17,6 @@ const CLEAN = 'staffweave_assignment_clean_test';
 const MISMATCHED = 'staffweave_assignment_mismatch_test';
 
 const LAST_VERSION_BEFORE_SCOPING = 20;
-
-function requireTestDatabaseUrl(): string {
-  const url = process.env.TEST_DATABASE_URL;
-  if (!url) throw new Error('TEST_DATABASE_URL が設定されていません。');
-  return url;
-}
-
-function urlFor(databaseName: string): string {
-  const url = new URL(requireTestDatabaseUrl());
-  url.pathname = `/${databaseName}`;
-  return url.toString();
-}
-
-/** 指定した版までのマイグレーションだけを置いた一時ディレクトリ。内容は原本と同一にする。 */
-async function migrationsUpTo(version: number): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'staffweave-migrations-'));
-  for (const fileName of await readdir(MIGRATIONS_DIR)) {
-    if (!fileName.endsWith('.sql')) continue;
-    if (Number(fileName.slice(0, 4)) > version) continue;
-    await copyFile(join(MIGRATIONS_DIR, fileName), join(directory, fileName));
-  }
-  return directory;
-}
 
 interface Fixture {
   workspaceId: string;
@@ -153,53 +128,35 @@ async function assign(db: Database, fixture: Fixture, input: AssignmentInput): P
   );
 }
 
-let admin: Database;
-let clean: Database;
-let mismatched: Database;
 let cleanFixture: Fixture;
 
-beforeAll(async () => {
-  admin = createDatabase({ connectionString: urlFor('postgres'), maxConnections: 1 });
-  for (const name of [CLEAN, MISMATCHED]) {
-    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
-    await admin.query(`CREATE DATABASE ${name}`);
-  }
-
-  clean = createDatabase({ connectionString: urlFor(CLEAN), maxConnections: 1 });
-  mismatched = createDatabase({ connectionString: urlFor(MISMATCHED), maxConnections: 1 });
-
+const temporary = useTemporaryDatabases([CLEAN, MISMATCHED], async ({ database }) => {
   // 0020 までを適用し、契約と整合する配属を保存してから 0021 を適用する。
-  await migrate(clean, await migrationsUpTo(LAST_VERSION_BEFORE_SCOPING));
-  cleanFixture = await createFixture(clean, 'default');
-  await assignBeforeScoping(clean, cleanFixture, {
+  await migrate(database(CLEAN), await migrationsUpTo(LAST_VERSION_BEFORE_SCOPING));
+  cleanFixture = await createFixture(database(CLEAN), 'default');
+  await assignBeforeScoping(database(CLEAN), cleanFixture, {
     employeeId: cleanFixture.employerEmployeeId,
     workplaceSiteId: cleanFixture.hostSiteId,
     startsOn: '2026-04-01',
     endsOn: '2026-04-30',
   });
-  await migrate(clean);
+  await migrate(database(CLEAN));
 
   // 受入組織の従業員を雇用元の契約へ配属したまま 0021 を迎える環境。
-  await migrate(mismatched, await migrationsUpTo(LAST_VERSION_BEFORE_SCOPING));
-  const fixture = await createFixture(mismatched, 'default');
-  await assignBeforeScoping(mismatched, fixture, {
+  await migrate(database(MISMATCHED), await migrationsUpTo(LAST_VERSION_BEFORE_SCOPING));
+  const fixture = await createFixture(database(MISMATCHED), 'default');
+  await assignBeforeScoping(database(MISMATCHED), fixture, {
     employeeId: fixture.hostEmployeeId,
     startsOn: '2026-04-01',
   });
-}, 60_000);
-
-afterAll(async () => {
-  await clean?.close();
-  await mismatched?.close();
-  for (const name of [CLEAN, MISMATCHED]) {
-    await admin?.query(`DROP DATABASE IF EXISTS ${name}`);
-  }
-  await admin?.close();
 });
+
+const clean = () => temporary.database(CLEAN);
+const mismatched = () => temporary.database(MISMATCHED);
 
 describe('契約と整合しているデータベース', () => {
   it('保存されていた配属をそのまま残し、契約の組織を複製する', async () => {
-    const rows = await clean.query<{
+    const rows = await clean().query<{
       employer_organization_id: string;
       host_organization_id: string;
       workplace_site_id: string | null;
@@ -217,7 +174,7 @@ describe('契約と整合しているデータベース', () => {
 
   it('雇用元に所属していない従業員は配属できない', async () => {
     await expect(
-      assign(clean, cleanFixture, {
+      assign(clean(), cleanFixture, {
         employeeId: cleanFixture.hostEmployeeId,
         startsOn: '2026-06-01',
       }),
@@ -226,7 +183,7 @@ describe('契約と整合しているデータベース', () => {
 
   it('受入組織にない拠点は勤務拠点にできない', async () => {
     await expect(
-      assign(clean, cleanFixture, {
+      assign(clean(), cleanFixture, {
         employeeId: cleanFixture.employerEmployeeId,
         workplaceSiteId: cleanFixture.employerSiteId,
         startsOn: '2026-06-01',
@@ -236,7 +193,7 @@ describe('契約と整合しているデータベース', () => {
 
   it('期間が重なる配属は登録できない', async () => {
     await expect(
-      assign(clean, cleanFixture, {
+      assign(clean(), cleanFixture, {
         employeeId: cleanFixture.employerEmployeeId,
         startsOn: '2026-04-15',
       }),
@@ -245,7 +202,7 @@ describe('契約と整合しているデータベース', () => {
 
   it('重ならない期間なら登録できる', async () => {
     await expect(
-      assign(clean, cleanFixture, {
+      assign(clean(), cleanFixture, {
         employeeId: cleanFixture.employerEmployeeId,
         workplaceSiteId: cleanFixture.hostSiteId,
         startsOn: '2026-05-01',
@@ -255,14 +212,14 @@ describe('契約と整合しているデータベース', () => {
 
   it('契約の組織だけを書き換えられない', async () => {
     await expect(
-      clean.query('UPDATE employee_assignments SET host_organization_id = $1', [
+      clean().query('UPDATE employee_assignments SET host_organization_id = $1', [
         cleanFixture.employerId,
       ]),
     ).rejects.toThrow(/employee_assignments_contract_host_fkey/);
   });
 
   it('もう一度適用しても何も起きない', async () => {
-    const result = await migrate(clean);
+    const result = await migrate(clean());
 
     expect(result.appliedVersions).toEqual([]);
   });
@@ -270,11 +227,11 @@ describe('契約と整合しているデータベース', () => {
 
 describe('契約と食い違う配属が残っているデータベース', () => {
   it('該当する配属を示して適用を止める', async () => {
-    await expect(migrate(mismatched)).rejects.toThrow(/配属に整合しない組み合わせが残っています/);
+    await expect(migrate(mismatched())).rejects.toThrow(/配属に整合しない組み合わせが残っています/);
   });
 
   it('止まった時点では列を残さない', async () => {
-    const rows = await mismatched.query<{ count: number }>(
+    const rows = await mismatched().query<{ count: number }>(
       `SELECT count(*)::int AS count FROM information_schema.columns
         WHERE table_name = 'employee_assignments' AND column_name = 'host_organization_id'`,
     );
@@ -283,10 +240,10 @@ describe('契約と食い違う配属が残っているデータベース', () =
   });
 
   it('配属を直せば適用できる', async () => {
-    await mismatched.query('DELETE FROM employee_assignments');
+    await mismatched().query('DELETE FROM employee_assignments');
 
     // 後から足した版も一緒に適用されるため、この移行が通ったことだけを見る。
-    await expect(migrate(mismatched)).resolves.toEqual(
+    await expect(migrate(mismatched())).resolves.toEqual(
       expect.objectContaining({ appliedVersions: expect.arrayContaining([21]) }),
     );
   });

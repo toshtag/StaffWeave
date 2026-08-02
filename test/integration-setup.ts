@@ -9,6 +9,7 @@
 import type { Database } from '@staffweave/db';
 import { createDatabase, migrate } from '@staffweave/db';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
+import { requireTestDatabaseUrl } from './database-url.js';
 
 let database: Database | undefined;
 
@@ -17,21 +18,6 @@ export function testDatabase(): Database {
     throw new Error('統合テスト用のデータベースが初期化されていません。');
   }
   return database;
-}
-
-function requireTestDatabaseUrl(): string {
-  const url = process.env.TEST_DATABASE_URL;
-  if (!url) {
-    throw new Error(
-      'TEST_DATABASE_URL が設定されていません。docker compose up -d db を実行し、.env を設定してください。',
-    );
-  }
-  if (!/_test(\?|$)/.test(url)) {
-    throw new Error(
-      `TEST_DATABASE_URL は _test で終わるデータベースを指してください（誤って開発データを消さないため）: ${url}`,
-    );
-  }
-  return url;
 }
 
 beforeAll(async () => {
