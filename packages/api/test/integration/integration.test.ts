@@ -10,7 +10,6 @@ import type {
 import { canonicalWebhookMessage, parseCsv } from '@staffweave/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
@@ -19,6 +18,8 @@ import {
   createWorkspace,
   grantOrganizationScope,
   loginAndGetCookie,
+  type TestApp,
+  testAppFactory,
 } from '../support/fixtures.js';
 import type { SentWebhook } from '../support/webhook.js';
 import {
@@ -34,14 +35,10 @@ const BUSINESS_DATE = '2026-04-01';
 
 const sent: SentWebhook[] = [];
 
-function app(now: string = CLOCK_OUT_AT) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    now: () => new Date(now),
-    webhookTargetValidator: testWebhookTargetValidator(),
-  });
-}
+const app = testAppFactory({
+  now: CLOCK_OUT_AT,
+  webhookTargetValidator: testWebhookTargetValidator(),
+});
 
 /** 送信待ちが無くなるまでワーカーを動かす。API 自身は HTTP 送信を行わない。 */
 async function runDeliveryWorker(status = 204): Promise<void> {
@@ -53,7 +50,7 @@ async function runDeliveryWorker(status = 204): Promise<void> {
   );
 }
 
-type App = ReturnType<typeof app>;
+type App = TestApp;
 
 interface Fixture {
   adminCookie: string;
@@ -310,9 +307,12 @@ describe('API キー', () => {
     const created = await createKey(instance, ['payroll:read']);
 
     async function usePayrollExport(at: string): Promise<void> {
-      const response = await app(at).request('/api/exports/payroll.csv?period=2026-04-01', {
-        headers: { authorization: `Bearer ${created.secret}` },
-      });
+      const response = await app({ now: at }).request(
+        '/api/exports/payroll.csv?period=2026-04-01',
+        {
+          headers: { authorization: `Bearer ${created.secret}` },
+        },
+      );
       expect(response.status).toBe(200);
     }
 

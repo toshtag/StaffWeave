@@ -6,8 +6,13 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
-import { createUser, createWorkspace, login, TEST_PASSWORD } from '../support/fixtures.js';
+import {
+  createUser,
+  createWorkspace,
+  login,
+  TEST_PASSWORD,
+  testAppFactory,
+} from '../support/fixtures.js';
 
 const POLICY = {
   account: { maxFailures: 3, windowMs: 60_000, blockMs: 300_000 },
@@ -16,14 +21,7 @@ const POLICY = {
 
 const START = '2026-04-01T00:00:00.000Z';
 
-function app(now: string = START, policy = POLICY) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    now: () => new Date(now),
-    loginAttemptPolicy: policy,
-  });
-}
+const app = testAppFactory({ now: START, loginAttemptPolicy: POLICY });
 
 async function failLogin(instance: ReturnType<typeof app>, email = 'admin@example.com') {
   return login(instance, { email, password: 'wrong-password-value' });
@@ -66,7 +64,7 @@ describe('ログイン試行の制限', () => {
     for (let index = 0; index < POLICY.account.maxFailures; index += 1) await failLogin(instance);
 
     const later = new Date(new Date(START).getTime() + POLICY.account.blockMs + 1).toISOString();
-    expect((await login(app(later), { email: 'admin@example.com' })).status).toBe(200);
+    expect((await login(app({ now: later }), { email: 'admin@example.com' })).status).toBe(200);
   });
 
   it('他の利用者の失敗に巻き込まれない', async () => {
@@ -97,7 +95,7 @@ describe('ログイン試行の制限', () => {
       await failLogin(instance);
 
     const later = new Date(new Date(START).getTime() + POLICY.account.windowMs + 1).toISOString();
-    const afterWindow = app(later);
+    const afterWindow = app({ now: later });
     for (let index = 0; index < POLICY.account.maxFailures - 1; index += 1) {
       await failLogin(afterWindow);
     }

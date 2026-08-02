@@ -8,25 +8,16 @@ import type {
 } from '@staffweave/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
   createOrganization,
+  createTestApp,
   createUser,
   createWorkspace,
   loginAndGetCookie,
+  type TestApp,
 } from '../support/fixtures.js';
-
-function app(now?: () => Date) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    ...(now === undefined ? {} : { now }),
-  });
-}
-
-type App = ReturnType<typeof app>;
 
 interface Fixture {
   workspaceId: string;
@@ -49,7 +40,7 @@ async function setUp(): Promise<Fixture> {
     email: 'hanako@example.com',
   });
 
-  const instance = app();
+  const instance = createTestApp();
   return {
     workspaceId,
     employeeId,
@@ -59,7 +50,7 @@ async function setUp(): Promise<Fixture> {
 }
 
 async function punch(
-  instance: App,
+  instance: TestApp,
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<RecordAttendanceEventResponse> {
@@ -78,7 +69,7 @@ describe('勤務パターン', () => {
   });
 
   it('登録して一覧できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const response = await instance.request(
       '/api/work-patterns',
       authorized(fixture.adminCookie, {
@@ -96,7 +87,7 @@ describe('勤務パターン', () => {
   });
 
   it('日をまたぐ勤務パターンを登録できる', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/work-patterns',
       authorized(fixture.adminCookie, {
         method: 'POST',
@@ -116,7 +107,7 @@ describe('勤務パターン', () => {
   });
 
   it('終業が始業以前なら受け付けない', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/work-patterns',
       authorized(fixture.adminCookie, {
         method: 'POST',
@@ -128,7 +119,7 @@ describe('勤務パターン', () => {
   });
 
   it('同じコードは登録できない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const body = { code: 'DAY', name: '日勤', startMinutes: 540, endMinutes: 1080 };
     await instance.request(
       '/api/work-patterns',
@@ -143,7 +134,7 @@ describe('勤務パターン', () => {
   });
 
   it('従業員ロールは登録できない', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/work-patterns',
       authorized(fixture.employeeCookie, {
         method: 'POST',
@@ -163,7 +154,7 @@ describe('勤務予定', () => {
   });
 
   it('勤務パターンから予定を作れる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const created = await instance.request(
       '/api/work-patterns',
       authorized(fixture.adminCookie, {
@@ -194,7 +185,7 @@ describe('勤務予定', () => {
   });
 
   it('同じ日に登録し直すと上書きされる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const body = {
       employeeId: fixture.employeeId,
       businessDate: '2026-04-01',
@@ -224,7 +215,7 @@ describe('勤務予定', () => {
   });
 
   it('休日を指定すると予定時刻は持たない', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/work-schedules',
       authorized(fixture.adminCookie, {
         method: 'PUT',
@@ -245,7 +236,7 @@ describe('勤務予定', () => {
   });
 
   it('期間を指定して一覧できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     for (const businessDate of ['2026-04-01', '2026-04-02', '2026-04-10']) {
       await instance.request(
         '/api/work-schedules',
@@ -270,7 +261,7 @@ describe('勤務予定', () => {
   });
 
   it('期間の指定が不正なら 400 を返す', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       `/api/work-schedules?employeeId=${fixture.employeeId}&from=2026-04-10&to=2026-04-01`,
       authorized(fixture.adminCookie),
     );
@@ -278,7 +269,7 @@ describe('勤務予定', () => {
   });
 
   it('存在しない従業員には予定を作れない', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/work-schedules',
       authorized(fixture.adminCookie, {
         method: 'PUT',
@@ -294,7 +285,7 @@ describe('勤務予定', () => {
   });
 
   it('従業員ロールは予定を登録できない', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/work-schedules',
       authorized(fixture.employeeCookie, {
         method: 'PUT',
@@ -319,14 +310,14 @@ describe('勤怠計算', () => {
 
   it('打刻のたびに計算結果が保存される', async () => {
     // Asia/Tokyo の 2026-04-01 09:00 と 18:00。
-    const clockIn = app(() => new Date('2026-04-01T00:00:00.000Z'));
+    const clockIn = createTestApp({ now: '2026-04-01T00:00:00.000Z' });
     await punch(clockIn, fixture.employeeCookie, {
       eventType: 'clock_in',
       requestId: 'calc-clock-in',
       occurredAt: '2026-04-01T00:00:00.000Z',
     });
 
-    const clockOut = app(() => new Date('2026-04-01T09:00:00.000Z'));
+    const clockOut = createTestApp({ now: '2026-04-01T09:00:00.000Z' });
     const result = await punch(clockOut, fixture.employeeCookie, {
       eventType: 'clock_out',
       requestId: 'calc-clock-out',
@@ -341,7 +332,7 @@ describe('勤怠計算', () => {
   });
 
   it('予定を登録すると所定内と所定外に分かれる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await instance.request(
       '/api/work-schedules',
       authorized(fixture.adminCookie, {
@@ -357,14 +348,14 @@ describe('勤怠計算', () => {
     );
 
     // 08:00 出勤、20:00 退勤（Asia/Tokyo）。
-    const morning = app(() => new Date('2026-03-31T23:00:00.000Z'));
+    const morning = createTestApp({ now: '2026-03-31T23:00:00.000Z' });
     await punch(morning, fixture.employeeCookie, {
       eventType: 'clock_in',
       requestId: 'schedule-clock-in',
       occurredAt: '2026-03-31T23:00:00.000Z',
     });
 
-    const evening = app(() => new Date('2026-04-01T11:00:00.000Z'));
+    const evening = createTestApp({ now: '2026-04-01T11:00:00.000Z' });
     const result = await punch(evening, fixture.employeeCookie, {
       eventType: 'clock_out',
       requestId: 'schedule-clock-out',
@@ -378,7 +369,7 @@ describe('勤怠計算', () => {
   });
 
   it('予定を変えると計算の版が増える', async () => {
-    const instance = app(() => new Date('2026-04-01T09:00:00.000Z'));
+    const instance = createTestApp({ now: '2026-04-01T09:00:00.000Z' });
     await punch(instance, fixture.employeeCookie, {
       eventType: 'clock_in',
       requestId: 'version-clock-in',
@@ -423,7 +414,7 @@ describe('勤怠計算', () => {
   });
 
   it('入力が変わらなければ版は増えない', async () => {
-    const instance = app(() => new Date('2026-04-01T09:00:00.000Z'));
+    const instance = createTestApp({ now: '2026-04-01T09:00:00.000Z' });
     await punch(instance, fixture.employeeCookie, {
       eventType: 'clock_in',
       requestId: 'same-input-in',
@@ -445,14 +436,14 @@ describe('勤怠計算', () => {
 
   it('深夜帯と日跨ぎ勤務を数える', async () => {
     // 22:00 出勤、翌 5:00 退勤（Asia/Tokyo）。
-    const night = app(() => new Date('2026-04-01T13:00:00.000Z'));
+    const night = createTestApp({ now: '2026-04-01T13:00:00.000Z' });
     await punch(night, fixture.employeeCookie, {
       eventType: 'clock_in',
       requestId: 'night-clock-in',
       occurredAt: '2026-04-01T13:00:00.000Z',
     });
 
-    const morning = app(() => new Date('2026-04-01T20:00:00.000Z'));
+    const morning = createTestApp({ now: '2026-04-01T20:00:00.000Z' });
     const result = await punch(morning, fixture.employeeCookie, {
       eventType: 'clock_out',
       requestId: 'night-clock-out',
@@ -465,7 +456,7 @@ describe('勤怠計算', () => {
   });
 
   it('休日に働いた時間は休日労働として数える', async () => {
-    const instance = app(() => new Date('2026-04-05T09:00:00.000Z'));
+    const instance = createTestApp({ now: '2026-04-05T09:00:00.000Z' });
     await instance.request(
       '/api/work-schedules',
       authorized(fixture.adminCookie, {
@@ -495,7 +486,7 @@ describe('勤怠計算', () => {
   });
 
   it('打刻を修正すると計算がやり直される', async () => {
-    const instance = app(() => new Date('2026-04-01T09:00:00.000Z'));
+    const instance = createTestApp({ now: '2026-04-01T09:00:00.000Z' });
     const clockIn = await punch(instance, fixture.employeeCookie, {
       eventType: 'clock_in',
       requestId: 'recalc-clock-in',
@@ -527,7 +518,7 @@ describe('勤怠計算', () => {
   });
 
   it('計算結果は書き換えられない', async () => {
-    const instance = app(() => new Date('2026-04-01T09:00:00.000Z'));
+    const instance = createTestApp({ now: '2026-04-01T09:00:00.000Z' });
     await punch(instance, fixture.employeeCookie, {
       eventType: 'clock_in',
       requestId: 'immutable-calc-in',

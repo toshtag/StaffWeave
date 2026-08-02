@@ -8,7 +8,6 @@ import type {
 } from '@staffweave/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
@@ -16,19 +15,15 @@ import {
   createUser,
   createWorkspace,
   loginAndGetCookie,
+  type TestApp,
+  testAppFactory,
 } from '../support/fixtures.js';
 
 const NOW = '2026-04-01T00:00:00.000Z';
 
-function app(now: string = NOW) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    now: () => new Date(now),
-  });
-}
+const app = testAppFactory({ now: NOW });
 
-type App = ReturnType<typeof app>;
+type App = TestApp;
 
 interface Fixture {
   adminCookie: string;

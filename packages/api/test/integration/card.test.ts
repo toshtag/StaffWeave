@@ -15,7 +15,6 @@ import type {
 import { canonicalCardEvent, canonicalCardRegistration } from '@staffweave/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import { deriveCardFingerprintKey } from '../../src/shared/security/card-fingerprint-key.js';
 import {
   authorized,
@@ -24,22 +23,17 @@ import {
   createUser,
   createWorkspace,
   loginAndGetCookie,
+  type TestApp,
+  testAppFactory,
 } from '../support/fixtures.js';
 
 const NOW = '2026-04-01T00:00:00.000Z';
 /** 端末へ渡す鍵の元になる共通の鍵。端末が受け取るのは Workspace ごとに導出した鍵。 */
 const CARD_MASTER_KEY = 'test-card-fingerprint-master-key';
 
-function app(now: string = NOW, masterKey: string | null = CARD_MASTER_KEY) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    now: () => new Date(now),
-    cardFingerprintMasterKey: masterKey,
-  });
-}
+const app = testAppFactory({ now: NOW, cardFingerprintMasterKey: CARD_MASTER_KEY });
 
-type App = ReturnType<typeof app>;
+type App = TestApp;
 
 interface Fixture {
   adminCookie: string;
@@ -281,7 +275,7 @@ describe('カードの登録', () => {
     const token = await issueRegistrationToken(instance, fixture, fixture.employeeId);
 
     // 16 分後の時計で登録しようとする（既定の有効時間は 15 分）。
-    const later = app('2026-04-01T00:16:00.000Z');
+    const later = app({ now: '2026-04-01T00:16:00.000Z' });
     const response = await registerCard(later, fixture, {
       registrationToken: token,
       rawCardId: 'CARD-A',
@@ -634,7 +628,7 @@ describe('カード機能の設定', () => {
       roles: ['workspace_admin'],
     });
 
-    const instance = app(NOW, null);
+    const instance = app({ cardFingerprintMasterKey: null });
     const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
     const registered = (await (
       await instance.request(
@@ -664,7 +658,7 @@ describe('カード機能の設定', () => {
       roles: ['workspace_admin'],
     });
 
-    const instance = app(NOW, null);
+    const instance = app({ cardFingerprintMasterKey: null });
     const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
 
     const listed = await instance.request('/api/card-credentials', authorized(cookie));

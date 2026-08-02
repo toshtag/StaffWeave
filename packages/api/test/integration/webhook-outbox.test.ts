@@ -3,7 +3,6 @@ import type { CreateWebhookEndpointResponse, DailyRequestRecord } from '@staffwe
 import type { Database } from '@staffweave/db';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import { createWebhookDeliveryWorker } from '../../src/integration/delivery-worker.js';
 import { createWebhookOutboxRepository } from '../../src/integration/outbox-repository.js';
 import type {
@@ -18,6 +17,7 @@ import {
   createWorkspace,
   grantOrganizationScope,
   loginAndGetCookie,
+  testAppFactory,
 } from '../support/fixtures.js';
 import type { SentWebhook } from '../support/webhook.js';
 import {
@@ -40,14 +40,10 @@ const NOW = new Date(CLOCK_OUT_AT);
 
 const sent: SentWebhook[] = [];
 
-function app(db: Database = testDatabase()) {
-  return createApp({
-    db,
-    defaultWorkspaceSlug: 'default',
-    now: () => NOW,
-    webhookTargetValidator: testWebhookTargetValidator(),
-  });
-}
+const app = testAppFactory({
+  now: () => NOW,
+  webhookTargetValidator: testWebhookTargetValidator(),
+});
 
 /** 業務処理を必ずロールバックさせるデータベース。書き込みの不可分性を確かめるために使う。 */
 function alwaysRollingBack(db: Database): Database {
@@ -138,7 +134,7 @@ async function submitAndApprove(fixture: Fixture, db?: Database): Promise<Respon
   );
   const request = (await submitted.json()) as DailyRequestRecord;
 
-  return app(db).request(
+  return app({ db }).request(
     `/api/attendance/requests/${request.id}/approve`,
     authorized(fixture.approverCookie, { method: 'POST', body: {} }),
   );

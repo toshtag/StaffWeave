@@ -1,5 +1,8 @@
 import type { Database } from '@staffweave/db';
 import type { Locale, Role } from '@staffweave/domain';
+import { testDatabase } from '../../../../test/integration-setup.js';
+import type { AppDependencies } from '../../src/app.js';
+import { createApp } from '../../src/app.js';
 import { hashPassword } from '../../src/shared/security/password.js';
 
 /** createApp が返すアプリケーションのうち、テストで使う部分だけを表す。 */
@@ -9,13 +12,59 @@ export interface RequestableApp {
 
 export const TEST_PASSWORD = 'staffweave test pass';
 
+/**
+ * 統合テストが使うワークスペース。
+ *
+ * ログイン時の既定（`defaultWorkspaceSlug`）と、実際に作るワークスペースは
+ * 対で意味を持つ。片方だけを変えるとログインできなくなるため、同じ値を共有する。
+ */
+export const TEST_WORKSPACE_SLUG = 'default';
+
+export type TestApp = ReturnType<typeof createApp>;
+
+export interface TestAppOptions
+  extends Omit<AppDependencies, 'db' | 'defaultWorkspaceSlug' | 'now'> {
+  /** 既定は統合テスト用のデータベース。別の接続で確かめたい場合だけ渡す。 */
+  db?: Database;
+  /**
+   * 現在時刻。
+   *
+   * 止まった時刻でよければ絶対時刻の文字列を、テストの中で進めたい場合は関数を渡す。
+   * 渡し方を経路ごとに変えないよう、受け取れる形はこの 2 つに限る。
+   */
+  now?: string | (() => Date);
+}
+
+/** 統合テスト用のアプリ。データベースと既定のワークスペースはここで決める。 */
+export function createTestApp(options: TestAppOptions = {}): TestApp {
+  const { db, now, ...rest } = options;
+  return createApp({
+    ...rest,
+    db: db ?? testDatabase(),
+    defaultWorkspaceSlug: TEST_WORKSPACE_SLUG,
+    ...(now === undefined ? {} : { now: typeof now === 'string' ? () => new Date(now) : now }),
+  });
+}
+
+/**
+ * 既定を決めた、そのファイル用のアプリ生成。
+ *
+ * ファイルごとに違うのは既定の時刻や鍵だけで、組み立て方は同じにする。
+ */
+export function testAppFactory(
+  defaults: TestAppOptions = {},
+): (options?: TestAppOptions) => TestApp {
+  return (options = {}) => createTestApp({ ...defaults, ...options });
+}
+
 export async function createWorkspace(
   db: Database,
-  input: { slug: string; name?: string; timeZone?: string },
+  input: { slug?: string; name?: string; timeZone?: string } = {},
 ): Promise<string> {
+  const slug = input.slug ?? TEST_WORKSPACE_SLUG;
   const rows = await db.query<{ id: string }>(
     'INSERT INTO workspaces (slug, name, time_zone) VALUES ($1, $2, $3) RETURNING id',
-    [input.slug, input.name ?? input.slug, input.timeZone ?? 'Asia/Tokyo'],
+    [slug, input.name ?? slug, input.timeZone ?? 'Asia/Tokyo'],
   );
   const id = rows[0]?.id;
   if (!id) throw new Error('ワークスペースを作成できませんでした');

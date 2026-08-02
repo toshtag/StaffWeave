@@ -1,10 +1,10 @@
-import { createApp } from '@staffweave/api';
 import { describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
+import { createTestApp } from '../support/fixtures.js';
 
 describe('稼働確認エンドポイント（実データベース）', () => {
   it('マイグレーション適用後は ready を返す', async () => {
-    const app = createApp({ db: testDatabase() });
+    const app = createTestApp();
 
     const response = await app.request('/api/ready');
     const body = (await response.json()) as {

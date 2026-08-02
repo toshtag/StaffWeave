@@ -37,7 +37,6 @@ import type {
 } from '@staffweave/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
@@ -46,6 +45,8 @@ import {
   createWorkspace,
   grantOrganizationScope,
   loginAndGetCookie,
+  type TestApp,
+  testAppFactory,
 } from '../support/fixtures.js';
 
 const CLOCK_IN_AT = '2026-04-01T00:00:00.000Z';
@@ -56,17 +57,13 @@ const RANGE = 'from=2026-04-01&to=2026-04-30';
 /** 締めの期間はその月の 1 日で表す。 */
 const CLOSING_RANGE = 'from=2026-04-01&to=2026-05-01';
 
-function app(now: string = CLOCK_OUT_AT) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    now: () => new Date(now),
-    // IC カードの閲覧範囲もここで確かめるため、カードの経路を有効にする。
-    cardFingerprintMasterKey: 'visibility-test-card-fingerprint-master-key',
-  });
-}
+// IC カードの閲覧範囲もここで確かめるため、カードの経路を有効にする。
+const app = testAppFactory({
+  now: CLOCK_OUT_AT,
+  cardFingerprintMasterKey: 'visibility-test-card-fingerprint-master-key',
+});
 
-type App = ReturnType<typeof app>;
+type App = TestApp;
 
 interface Fixture {
   workspaceId: string;
@@ -936,7 +933,7 @@ describe('配属の期間と閲覧範囲', () => {
       organizationId: hostId,
     });
 
-    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const adminCookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
 
     // 終了済み・期間内・開始前の 3 通りを、それぞれ別の従業員で用意する。
@@ -1004,7 +1001,7 @@ describe('配属の期間と閲覧範囲', () => {
   });
 
   it('従業員一覧には、いま配属されている従業員だけが現れる', async () => {
-    const response = await app(`${WORK_DATE}T09:00:00.000Z`).request(
+    const response = await app({ now: `${WORK_DATE}T09:00:00.000Z` }).request(
       '/api/employees',
       authorized(fixture.managerHCookie),
     );
@@ -1013,7 +1010,7 @@ describe('配属の期間と閲覧範囲', () => {
   });
 
   it('勤怠 CSV には、その日に配属されていた従業員だけが現れる', async () => {
-    const response = await app(`${WORK_DATE}T09:00:00.000Z`).request(
+    const response = await app({ now: `${WORK_DATE}T09:00:00.000Z` }).request(
       `/api/exports/attendance.csv?from=${WORK_DATE}&to=${WORK_DATE}`,
       authorized(fixture.managerHCookie),
     );
@@ -1022,7 +1019,7 @@ describe('配属の期間と閲覧範囲', () => {
   });
 
   it('給与 CSV には、その月に配属されていた従業員だけが現れる', async () => {
-    const response = await app(`${WORK_DATE}T09:00:00.000Z`).request(
+    const response = await app({ now: `${WORK_DATE}T09:00:00.000Z` }).request(
       '/api/exports/payroll.csv?period=2026-04-01',
       authorized(fixture.managerHCookie),
     );
@@ -1031,7 +1028,7 @@ describe('配属の期間と閲覧範囲', () => {
   });
 
   it('終了した配属の期間を指定しても、いまの勤務予定は取得できない', async () => {
-    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const employees = (await (
       await instance.request('/api/employees', authorized(fixture.adminCookie))
     ).json()) as EmployeeList;
@@ -1046,7 +1043,7 @@ describe('配属の期間と閲覧範囲', () => {
   });
 
   it('配属されていた期間の勤務予定は取得できる', async () => {
-    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const employees = (await (
       await instance.request('/api/employees', authorized(fixture.adminCookie))
     ).json()) as EmployeeList;
@@ -1087,7 +1084,7 @@ describe('配属の期間と閲覧範囲', () => {
   }
 
   it('異常の一覧には、その業務日に配属されていた従業員だけが現れる', async () => {
-    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
 
     expect(await anomalyEmployeeNumbers(instance, `from=${PAST_DATE}&to=${PAST_DATE}`)).toEqual([
       'E001',
@@ -1098,7 +1095,7 @@ describe('配属の期間と閲覧範囲', () => {
   });
 
   it('配属される前の期間を指定しても、その従業員の異常は取得できない', async () => {
-    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const employees = (await (
       await instance.request('/api/employees', authorized(fixture.adminCookie))
     ).json()) as EmployeeList;
@@ -1113,7 +1110,7 @@ describe('配属の期間と閲覧範囲', () => {
   });
 
   it('配属されていた期間の異常は取得できる', async () => {
-    const instance = app(`${WORK_DATE}T09:00:00.000Z`);
+    const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const employees = (await (
       await instance.request('/api/employees', authorized(fixture.adminCookie))
     ).json()) as EmployeeList;
