@@ -19,7 +19,13 @@ export function testDatabase(): Database {
   return database;
 }
 
-function requireTestDatabaseUrl(): string {
+/**
+ * 統合テストが使ってよいデータベースの接続文字列。
+ *
+ * 名前で誤りを止めるのはここだけにする。検査ごとに読み方を変えると、
+ * 経路によって開発データを消せる状態が残る。
+ */
+export function requireTestDatabaseUrl(): string {
   const url = process.env.TEST_DATABASE_URL;
   if (!url) {
     throw new Error(

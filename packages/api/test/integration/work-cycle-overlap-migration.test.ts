@@ -1,9 +1,7 @@
-import { copyFile, mkdtemp, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Database } from '@staffweave/db';
-import { createDatabase, MIGRATIONS_DIR, migrate } from '@staffweave/db';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { migrate } from '@staffweave/db';
+import { describe, expect, it } from 'vitest';
+import { migrationsUpTo, useTemporaryDatabases } from '../support/migration-database.js';
 
 /**
  * 有効期間の排他制約が、すでに動いている環境で何をするかを固定する。
@@ -20,29 +18,6 @@ const CLEAN = 'staffweave_work_cycle_clean_test';
 const OVERLAPPING = 'staffweave_work_cycle_overlap_test';
 
 const LAST_VERSION_BEFORE_EXCLUSION = 18;
-
-function requireTestDatabaseUrl(): string {
-  const url = process.env.TEST_DATABASE_URL;
-  if (!url) throw new Error('TEST_DATABASE_URL が設定されていません。');
-  return url;
-}
-
-function urlFor(databaseName: string): string {
-  const url = new URL(requireTestDatabaseUrl());
-  url.pathname = `/${databaseName}`;
-  return url.toString();
-}
-
-/** 指定した版までのマイグレーションだけを置いた一時ディレクトリ。内容は原本と同一にする。 */
-async function migrationsUpTo(version: number): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'staffweave-migrations-'));
-  for (const fileName of await readdir(MIGRATIONS_DIR)) {
-    if (!fileName.endsWith('.sql')) continue;
-    if (Number(fileName.slice(0, 4)) > version) continue;
-    await copyFile(join(MIGRATIONS_DIR, fileName), join(directory, fileName));
-  }
-  return directory;
-}
 
 interface Workspace {
   workspaceId: string;
@@ -104,47 +79,32 @@ async function assign(
   );
 }
 
-let admin: Database;
-let clean: Database;
-let overlapping: Database;
 let cleanWorkspace: Workspace;
 
-beforeAll(async () => {
-  admin = createDatabase({ connectionString: urlFor('postgres'), maxConnections: 1 });
-  for (const name of [CLEAN, OVERLAPPING]) {
-    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
-    await admin.query(`CREATE DATABASE ${name}`);
-  }
-
-  clean = createDatabase({ connectionString: urlFor(CLEAN), maxConnections: 1 });
-  overlapping = createDatabase({ connectionString: urlFor(OVERLAPPING), maxConnections: 1 });
-
+const temporary = useTemporaryDatabases([CLEAN, OVERLAPPING], async ({ database }) => {
   // 0018 までを適用し、当時の形で重ならない割当を保存してから 0019 を適用する。
-  await migrate(clean, await migrationsUpTo(LAST_VERSION_BEFORE_EXCLUSION));
-  cleanWorkspace = await createWorkspaceWith(clean, 'default');
-  await assign(clean, cleanWorkspace, { effectiveFrom: '2026-04-01', effectiveTo: '2026-04-30' });
-  await assign(clean, cleanWorkspace, { effectiveFrom: '2026-05-01' });
-  await migrate(clean);
+  await migrate(database(CLEAN), await migrationsUpTo(LAST_VERSION_BEFORE_EXCLUSION));
+  cleanWorkspace = await createWorkspaceWith(database(CLEAN), 'default');
+  await assign(database(CLEAN), cleanWorkspace, {
+    effectiveFrom: '2026-04-01',
+    effectiveTo: '2026-04-30',
+  });
+  await assign(database(CLEAN), cleanWorkspace, { effectiveFrom: '2026-05-01' });
+  await migrate(database(CLEAN));
 
   // 重複したまま 0019 を迎える環境。適用はここでは行わない。
-  await migrate(overlapping, await migrationsUpTo(LAST_VERSION_BEFORE_EXCLUSION));
-  const workspace = await createWorkspaceWith(overlapping, 'default');
-  await assign(overlapping, workspace, { effectiveFrom: '2026-04-01' });
-  await assign(overlapping, workspace, { effectiveFrom: '2026-04-01' });
-}, 60_000);
-
-afterAll(async () => {
-  await clean?.close();
-  await overlapping?.close();
-  for (const name of [CLEAN, OVERLAPPING]) {
-    await admin?.query(`DROP DATABASE IF EXISTS ${name}`);
-  }
-  await admin?.close();
+  await migrate(database(OVERLAPPING), await migrationsUpTo(LAST_VERSION_BEFORE_EXCLUSION));
+  const workspace = await createWorkspaceWith(database(OVERLAPPING), 'default');
+  await assign(database(OVERLAPPING), workspace, { effectiveFrom: '2026-04-01' });
+  await assign(database(OVERLAPPING), workspace, { effectiveFrom: '2026-04-01' });
 });
+
+const clean = () => temporary.database(CLEAN);
+const overlapping = () => temporary.database(OVERLAPPING);
 
 describe('重複が無いデータベース', () => {
   it('保存されていた割当をそのまま残す', async () => {
-    const rows = await clean.query<{ effective_from: string; effective_to: string | null }>(
+    const rows = await clean().query<{ effective_from: string; effective_to: string | null }>(
       `SELECT to_char(effective_from, 'YYYY-MM-DD') AS effective_from,
               to_char(effective_to, 'YYYY-MM-DD') AS effective_to
          FROM employee_work_cycles ORDER BY effective_from`,
@@ -158,31 +118,31 @@ describe('重複が無いデータベース', () => {
 
   it('重なる期間の割当を受け付けない', async () => {
     await expect(
-      assign(clean, cleanWorkspace, { effectiveFrom: '2026-04-15', effectiveTo: '2026-04-20' }),
+      assign(clean(), cleanWorkspace, { effectiveFrom: '2026-04-15', effectiveTo: '2026-04-20' }),
     ).rejects.toThrow(/employee_work_cycles_no_overlap/);
   });
 
   it('終わりの無い割当は、以降のどの期間とも重なる', async () => {
-    await expect(assign(clean, cleanWorkspace, { effectiveFrom: '2027-01-01' })).rejects.toThrow(
+    await expect(assign(clean(), cleanWorkspace, { effectiveFrom: '2027-01-01' })).rejects.toThrow(
       /employee_work_cycles_no_overlap/,
     );
   });
 
   it('接した期間なら受け付ける', async () => {
-    const other = await createWorkspaceWith(clean, 'adjacent');
-    await assign(clean, other, { effectiveFrom: '2026-04-01', effectiveTo: '2026-04-07' });
+    const other = await createWorkspaceWith(clean(), 'adjacent');
+    await assign(clean(), other, { effectiveFrom: '2026-04-01', effectiveTo: '2026-04-07' });
 
-    await expect(assign(clean, other, { effectiveFrom: '2026-04-08' })).resolves.toBeUndefined();
+    await expect(assign(clean(), other, { effectiveFrom: '2026-04-08' })).resolves.toBeUndefined();
   });
 
   it('従業員が違えば同じ期間を持てる', async () => {
-    const other = await createWorkspaceWith(clean, 'other-employee');
+    const other = await createWorkspaceWith(clean(), 'other-employee');
 
-    await expect(assign(clean, other, { effectiveFrom: '2026-05-01' })).resolves.toBeUndefined();
+    await expect(assign(clean(), other, { effectiveFrom: '2026-05-01' })).resolves.toBeUndefined();
   });
 
   it('もう一度適用しても何も起きない', async () => {
-    const result = await migrate(clean);
+    const result = await migrate(clean());
 
     expect(result.appliedVersions).toEqual([]);
   });
@@ -190,11 +150,11 @@ describe('重複が無いデータベース', () => {
 
 describe('重複が残っているデータベース', () => {
   it('該当する従業員を示して適用を止める', async () => {
-    await expect(migrate(overlapping)).rejects.toThrow(/有効期間が重複する勤務周期の割当/);
+    await expect(migrate(overlapping())).rejects.toThrow(/有効期間が重複する勤務周期の割当/);
   });
 
   it('止まった時点では制約を作らない', async () => {
-    const rows = await overlapping.query<{ count: number }>(
+    const rows = await overlapping().query<{ count: number }>(
       `SELECT count(*)::int AS count FROM pg_constraint
         WHERE conname = 'employee_work_cycles_no_overlap'`,
     );
@@ -203,17 +163,17 @@ describe('重複が残っているデータベース', () => {
   });
 
   it('重複を解消すれば適用できる', async () => {
-    await overlapping.query(
+    await overlapping().query(
       `UPDATE employee_work_cycles SET effective_to = '2026-04-07'
         WHERE id = (SELECT id FROM employee_work_cycles ORDER BY created_at, id LIMIT 1)`,
     );
-    await overlapping.query(
+    await overlapping().query(
       `UPDATE employee_work_cycles SET effective_from = '2026-04-08'
         WHERE effective_to IS NULL`,
     );
 
     // 後から足した版も一緒に適用されるため、この移行が通ったことだけを見る。
-    await expect(migrate(overlapping)).resolves.toEqual(
+    await expect(migrate(overlapping())).resolves.toEqual(
       expect.objectContaining({ appliedVersions: expect.arrayContaining([19]) }),
     );
   });
