@@ -151,8 +151,13 @@ function checkContainer(raw, document) {
   check(names.has('node'), `${CONTAINER}: Node.js のランタイムがある`);
 
   // 実行イメージには開発用の道具を入れない。入っていれば Dockerfile 側の問題。
+  // TypeScript 7 の処理系の実体は `@typescript/typescript-<platform>` にあり、
+  // `typescript` はそれを選ぶだけの入口になった。名前を 1 つ見るだけでは足りない。
   const developmentOnly = ['vitest', '@playwright/test', '@biomejs/biome', 'typescript'];
-  const leaked = developmentOnly.filter((name) => names.has(name));
+  const leaked = [
+    ...developmentOnly.filter((name) => names.has(name)),
+    ...[...names].filter((name) => name.startsWith('@typescript/typescript-')),
+  ];
   check(
     leaked.length === 0,
     `${CONTAINER}: 開発用の依存が入っていない${leaked.length === 0 ? '' : `（${leaked.join(', ')}）`}`,
