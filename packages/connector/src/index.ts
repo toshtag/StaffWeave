@@ -6,6 +6,7 @@
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { AnomalyList, SessionObservationList, WorkDay } from '@staffweave/contracts';
+import { requireSecureBaseUrl } from '@staffweave/contracts';
 import type { WebhookEventType } from '@staffweave/domain';
 import { canonicalWebhookMessage, isWebhookEventType, parseCsv } from '@staffweave/domain';
 
@@ -20,6 +21,12 @@ export class ConnectorError extends Error {
 }
 
 export interface ConnectorOptions {
+  /**
+   * staffweave の接続先。
+   *
+   * ループバック以外には https を指定する。API キーと取り出すデータが
+   * 暗号化されていない接続を通らないようにするため。
+   */
   baseUrl: string;
   /** 作成時にしか手に入らない API キー。 */
   apiKey: string;
@@ -35,7 +42,8 @@ export interface StaffweaveConnector {
 }
 
 export function createConnector(options: ConnectorOptions): StaffweaveConnector {
-  const base = options.baseUrl.replace(/\/$/, '');
+  // API キーを送る前に確かめる。要求を出してからでは遅い。
+  const base = requireSecureBaseUrl(options.baseUrl, 'staffweave の接続先');
 
   async function request(path: string): Promise<Response> {
     const response = await fetch(`${base}/api${path}`, {
