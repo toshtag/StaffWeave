@@ -157,6 +157,19 @@ const isLocal = matcherOf(LOCAL_IPV4, LOCAL_IPV6);
 const isGlobalUnicastIpv6 = matcherOf([], GLOBAL_UNICAST_IPV6);
 
 /**
+ * ローカルとして扱うアドレスか。
+ *
+ * `allow-local` のときだけ許す範囲であり、暗号化なしで送ってよい範囲でもある。
+ */
+export function isLocalAddress(address: string): boolean {
+  const version = isIP(address);
+  if (version === 0) return false;
+  const family = version === 4 ? 4 : 6;
+  if (isAlwaysDenied(address, family)) return false;
+  return isLocal(address, family);
+}
+
+/**
  * そのアドレスへ接続してよいか。
  *
  * 判定の順序に意味がある。常時拒否をローカル許可より先に見ることで、
@@ -232,6 +245,23 @@ export function parseWebhookUrl(rawUrl: string): URL {
   }
 
   return url;
+}
+
+/**
+ * 暗号化なしで送ってよい相手かを確かめる。
+ *
+ * 送信先の登録は利用者が行い、本文には勤怠や申請の内容が入る。
+ * 署名は改変を見つけるためのもので、本文と署名の秘匿性は与えない。
+ *
+ * `allow-local` で明示的に許したローカル宛だけ `http` を通す。
+ * 公開ネットワーク宛は、設定に関わらず `https` を必須にする。
+ */
+function requireEncryptedForPublicTarget(url: URL, addresses: ResolvedAddress[]): void {
+  if (url.protocol === 'https:') return;
+  if (addresses.every((candidate) => isLocalAddress(candidate.address))) return;
+  throw new WebhookTargetError(
+    '公開ネットワーク宛の Webhook 送信先には https の URL を指定してください',
+  );
 }
 
 export interface WebhookNetworkPolicy {
@@ -315,7 +345,9 @@ export function createWebhookNetworkPolicy(
             'Webhook 送信先が許可されていないネットワークを指しています',
           );
         }
-        return { url, addresses: [{ address: hostname, family: literal === 6 ? 6 : 4 }] };
+        const addresses: ResolvedAddress[] = [{ address: hostname, family: literal === 6 ? 6 : 4 }];
+        requireEncryptedForPublicTarget(url, addresses);
+        return { url, addresses };
       }
 
       let addresses: ResolvedAddress[];
@@ -341,6 +373,8 @@ export function createWebhookNetworkPolicy(
           );
         }
       }
+
+      requireEncryptedForPublicTarget(url, addresses);
 
       // 検査を通った候補はすべて残す。接続側が到達できるものを選べるようにする。
       return { url, addresses };

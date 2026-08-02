@@ -238,6 +238,20 @@ describe('createWebhookNetworkPolicy', () => {
       const target = await policy('allow-local').resolve('http://127.0.0.1:8787/hook');
       expect(target.addresses).toEqual([{ address: '127.0.0.1', family: 4 }]);
     });
+
+    // 署名は改変を見つけるためのもので、本文と署名の秘匿性は与えない。
+    it('公開アドレス宛の http は、設定に関わらず拒む', async () => {
+      for (const mode of ['public-only', 'allow-local'] as const) {
+        await expect(policy(mode).resolve(`http://${PUBLIC_ADDRESS}/hook`)).rejects.toThrow(
+          /https の URL/,
+        );
+      }
+    });
+
+    it('公開アドレス宛の https は許す', async () => {
+      const target = await policy('public-only').resolve(`https://${PUBLIC_ADDRESS}/hook`);
+      expect(target.addresses).toEqual([{ address: PUBLIC_ADDRESS, family: 4 }]);
+    });
   });
 
   describe('ホスト名の解決', () => {
@@ -272,6 +286,24 @@ describe('createWebhookNetworkPolicy', () => {
         { address: '2606:4700:4700::1111', family: 6 },
         { address: PUBLIC_ADDRESS, family: 4 },
       ]);
+    });
+
+    it('公開アドレスへ解決されるホスト名の http を拒む', async () => {
+      await expect(
+        policy('public-only', resolving({ address: PUBLIC_ADDRESS, family: 4 })).resolve(
+          'http://example.test/hook',
+        ),
+      ).rejects.toThrow(/https の URL/);
+    });
+
+    // allow-local でも、ローカルへ解決される相手にだけ http を許す。
+    it('allow-local ではローカルへ解決されるホスト名の http を許す', async () => {
+      const target = await policy(
+        'allow-local',
+        resolving({ address: '10.0.0.5', family: 4 }),
+      ).resolve('http://payroll.internal/hook');
+
+      expect(target.addresses).toEqual([{ address: '10.0.0.5', family: 4 }]);
     });
 
     it('内部アドレスだけを返すホストを拒む', async () => {
