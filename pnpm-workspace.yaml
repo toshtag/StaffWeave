@@ -1,5 +1,6 @@
 packages:
   - packages/*
 allowBuilds:
-  # Vite / Vitest が使用するバンドラ。ネイティブバイナリの取得にビルドスクリプトが必要。
+  # tsx が TypeScript の変換に使う。ネイティブバイナリの取得にビルドスクリプトが必要。
+  # Vite 8 のバンドラは rolldown、CSS は lightningcss で、どちらも許可を必要としない。
   esbuild: true
