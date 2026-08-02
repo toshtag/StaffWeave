@@ -9,6 +9,8 @@
 # データベースは実行前と同じ状態に戻ります。削除だけが済んだ状態にはなりません。
 set -eu
 
+. "$(dirname "$0")/secure-dump.sh"
+
 INPUT="${1:-}"
 if [ -z "$INPUT" ]; then
   echo "復元するファイルを指定してください。" >&2
@@ -50,8 +52,7 @@ fi
 
 # 復元前の状態を残す。取り違えたファイルで実行しても、戻せる先を用意しておく。
 SAFETY="backups/before-restore-$(date +%Y%m%d-%H%M%S).dump"
-mkdir -p "$(dirname "$SAFETY")"
-docker exec "$CONTAINER" pg_dump --username "$USER_NAME" --format=custom "$DATABASE" > "$SAFETY"
+secure_dump "$SAFETY" "$CONTAINER" "$USER_NAME" "$DATABASE"
 echo "復元前の状態を保存しました: $SAFETY"
 
 # --single-transaction は --clean による削除と投入を 1 つのトランザクションに収める。
