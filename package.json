@@ -32,6 +32,9 @@
     "restore": "./scripts/restore.sh",
     "check:policy": "./scripts/check-policy.sh",
     "check:audit": "./scripts/check-audit.sh",
+    "sbom:generate": "./scripts/generate-sbom.sh",
+    "sbom:validate": "./scripts/validate-sbom.sh",
+    "sbom:verify": "./scripts/validate-sbom.sh && node scripts/verify-sbom.mjs",
     "db:verify": "pnpm --filter \"@staffweave/db\" verify"
   },
   "devDependencies": {

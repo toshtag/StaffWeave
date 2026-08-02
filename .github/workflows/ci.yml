@@ -7,6 +7,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # SBOM だけを取り直したいときに、手で起動できるようにする。
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -160,3 +162,50 @@ jobs:
       - name: イメージをビルド
         # 公開する成果物ではないため、ここではビルドが通ることだけを確かめる。
         run: docker build -f docker/api.Dockerfile -t staffweave-app:ci .
+
+  sbom:
+    name: SBOM の生成と検証
+    runs-on: ubuntu-latest
+
+    # 生成するだけで、まだどこへも配らない。読み取りだけで足りる。
+    # 署名する成果物が決まっていないため、attestation 用の権限は付けない。
+    permissions:
+      contents: read
+
+    steps:
+      # 新しく足す Action は完全なコミット SHA へ固定する。
+      # tag は同じ名前のまま指す先が変わりうるため、版として当てにできない。
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # 生成物へ混ざってはいけない値を、実際に環境へ置いて確かめる。
+      # 実在しない目印を使う。実在する秘密情報は置かない。
+      - name: SBOM を生成する
+        env:
+          SBOM_CANARY: SBOM_MUST_NOT_CONTAIN_THIS_VALUE
+        run: pnpm sbom:generate
+
+      - name: SBOM を検証する
+        env:
+          SBOM_CANARY: SBOM_MUST_NOT_CONTAIN_THIS_VALUE
+        run: pnpm sbom:verify
+
+      - name: SBOM を成果物として残す
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staffweave-sbom-${{ github.sha }}
+          path: |
+            artifacts/sbom/staffweave-workspace.cdx.json
+            artifacts/sbom/staffweave-workspace.cdx.json.sha256
+            artifacts/sbom/staffweave-container.cdx.json
+            artifacts/sbom/staffweave-container.cdx.json.sha256
+          if-no-files-found: error
+          retention-days: 14
