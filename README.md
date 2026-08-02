@@ -126,6 +126,11 @@ pnpm agent card-punch --card-stdin < card.txt
 pnpm agent session-observe --employee E001 --type sign_in
 ```
 
+Agent と connector はリダイレクトを追従しません。3xx を受け取ると、その場で失敗として扱います。
+接続先を確かめられるのは設定した URL に対してだけで、転送先は確かめられないためです。
+307 と 308 は手法と本文を保つため、追従すると登録トークンがそのまま再送されます。
+逆プロキシや公開 URL には、最終的に応答する `https` の URL を直接指定してください。
+
 登録トークンとカード識別子は、標準入力（`--token-stdin` / `--card-stdin`）、
 権限を制限したファイル（`--token-file` / `--card-file`）、
 または端末からの非表示入力で渡します。
@@ -213,6 +218,7 @@ curl -H 'authorization: Bearer <生の鍵>' \
 
 API キーはすべての要求に付きます。`@staffweave/connector` の `createConnector` は、
 ループバック以外の接続先が `https` でなければ、要求を出す前に断ります。
+リダイレクトも追従しません。転送先は検査できないため、3xx はその場で失敗にします。
 `curl` などで直接呼び出す場合も、公開ネットワーク越しでは `https` を使ってください。
 
 API キーの「最後に使った時刻」は、要求のたびには書き直しません。
