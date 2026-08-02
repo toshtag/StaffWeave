@@ -183,6 +183,56 @@ else
   pass 'SBOM のジョブの Action はコミット SHA で固定されています'
 fi
 
+echo '依存の版'
+# 実行環境の major は .nvmrc を正本とする。
+NODE_MAJOR=$(sed -n '1s/^v\{0,1\}\([0-9][0-9]*\).*$/\1/p' .nvmrc)
+if [ -z "$NODE_MAJOR" ]; then
+  fail '.nvmrc から Node の major を読めません'
+  NODE_MAJOR=0
+fi
+
+# 配布するコンテナが別の major で動くと、CI で通ったものが配布物では動かない。
+FROM_LINES=$(grep -E '^FROM node:' docker/api.Dockerfile)
+if printf '%s\n' "$FROM_LINES" | grep -qvE "^FROM node:${NODE_MAJOR}-"; then
+  printf '%s\n' "$FROM_LINES"
+  fail "コンテナの Node が .nvmrc（${NODE_MAJOR} 系）と違います"
+else
+  pass "コンテナの Node は .nvmrc と同じ ${NODE_MAJOR} 系です"
+fi
+
+# 依存の名前を受け取り、宣言している版の範囲を重複なく返す。
+# 対象は package.json の依存の項目だけで、scripts の中の同名の語は拾わない。
+declared_ranges() {
+  git ls-files 'package.json' 'packages/*/package.json' \
+    | xargs grep -h "\"$1\": \"" 2>/dev/null \
+    | sed 's/.*: *"\([^"]*\)".*/\1/' \
+    | sort -u
+}
+
+# 同じ道具をパッケージごとに別の版で宣言すると、lockfile を作り直したときに
+# どのパッケージが古い版を引くかが変わる。宣言の側を 1 つに保つ。
+for dep in '@types/node' tsx typescript vitest; do
+  RANGES=$(declared_ranges "$dep")
+  if [ "$(printf '%s\n' "$RANGES" | grep -c .)" -eq 1 ]; then
+    pass "$dep の版指定はパッケージ間で揃っています（$RANGES）"
+  else
+    printf '  %s: %s\n' "$dep" "$(printf '%s ' $RANGES)"
+    fail "$dep の版指定がパッケージ間で食い違っています"
+  fi
+done
+
+# 型定義の major が実行環境より先へ行くと、実行環境に無い API が型検査だけ通る。
+TYPES_NODE=$(declared_ranges '@types/node')
+case "$TYPES_NODE" in
+  "^${NODE_MAJOR}."*)
+    pass "@types/node の major が実行環境（Node ${NODE_MAJOR}）と一致しています"
+    ;;
+  *)
+    printf '  @types/node: %s / .nvmrc: %s\n' "$(printf '%s ' $TYPES_NODE)" "$NODE_MAJOR"
+    fail '@types/node の major が実行環境と一致していません'
+    ;;
+esac
+
 echo 'マイグレーション'
 DUPLICATES=$(git ls-files 'packages/db/migrations/*.sql' | sed 's#.*/##' | cut -c1-4 | sort | uniq -d)
 if [ -n "$DUPLICATES" ]; then

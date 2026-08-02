@@ -27,7 +27,7 @@
   "devDependencies": {
     "@staffweave/agent": "workspace:*",
     "@staffweave/connector": "workspace:*",
-    "@types/node": "^24.7.0",
+    "@types/node": "^24.13.3",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }
