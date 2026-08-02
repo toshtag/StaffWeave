@@ -1,26 +1,19 @@
 import type { RecordAttendanceEventResponse, WorkDay } from '@staffweave/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
   createOrganization,
+  createTestApp,
   createUser,
   createWorkspace,
   loginAndGetCookie,
+  type TestApp,
 } from '../support/fixtures.js';
 
-function app(now?: () => Date) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    ...(now === undefined ? {} : { now }),
-  });
-}
-
 async function punch(
-  instance: ReturnType<typeof app>,
+  instance: TestApp,
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
@@ -40,11 +33,11 @@ describe('最小打刻', () => {
       displayName: '勤怠 花子',
       email: 'hanako@example.com',
     });
-    cookie = await loginAndGetCookie(app(), { email: 'hanako@example.com' });
+    cookie = await loginAndGetCookie(createTestApp(), { email: 'hanako@example.com' });
   });
 
   it('出勤を打刻すると勤務中になる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const response = await punch(instance, cookie, {
       eventType: 'clock_in',
       requestId: 'request-clock-in-1',
@@ -60,7 +53,7 @@ describe('最小打刻', () => {
   });
 
   it('出勤して退勤すると退勤済みになる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'request-in-1' });
     const response = await punch(instance, cookie, {
       eventType: 'clock_out',
@@ -74,7 +67,7 @@ describe('最小打刻', () => {
   });
 
   it('携帯からの打刻は入力元が mobile として記録される', async () => {
-    const response = await punch(app(), cookie, {
+    const response = await punch(createTestApp(), cookie, {
       eventType: 'clock_in',
       requestId: 'mobile-source-request',
       source: 'mobile',
@@ -87,7 +80,7 @@ describe('最小打刻', () => {
 
   it('端末や修正を入力元として指定することはできない', async () => {
     for (const source of ['device', 'correction']) {
-      const response = await punch(app(), cookie, {
+      const response = await punch(createTestApp(), cookie, {
         eventType: 'clock_in',
         requestId: `invalid-source-${source}`,
         source,
@@ -97,7 +90,7 @@ describe('最小打刻', () => {
   });
 
   it('当日の状態を取得できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const before = (await (
       await instance.request('/api/attendance/today', authorized(cookie))
     ).json()) as WorkDay;
@@ -114,7 +107,7 @@ describe('最小打刻', () => {
   });
 
   it('打刻イベントは書き換えられない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'request-in-3' });
 
     await expect(
@@ -124,7 +117,7 @@ describe('最小打刻', () => {
   });
 
   it('打刻ごとに監査記録が残る', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'request-in-4' });
     await punch(instance, cookie, { eventType: 'clock_out', requestId: 'request-out-4' });
 
@@ -140,7 +133,7 @@ describe('最小打刻', () => {
   });
 
   it('監査記録も書き換えられない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'request-in-5' });
 
     await expect(testDatabase().query('DELETE FROM audit_logs')).rejects.toThrow(/追記のみ/);
@@ -159,11 +152,11 @@ describe('二重送信の防止', () => {
       displayName: '勤怠 花子',
       email: 'hanako@example.com',
     });
-    cookie = await loginAndGetCookie(app(), { email: 'hanako@example.com' });
+    cookie = await loginAndGetCookie(createTestApp(), { email: 'hanako@example.com' });
   });
 
   it('同じ冪等キーの再送は 1 件しか記録しない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const body = { eventType: 'clock_in', requestId: 'same-request-id' };
 
     const first = await punch(instance, cookie, body);
@@ -181,7 +174,7 @@ describe('二重送信の防止', () => {
   });
 
   it('同時に届いた同じ冪等キーでも 1 件しか記録しない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const body = { eventType: 'clock_in', requestId: 'concurrent-request-id' };
 
     const responses = await Promise.all([
@@ -199,7 +192,7 @@ describe('二重送信の防止', () => {
   });
 
   it('異なる冪等キーの同時出勤は 1 件だけ受け付ける', async () => {
-    const instance = app();
+    const instance = createTestApp();
 
     const responses = await Promise.all([
       punch(instance, cookie, { eventType: 'clock_in', requestId: 'race-request-a' }),
@@ -227,11 +220,11 @@ describe('受け付けられない打刻', () => {
       displayName: '勤怠 花子',
       email: 'hanako@example.com',
     });
-    cookie = await loginAndGetCookie(app(), { email: 'hanako@example.com' });
+    cookie = await loginAndGetCookie(createTestApp(), { email: 'hanako@example.com' });
   });
 
   it('出勤前の退勤は 409 を返す', async () => {
-    const response = await punch(app(), cookie, {
+    const response = await punch(createTestApp(), cookie, {
       eventType: 'clock_out',
       requestId: 'invalid-clock-out',
     });
@@ -242,7 +235,7 @@ describe('受け付けられない打刻', () => {
   });
 
   it('連続した出勤は 409 を返す', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'first-clock-in' });
     const response = await punch(instance, cookie, {
       eventType: 'clock_in',
@@ -252,7 +245,7 @@ describe('受け付けられない打刻', () => {
   });
 
   it('退勤後の再出勤は 409 を返す', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'day-clock-in' });
     await punch(instance, cookie, { eventType: 'clock_out', requestId: 'day-clock-out' });
     const response = await punch(instance, cookie, {
@@ -263,7 +256,7 @@ describe('受け付けられない打刻', () => {
   });
 
   it('未来の時刻は打刻できない', async () => {
-    const response = await punch(app(), cookie, {
+    const response = await punch(createTestApp(), cookie, {
       eventType: 'clock_in',
       requestId: 'future-request',
       occurredAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
@@ -272,7 +265,7 @@ describe('受け付けられない打刻', () => {
   });
 
   it('24 時間より前の時刻は打刻できない', async () => {
-    const response = await punch(app(), cookie, {
+    const response = await punch(createTestApp(), cookie, {
       eventType: 'clock_in',
       requestId: 'ancient-request',
       occurredAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
@@ -281,12 +274,15 @@ describe('受け付けられない打刻', () => {
   });
 
   it('短すぎる冪等キーは契約違反として拒否する', async () => {
-    const response = await punch(app(), cookie, { eventType: 'clock_in', requestId: 'short' });
+    const response = await punch(createTestApp(), cookie, {
+      eventType: 'clock_in',
+      requestId: 'short',
+    });
     expect(response.status).toBe(400);
   });
 
   it('未知の打刻種別は契約違反として拒否する', async () => {
-    const response = await punch(app(), cookie, {
+    const response = await punch(createTestApp(), cookie, {
       eventType: 'lunch_start',
       requestId: 'unknown-type-request',
     });
@@ -304,7 +300,7 @@ describe('従業員が紐づかない利用者', () => {
   });
 
   it('打刻できない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
 
     const response = await punch(instance, cookie, {
@@ -337,7 +333,7 @@ describe('業務日とワークスペース境界', () => {
     });
 
     // UTC 2026-04-01T20:00 は Asia/Tokyo では 2026-04-02 05:00。
-    const instance = app(() => new Date('2026-04-01T20:00:00.000Z'));
+    const instance = createTestApp({ now: '2026-04-01T20:00:00.000Z' });
     const cookie = await loginAndGetCookie(instance, { email: 'yakin@example.com' });
     const response = await punch(instance, cookie, {
       eventType: 'clock_in',
@@ -369,7 +365,7 @@ describe('業務日とワークスペース境界', () => {
       email: 'person@example.com',
     });
 
-    const instance = app();
+    const instance = createTestApp();
     const firstCookie = await loginAndGetCookie(instance, { email: 'person@example.com' });
     const secondCookie = await loginAndGetCookie(instance, {
       email: 'person@example.com',

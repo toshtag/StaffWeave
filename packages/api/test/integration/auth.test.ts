@@ -1,11 +1,11 @@
 import type { SessionResponse } from '@staffweave/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
   createOrganization,
+  createTestApp,
   createUser,
   createWorkspace,
   grantOrganizationScope,
@@ -14,10 +14,6 @@ import {
   sessionCookieOf,
   TEST_PASSWORD,
 } from '../support/fixtures.js';
-
-function app() {
-  return createApp({ db: testDatabase(), defaultWorkspaceSlug: 'default' });
-}
 
 describe('ローカル認証', () => {
   let workspaceId: string;
@@ -32,7 +28,7 @@ describe('ローカル認証', () => {
   });
 
   it('正しい資格情報でログインできる', async () => {
-    const response = await login(app(), { email: 'admin@example.com' });
+    const response = await login(createTestApp(), { email: 'admin@example.com' });
     const body = (await response.json()) as SessionResponse;
 
     expect(response.status).toBe(200);
@@ -44,7 +40,7 @@ describe('ローカル認証', () => {
   });
 
   it('セッション Cookie は HttpOnly で発行される', async () => {
-    const response = await login(app(), { email: 'admin@example.com' });
+    const response = await login(createTestApp(), { email: 'admin@example.com' });
     const header = response.headers.get('set-cookie') ?? '';
 
     expect(header).toContain('staffweave_session=');
@@ -53,18 +49,24 @@ describe('ローカル認証', () => {
   });
 
   it('メールアドレスの大文字小文字は区別しない', async () => {
-    const response = await login(app(), { email: 'ADMIN@Example.COM' });
+    const response = await login(createTestApp(), { email: 'ADMIN@Example.COM' });
     expect(response.status).toBe(200);
   });
 
   it('パスワードが違えば 401 を返す', async () => {
-    const response = await login(app(), { email: 'admin@example.com', password: 'wrong password' });
+    const response = await login(createTestApp(), {
+      email: 'admin@example.com',
+      password: 'wrong password',
+    });
     expect(response.status).toBe(401);
   });
 
   it('存在しないメールアドレスでも同じ応答を返す', async () => {
-    const missing = await login(app(), { email: 'nobody@example.com' });
-    const wrong = await login(app(), { email: 'admin@example.com', password: 'wrong password' });
+    const missing = await login(createTestApp(), { email: 'nobody@example.com' });
+    const wrong = await login(createTestApp(), {
+      email: 'admin@example.com',
+      password: 'wrong password',
+    });
 
     expect(missing.status).toBe(401);
     expect(await missing.json()).toEqual(await wrong.json());
@@ -75,12 +77,12 @@ describe('ローカル認証', () => {
       email: 'suspended@example.com',
       status: 'suspended',
     });
-    const response = await login(app(), { email: 'suspended@example.com' });
+    const response = await login(createTestApp(), { email: 'suspended@example.com' });
     expect(response.status).toBe(401);
   });
 
   it('契約に合わない要求は 400 を返し、項目を示す', async () => {
-    const response = await app().request('/api/auth/login', {
+    const response = await createTestApp().request('/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: 'admin@example.com' }),
@@ -105,12 +107,12 @@ describe('セッション', () => {
   });
 
   it('Cookie が無ければ 401 を返す', async () => {
-    const response = await app().request('/api/auth/session');
+    const response = await createTestApp().request('/api/auth/session');
     expect(response.status).toBe(401);
   });
 
   it('無効なトークンでは 401 を返す', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/auth/session',
       authorized('staffweave_session=not-a-real-token'),
     );
@@ -118,7 +120,7 @@ describe('セッション', () => {
   });
 
   it('ログイン後はセッションを取得できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
     const response = await instance.request('/api/auth/session', authorized(cookie));
 
@@ -127,7 +129,7 @@ describe('セッション', () => {
   });
 
   it('ログアウト後は同じ Cookie を使えない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
 
     const loggedOut = await instance.request(
@@ -141,22 +143,18 @@ describe('セッション', () => {
   });
 
   it('有効期限を過ぎたセッションは使えない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const response = await login(instance, { email: 'admin@example.com' });
     const cookie = sessionCookieOf(response);
 
     // 13 時間後の時計で同じ Cookie を使う（既定の有効期間は 12 時間）。
-    const later = createApp({
-      db: testDatabase(),
-      defaultWorkspaceSlug: 'default',
-      now: () => new Date(Date.now() + 13 * 60 * 60 * 1000),
-    });
+    const later = createTestApp({ now: () => new Date(Date.now() + 13 * 60 * 60 * 1000) });
 
     expect((await later.request('/api/auth/session', authorized(cookie))).status).toBe(401);
   });
 
   it('ログイン後に停止された利用者は、同じ Cookie を使えない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
 
     await testDatabase().query("UPDATE users SET status = 'suspended' WHERE email = $1", [
@@ -184,7 +182,7 @@ describe('セッション', () => {
     });
     await grantOrganizationScope(testDatabase(), workspaceId, { userId, organizationId: first });
 
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, {
       email: 'hanako@example.com',
       workspaceSlug: 'scoped',
@@ -200,7 +198,7 @@ describe('セッション', () => {
   });
 
   it('表示言語を切り替えられる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
 
     const updated = await instance.request(
@@ -215,7 +213,7 @@ describe('セッション', () => {
   });
 
   it('対応していない表示言語は拒否する', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
 
     const response = await instance.request(
@@ -242,7 +240,7 @@ describe('ワークスペース境界（認証）', () => {
   });
 
   it('同じメールアドレスでもワークスペースごとに別の利用者として扱う', async () => {
-    const instance = app();
+    const instance = createTestApp();
 
     const defaultWorkspace = await login(instance, {
       email: 'person@example.com',
@@ -266,7 +264,7 @@ describe('ワークスペース境界（認証）', () => {
   });
 
   it('別ワークスペースのパスワードでは認証できない', async () => {
-    const response = await login(app(), {
+    const response = await login(createTestApp(), {
       email: 'person@example.com',
       password: 'another workspace pass',
     });
@@ -274,7 +272,7 @@ describe('ワークスペース境界（認証）', () => {
   });
 
   it('存在しないワークスペースを指定しても 401 を返す', async () => {
-    const response = await login(app(), {
+    const response = await login(createTestApp(), {
       email: 'person@example.com',
       workspaceSlug: 'no-such-workspace',
     });

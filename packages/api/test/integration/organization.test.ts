@@ -1,19 +1,15 @@
 import type { Employee, Organization, OrganizationList, Site } from '@staffweave/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createOrganization,
+  createTestApp,
   createUser,
   createWorkspace,
   login,
   loginAndGetCookie,
 } from '../support/fixtures.js';
-
-function app() {
-  return createApp({ db: testDatabase(), defaultWorkspaceSlug: 'default' });
-}
 
 describe('組織構造の管理', () => {
   let workspaceId: string;
@@ -25,11 +21,11 @@ describe('組織構造の管理', () => {
       email: 'admin@example.com',
       roles: ['workspace_admin'],
     });
-    adminCookie = await loginAndGetCookie(app(), { email: 'admin@example.com' });
+    adminCookie = await loginAndGetCookie(createTestApp(), { email: 'admin@example.com' });
   });
 
   it('組織を登録して一覧できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const created = await instance.request(
       '/api/organizations',
       authorized(adminCookie, { method: 'POST', body: { code: 'hq', name: '本社' } }),
@@ -45,7 +41,7 @@ describe('組織構造の管理', () => {
   });
 
   it('同じコードの組織は登録できない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await instance.request(
       '/api/organizations',
       authorized(adminCookie, { method: 'POST', body: { code: 'HQ', name: '本社' } }),
@@ -59,7 +55,7 @@ describe('組織構造の管理', () => {
   });
 
   it('コードの形式が不正なら 400 を返す', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/organizations',
       authorized(adminCookie, { method: 'POST', body: { code: '本社', name: '本社' } }),
     );
@@ -68,7 +64,7 @@ describe('組織構造の管理', () => {
 
   it('拠点は組織へ属し、タイムゾーンを省略するとワークスペースの値を引き継ぐ', async () => {
     const organizationId = await createOrganization(testDatabase(), workspaceId, { code: 'HQ' });
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/sites',
       authorized(adminCookie, {
         method: 'POST',
@@ -82,7 +78,7 @@ describe('組織構造の管理', () => {
   });
 
   it('部門は親子関係を持てる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const organizationId = await createOrganization(testDatabase(), workspaceId, { code: 'HQ' });
 
     const parent = await instance.request(
@@ -114,7 +110,7 @@ describe('組織構造の管理', () => {
   });
 
   it('別の組織の部門は親にできない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const organizationId = await createOrganization(testDatabase(), workspaceId, { code: 'HQ' });
     const otherOrganizationId = await createOrganization(testDatabase(), workspaceId, {
       code: 'BRANCH',
@@ -163,7 +159,7 @@ describe('権限', () => {
   });
 
   it('組織管理者は閲覧できるが登録はできない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, { email: 'manager@example.com' });
 
     expect((await instance.request('/api/organizations', authorized(cookie))).status).toBe(200);
@@ -178,7 +174,7 @@ describe('権限', () => {
   });
 
   it('従業員ロールは組織構造を閲覧できない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const cookie = await loginAndGetCookie(instance, { email: 'member@example.com' });
 
     expect((await instance.request('/api/organizations', authorized(cookie))).status).toBe(403);
@@ -186,7 +182,7 @@ describe('権限', () => {
   });
 
   it('未認証では 401 を返す', async () => {
-    expect((await app().request('/api/organizations')).status).toBe(401);
+    expect((await createTestApp().request('/api/organizations')).status).toBe(401);
   });
 });
 
@@ -211,11 +207,14 @@ describe('ワークスペース境界（組織構造）', () => {
     await createOrganization(testDatabase(), firstWorkspaceId, { code: 'FIRST' });
     await createOrganization(testDatabase(), secondWorkspaceId, { code: 'SECOND' });
 
-    firstAdminCookie = await loginAndGetCookie(app(), { email: 'admin@example.com' });
+    firstAdminCookie = await loginAndGetCookie(createTestApp(), { email: 'admin@example.com' });
   });
 
   it('自分のワークスペースの組織だけが見える', async () => {
-    const response = await app().request('/api/organizations', authorized(firstAdminCookie));
+    const response = await createTestApp().request(
+      '/api/organizations',
+      authorized(firstAdminCookie),
+    );
     const body = (await response.json()) as OrganizationList;
 
     expect(body.organizations.map((organization) => organization.code)).toEqual(['FIRST']);
@@ -229,7 +228,7 @@ describe('ワークスペース境界（組織構造）', () => {
     const foreignOrganizationId = rows[0]?.id;
     expect(foreignOrganizationId).toBeDefined();
 
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/sites',
       authorized(firstAdminCookie, {
         method: 'POST',
@@ -241,11 +240,11 @@ describe('ワークスペース境界（組織構造）', () => {
   });
 
   it('別ワークスペースの管理者は相手の組織を見られない', async () => {
-    const otherCookie = await loginAndGetCookie(app(), {
+    const otherCookie = await loginAndGetCookie(createTestApp(), {
       email: 'admin@example.com',
       workspaceSlug: 'other',
     });
-    const response = await app().request('/api/organizations', authorized(otherCookie));
+    const response = await createTestApp().request('/api/organizations', authorized(otherCookie));
     const body = (await response.json()) as OrganizationList;
 
     expect(body.organizations.map((organization) => organization.code)).toEqual(['SECOND']);
@@ -264,11 +263,11 @@ describe('従業員の登録', () => {
       email: 'admin@example.com',
       roles: ['workspace_admin'],
     });
-    adminCookie = await loginAndGetCookie(app(), { email: 'admin@example.com' });
+    adminCookie = await loginAndGetCookie(createTestApp(), { email: 'admin@example.com' });
   });
 
   it('ログイン用の利用者を伴う従業員を登録できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const response = await instance.request(
       '/api/employees',
       authorized(adminCookie, {
@@ -299,7 +298,7 @@ describe('従業員の登録', () => {
   });
 
   it('利用者を伴わない従業員も登録できる', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/employees',
       authorized(adminCookie, {
         method: 'POST',
@@ -312,7 +311,7 @@ describe('従業員の登録', () => {
   });
 
   it('同じ従業員番号は登録できない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const body = { organizationId, employeeNumber: 'E003', displayName: '重複 三郎' };
     await instance.request('/api/employees', authorized(adminCookie, { method: 'POST', body }));
     const duplicate = await instance.request(
@@ -324,7 +323,7 @@ describe('従業員の登録', () => {
   });
 
   it('既存のメールアドレスでは利用者を作れず、従業員も登録されない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const response = await instance.request(
       '/api/employees',
       authorized(adminCookie, {
@@ -348,7 +347,7 @@ describe('従業員の登録', () => {
   });
 
   it('別の組織の拠点は主拠点にできない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const otherOrganizationId = await createOrganization(testDatabase(), workspaceId, {
       code: 'BRANCH',
     });
@@ -387,7 +386,7 @@ describe('従業員の登録', () => {
   });
 
   it('別の組織の部門は主部門にできない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const otherOrganizationId = await createOrganization(testDatabase(), workspaceId, {
       code: 'BRANCH',
     });
@@ -418,7 +417,7 @@ describe('従業員の登録', () => {
   });
 
   it('同じ組織の拠点と部門なら主拠点・主部門にできる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const site = (await (
       await instance.request(
         '/api/sites',
@@ -459,7 +458,7 @@ describe('従業員の登録', () => {
   });
 
   it('短すぎるパスワードは拒否する', async () => {
-    const response = await app().request(
+    const response = await createTestApp().request(
       '/api/employees',
       authorized(adminCookie, {
         method: 'POST',

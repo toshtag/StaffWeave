@@ -1,27 +1,18 @@
 import type { CorrectAttendanceResponse, WorkDay } from '@staffweave/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
   createOrganization,
+  createTestApp,
   createWorkspace,
   loginAndGetCookie,
+  type TestApp,
 } from '../support/fixtures.js';
 
-function app(now?: () => Date) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    ...(now === undefined ? {} : { now }),
-  });
-}
-
-type App = ReturnType<typeof app>;
-
 async function punch(
-  instance: App,
+  instance: TestApp,
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
@@ -29,7 +20,7 @@ async function punch(
 }
 
 async function correct(
-  instance: App,
+  instance: TestApp,
   cookie: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
@@ -39,7 +30,7 @@ async function correct(
   );
 }
 
-async function today(instance: App, cookie: string): Promise<WorkDay> {
+async function today(instance: TestApp, cookie: string): Promise<WorkDay> {
   const response = await instance.request('/api/attendance/today', authorized(cookie));
   return (await response.json()) as WorkDay;
 }
@@ -53,7 +44,7 @@ async function setUpEmployee(): Promise<string> {
     displayName: '勤怠 花子',
     email: 'hanako@example.com',
   });
-  return loginAndGetCookie(app(), { email: 'hanako@example.com' });
+  return loginAndGetCookie(createTestApp(), { email: 'hanako@example.com' });
 }
 
 describe('休憩', () => {
@@ -64,7 +55,7 @@ describe('休憩', () => {
   });
 
   it('出勤後に休憩を開始・終了できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'break-clock-in' });
 
     const started = await punch(instance, cookie, {
@@ -87,7 +78,7 @@ describe('休憩', () => {
   });
 
   it('複数回の休憩を記録できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'multi-clock-in' });
     for (const index of [1, 2, 3]) {
       await punch(instance, cookie, {
@@ -106,7 +97,7 @@ describe('休憩', () => {
   });
 
   it('休憩中は退勤できず、先に休憩終了を求める', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'still-break-in' });
     await punch(instance, cookie, { eventType: 'break_start', requestId: 'still-break-start' });
 
@@ -122,7 +113,7 @@ describe('休憩', () => {
   });
 
   it('出勤前の休憩開始は受け付けない', async () => {
-    const response = await punch(app(), cookie, {
+    const response = await punch(createTestApp(), cookie, {
       eventType: 'break_start',
       requestId: 'early-break-start',
     });
@@ -130,7 +121,7 @@ describe('休憩', () => {
   });
 
   it('休憩中でない休憩終了は受け付けない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'no-break-in' });
     const response = await punch(instance, cookie, {
       eventType: 'break_end',
@@ -152,7 +143,7 @@ describe('日跨ぎ勤務', () => {
     });
 
     // Asia/Tokyo で 2026-04-01 22:00 に出勤する。
-    const night = app(() => new Date('2026-04-01T13:00:00.000Z'));
+    const night = createTestApp({ now: '2026-04-01T13:00:00.000Z' });
     const cookie = await loginAndGetCookie(night, { email: 'yakin@example.com' });
     const clockIn = await punch(night, cookie, {
       eventType: 'clock_in',
@@ -164,7 +155,7 @@ describe('日跨ぎ勤務', () => {
     );
 
     // Asia/Tokyo で 2026-04-02 06:00 に退勤する。暦日は翌日だが、勤務は続いている。
-    const morning = app(() => new Date('2026-04-01T21:00:00.000Z'));
+    const morning = createTestApp({ now: '2026-04-01T21:00:00.000Z' });
     const clockOut = await punch(morning, cookie, {
       eventType: 'clock_out',
       requestId: 'overnight-clock-out',
@@ -188,7 +179,7 @@ describe('日跨ぎ勤務', () => {
       email: 'yakin@example.com',
     });
 
-    const night = app(() => new Date('2026-04-01T13:00:00.000Z'));
+    const night = createTestApp({ now: '2026-04-01T13:00:00.000Z' });
     const cookie = await loginAndGetCookie(night, { email: 'yakin@example.com' });
     await punch(night, cookie, {
       eventType: 'clock_in',
@@ -196,7 +187,7 @@ describe('日跨ぎ勤務', () => {
       occurredAt: '2026-04-01T13:00:00.000Z',
     });
 
-    const morning = app(() => new Date('2026-04-01T21:00:00.000Z'));
+    const morning = createTestApp({ now: '2026-04-01T21:00:00.000Z' });
     const day = await today(morning, cookie);
 
     expect(day.businessDate).toBe('2026-04-01');
@@ -212,7 +203,7 @@ describe('打刻の修正', () => {
   });
 
   it('時刻を修正すると有効な打刻が置き換わり、元の記録は残る', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const created = await punch(instance, cookie, {
       eventType: 'clock_in',
       requestId: 'adjust-target-in',
@@ -238,7 +229,7 @@ describe('打刻の修正', () => {
   });
 
   it('取り消すと有効な打刻から消えるが履歴には残る', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'void-first-in' });
     const duplicate = await punch(instance, cookie, {
       eventType: 'break_start',
@@ -261,7 +252,7 @@ describe('打刻の修正', () => {
   });
 
   it('記録されていなかった打刻を追加できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'add-base-in' });
     const day = await today(instance, cookie);
 
@@ -281,7 +272,7 @@ describe('打刻の修正', () => {
   });
 
   it('修正の前後が監査記録に残る', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const created = await punch(instance, cookie, {
       eventType: 'clock_in',
       requestId: 'audit-target-in',
@@ -311,7 +302,7 @@ describe('打刻の修正', () => {
   });
 
   it('理由が無い修正は受け付けない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const created = await punch(instance, cookie, {
       eventType: 'clock_in',
       requestId: 'no-reason-in',
@@ -328,7 +319,7 @@ describe('打刻の修正', () => {
   });
 
   it('存在しない打刻は修正できない', async () => {
-    const response = await correct(app(), cookie, {
+    const response = await correct(createTestApp(), cookie, {
       action: 'void',
       targetEventId: '00000000-0000-4000-8000-000000000000',
       reason: '誤操作のため',
@@ -339,7 +330,7 @@ describe('打刻の修正', () => {
   });
 
   it('追加では対象を指定できない', async () => {
-    const response = await correct(app(), cookie, {
+    const response = await correct(createTestApp(), cookie, {
       action: 'add',
       targetEventId: '00000000-0000-4000-8000-000000000000',
       eventType: 'clock_in',
@@ -352,7 +343,7 @@ describe('打刻の修正', () => {
   });
 
   it('修正でも同じ冪等キーの再送は 1 件しか記録しない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const created = await punch(instance, cookie, {
       eventType: 'clock_in',
       requestId: 'idempotent-correction-in',
@@ -379,7 +370,7 @@ describe('打刻の修正', () => {
   });
 
   it('他人の打刻は修正できない', async () => {
-    const instance = app();
+    const instance = createTestApp();
     const created = await punch(instance, cookie, {
       eventType: 'clock_in',
       requestId: 'other-employee-in',
@@ -418,7 +409,7 @@ describe('業務日の指定取得', () => {
   });
 
   it('指定した業務日の記録を取得できる', async () => {
-    const instance = app();
+    const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'day-lookup-in' });
     const day = await today(instance, cookie);
 
@@ -433,12 +424,18 @@ describe('業務日の指定取得', () => {
   });
 
   it('業務日の形式が不正なら 400 を返す', async () => {
-    const response = await app().request('/api/attendance/days/2026-4-1', authorized(cookie));
+    const response = await createTestApp().request(
+      '/api/attendance/days/2026-4-1',
+      authorized(cookie),
+    );
     expect(response.status).toBe(400);
   });
 
   it('記録がない業務日は空の状態を返す', async () => {
-    const response = await app().request('/api/attendance/days/2020-01-01', authorized(cookie));
+    const response = await createTestApp().request(
+      '/api/attendance/days/2020-01-01',
+      authorized(cookie),
+    );
     const body = (await response.json()) as WorkDay;
 
     expect(response.status).toBe(200);
