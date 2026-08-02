@@ -483,7 +483,7 @@ pnpm typecheck         # 型検査
 pnpm test              # 単体 + 統合（DB 必要）
 pnpm test:e2e          # ブラウザによる E2E（DB 必要）
 pnpm db:verify         # マイグレーションの適用漏れと内容の変更を検査
-pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・認可契約・マイグレーション・依存方向）を検査
+pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・ライセンス・認可契約・マイグレーション・依存方向）を検査
 pnpm check:audit       # 依存の既知脆弱性（moderate 以上があれば失敗）
 
 pnpm test:unit         # 単体テストのみ（DB 不要）
