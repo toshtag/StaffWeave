@@ -95,6 +95,7 @@ interface RequestRow {
 }
 
 interface TransitionRow {
+  request_id: string;
   from_state: DailyRequestState;
   to_state: DailyRequestState;
   event: DailyRequestEventType;
@@ -144,21 +145,35 @@ function toClosing(row: ClosingRow): MonthlyClosingRecord {
 }
 
 export function createApprovalRepository(db: Queryable): ApprovalRepository {
+  /**
+   * 申請の状態遷移を、対象の申請すべてについて 1 回で読む。
+   * 申請ごとに引くと、一覧の問い合わせ回数が件数に比例する。
+   */
   async function transitionsOf(
     workspaceId: string,
-    requestId: string,
-  ): Promise<RequestTransitionRecord[]> {
+    requestIds: readonly string[],
+  ): Promise<Map<string, RequestTransitionRecord[]>> {
+    const grouped = new Map<string, RequestTransitionRecord[]>();
+    if (requestIds.length === 0) return grouped;
+
     const rows = await db.query<TransitionRow>(
-      `SELECT from_state, to_state, event, actor_user_id, comment, occurred_at
+      `SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred_at
          FROM attendance_request_transitions
-        WHERE workspace_id = $1 AND request_id = $2
+        WHERE workspace_id = $1 AND request_id = ANY($2::uuid[])
         ORDER BY occurred_at, id`,
-      [workspaceId, requestId],
+      [workspaceId, [...requestIds]],
     );
-    return rows.map(toTransition);
+
+    // 並び順は問い合わせが決める。ここでは申請ごとに振り分けるだけで、順序を触らない。
+    for (const row of rows) {
+      const transitions = grouped.get(row.request_id) ?? [];
+      transitions.push(toTransition(row));
+      grouped.set(row.request_id, transitions);
+    }
+    return grouped;
   }
 
-  async function toRequest(workspaceId: string, row: RequestRow): Promise<DailyRequestRecord> {
+  function toRequest(row: RequestRow, transitions: RequestTransitionRecord[]): DailyRequestRecord {
     return {
       id: row.id,
       employeeId: row.employee_id,
@@ -169,8 +184,28 @@ export function createApprovalRepository(db: Queryable): ApprovalRepository {
       submittedAt: row.submitted_at?.toISOString() ?? null,
       decidedAt: row.decided_at?.toISOString() ?? null,
       decidedByUserId: row.decided_by_user_id,
-      transitions: await transitionsOf(workspaceId, row.id),
+      transitions,
     };
+  }
+
+  async function toRequests(
+    workspaceId: string,
+    rows: readonly RequestRow[],
+  ): Promise<DailyRequestRecord[]> {
+    const transitions = await transitionsOf(
+      workspaceId,
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) => toRequest(row, transitions.get(row.id) ?? []));
+  }
+
+  async function toSingleRequest(
+    workspaceId: string,
+    row: RequestRow,
+  ): Promise<DailyRequestRecord> {
+    const [request] = await toRequests(workspaceId, [row]);
+    if (!request) throw new Error('申請を組み立てられませんでした');
+    return request;
   }
 
   return {
@@ -180,7 +215,7 @@ export function createApprovalRepository(db: Queryable): ApprovalRepository {
           WHERE workspace_id = $1 AND employee_id = $2 AND business_date = $3`,
         [workspaceId, employeeId, businessDate],
       );
-      return rows[0] ? toRequest(workspaceId, rows[0]) : null;
+      return rows[0] ? toSingleRequest(workspaceId, rows[0]) : null;
     },
 
     async findRequestById(workspaceId, requestId) {
@@ -189,7 +224,7 @@ export function createApprovalRepository(db: Queryable): ApprovalRepository {
           WHERE workspace_id = $1 AND id = $2`,
         [workspaceId, requestId],
       );
-      return rows[0] ? toRequest(workspaceId, rows[0]) : null;
+      return rows[0] ? toSingleRequest(workspaceId, rows[0]) : null;
     },
 
     async listRequests(workspaceId, query) {
@@ -202,11 +237,7 @@ export function createApprovalRepository(db: Queryable): ApprovalRepository {
           ORDER BY business_date, employee_id`,
         [workspaceId, query.from, query.to, query.employeeId ?? null, query.state ?? null],
       );
-      const requests: DailyRequestRecord[] = [];
-      for (const row of rows) {
-        requests.push(await toRequest(workspaceId, row));
-      }
-      return requests;
+      return toRequests(workspaceId, rows);
     },
 
     async saveRequest(workspaceId, input) {
@@ -238,7 +269,7 @@ export function createApprovalRepository(db: Queryable): ApprovalRepository {
       );
       const row = rows[0];
       if (!row) throw new Error('申請を保存できませんでした');
-      return toRequest(workspaceId, row);
+      return toSingleRequest(workspaceId, row);
     },
 
     async recordTransition(workspaceId, input) {
@@ -346,11 +377,7 @@ export function createApprovalRepository(db: Queryable): ApprovalRepository {
           RETURNING ${REQUEST_COLUMNS}`,
         [workspaceId, employeeId, period],
       );
-      const requests: DailyRequestRecord[] = [];
-      for (const row of rows) {
-        requests.push(await toRequest(workspaceId, row));
-      }
-      return requests;
+      return toRequests(workspaceId, rows);
     },
   };
 }
