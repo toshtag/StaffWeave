@@ -23,3 +23,6 @@ test-results/
 blob-report/
 .playwright/
 backups/
+
+# SBOM は commit ごとに作り直す。生成物を追跡しない。
+artifacts/

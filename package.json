@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "\u30bb\u30eb\u30d5\u30db\u30b9\u30c8\u53ef\u80fd\u306a\u52e4\u6020\u7ba1\u7406\u57fa\u76e4",
+  "description": "セルフホスト可能な勤怠管理基盤",
   "license": "MIT",
   "engines": {
     "node": ">=22.11.0"
@@ -32,6 +32,9 @@
     "restore": "./scripts/restore.sh",
     "check:policy": "./scripts/check-policy.sh",
     "check:audit": "./scripts/check-audit.sh",
+    "sbom:generate": "./scripts/generate-sbom.sh",
+    "sbom:validate": "./scripts/validate-sbom.sh",
+    "sbom:verify": "./scripts/validate-sbom.sh && node scripts/verify-sbom.mjs",
     "db:verify": "pnpm --filter \"@staffweave/db\" verify"
   },
   "devDependencies": {
