@@ -26,6 +26,8 @@ export interface ApiKeyPrincipal {
   id: string;
   workspaceId: string;
   scopes: string[];
+  /** 最後に使ったものとして記録されている時刻。書き直すかどうかの判断に使う。 */
+  lastUsedAt: Date | null;
 }
 
 export interface WebhookEndpointRecord {
@@ -62,7 +64,12 @@ export interface IntegrationRepository {
   ): Promise<ApiKeyRecord>;
   revokeApiKey(workspaceId: string, apiKeyId: string, revokedAt: Date): Promise<ApiKeyRecord>;
   findApiKeyByHash(keyHash: string): Promise<ApiKeyPrincipal | null>;
-  touchApiKey(apiKeyId: string, usedAt: Date): Promise<void>;
+  /**
+   * 最後に使った時刻を書き直す。
+   * `notUsedSince` より新しい記録がある行は更新しない。
+   * 同じ時刻に届いた要求が、そろって同じ行を書きに行かないようにする。
+   */
+  touchApiKey(apiKeyId: string, usedAt: Date, notUsedSince: Date): Promise<void>;
 
   listEndpoints(workspaceId: string): Promise<WebhookEndpointRecord[]>;
   /** 送信待ちを積む先の識別子だけを返す。送信そのものはワーカーが行うため、鍵も URL も要らない。 */
@@ -174,16 +181,34 @@ export function createIntegrationRepository(db: Queryable): IntegrationRepositor
     },
 
     async findApiKeyByHash(keyHash) {
-      const rows = await db.query<{ id: string; workspace_id: string; scopes: string[] }>(
-        'SELECT id, workspace_id, scopes FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL',
+      const rows = await db.query<{
+        id: string;
+        workspace_id: string;
+        scopes: string[];
+        last_used_at: Date | null;
+      }>(
+        `SELECT id, workspace_id, scopes, last_used_at
+           FROM api_keys
+          WHERE key_hash = $1 AND revoked_at IS NULL`,
         [keyHash],
       );
       const row = rows[0];
-      return row ? { id: row.id, workspaceId: row.workspace_id, scopes: row.scopes } : null;
+      return row
+        ? {
+            id: row.id,
+            workspaceId: row.workspace_id,
+            scopes: row.scopes,
+            lastUsedAt: row.last_used_at,
+          }
+        : null;
     },
 
-    async touchApiKey(apiKeyId, usedAt) {
-      await db.query('UPDATE api_keys SET last_used_at = $2 WHERE id = $1', [apiKeyId, usedAt]);
+    async touchApiKey(apiKeyId, usedAt, notUsedSince) {
+      await db.query(
+        `UPDATE api_keys SET last_used_at = $2
+          WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $3)`,
+        [apiKeyId, usedAt, notUsedSince],
+      );
     },
 
     async listEndpoints(workspaceId) {

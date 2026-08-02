@@ -26,6 +26,7 @@ describe('loadApiConfig', () => {
         source: { maxFailures: 50, windowMs: 900_000, blockMs: 900_000 },
       },
       trustProxyForClientAddress: false,
+      apiKeyUsageIntervalMs: 60_000,
     });
   });
 
@@ -145,6 +146,23 @@ describe('loadApiConfig', () => {
     (raw) => {
       expect(() =>
         loadApiConfig({ DATABASE_URL: 'postgres://x', MAX_BULK_REQUEST_BODY_BYTES: raw }),
+      ).toThrow(ConfigurationError);
+    },
+  );
+
+  it('API キーの最終利用時刻を書き直す間隔を読む', () => {
+    const config = loadApiConfig({
+      DATABASE_URL: 'postgres://x',
+      API_KEY_USAGE_INTERVAL_MS: '300000',
+    });
+    expect(config.apiKeyUsageIntervalMs).toBe(300_000);
+  });
+
+  it.each(['0', '999', '86400001', '1.5', 'いちぶん'])(
+    'API キーの最終利用時刻の間隔が %s なら設定エラーになる',
+    (raw) => {
+      expect(() =>
+        loadApiConfig({ DATABASE_URL: 'postgres://x', API_KEY_USAGE_INTERVAL_MS: raw }),
       ).toThrow(ConfigurationError);
     },
   );

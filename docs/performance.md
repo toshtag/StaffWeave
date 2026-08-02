@@ -51,6 +51,32 @@ SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred
 セッションの延長は、要否を判断してから書きます（`shouldRenew`）。
 要求のたびに書くと、読み取りだけの要求にも書き込みの待ち時間が乗ります。
 
+## 読み取りの要求で書き込まない
+
+読み取りだけの要求に書き込みを混ぜない。
+書き込みが確定するまで応答を返せないため、待ち時間がそのまま乗ります。
+同じ行を書く要求どうしは、行ロックの待ちで直列化します。
+
+「最後に使った時刻」のように、精度が要らない記録は、要否を判断してから書きます。
+
+| 記録 | 判断 | 間隔 |
+| --- | --- | --- |
+| セッションの有効期限（`sessions.expires_at`） | `shouldRenew` | 残り時間が半分を切ったとき |
+| API キーの最終利用（`api_keys.last_used_at`） | `shouldRecordApiKeyUse` | `API_KEY_USAGE_INTERVAL_MS`（既定 60 秒） |
+
+判断に使う値は、認証で読む行から一緒に取ります。
+判断のためだけに問い合わせを足すと、減らした往復が戻ります。
+
+書き直す側にも条件を置きます。
+
+```sql
+UPDATE api_keys SET last_used_at = $2
+ WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $3)
+```
+
+同じ時刻に届いた要求は、読んだ時点ではそろって「書くべき」と判断します。
+条件があれば、実際に書き換わるのは 1 つだけになります。
+
 ## 読む量を期間に比例させる
 
 期間を指定した検索は、期間に比例した行だけを読む。
@@ -88,6 +114,7 @@ SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred
 
 - `packages/api/src/approval/repository.test.ts`
 - `packages/api/src/identity/service.test.ts`
+- `packages/api/src/integration/service.test.ts`
 
 この形のテストは、回数そのものを主張します。
 「件数を増やしても回数が変わらない」ことを確かめるため、

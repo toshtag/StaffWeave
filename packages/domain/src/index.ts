@@ -187,6 +187,10 @@ export {
   sessionStateAt,
   shouldRenew,
 } from './identity/session.js';
+export {
+  DEFAULT_API_KEY_USAGE_INTERVAL_MS,
+  shouldRecordApiKeyUse,
+} from './integration/api-key-usage.js';
 export type { CsvParseProblem, CsvParseResult } from './integration/csv.js';
 export { parseCsv, toCsv, toCsvValue } from './integration/csv.js';
 export type { ApiScope, WebhookEventType } from './integration/scopes.js';

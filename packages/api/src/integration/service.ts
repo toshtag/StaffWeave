@@ -1,5 +1,10 @@
 import { randomBytes } from 'node:crypto';
-import { isApiScope, isWebhookEventType } from '@staffweave/domain';
+import {
+  DEFAULT_API_KEY_USAGE_INTERVAL_MS,
+  isApiScope,
+  isWebhookEventType,
+  shouldRecordApiKeyUse,
+} from '@staffweave/domain';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { ApiError, invalidRequest } from '../shared/errors.js';
 import { hashToken } from '../shared/security/tokens.js';
@@ -18,6 +23,8 @@ export interface IntegrationServiceDependencies {
   now: () => Date;
   /** Webhook 送信先を登録してよいかの判断。内部ネットワーク宛の登録をここで止める。 */
   webhookTarget: WebhookTargetValidator;
+  /** API キーの最後に使った時刻を書き直す間隔。省略すると既定値を使う。 */
+  apiKeyUsageIntervalMs?: number;
 }
 
 export interface IntegrationService {
@@ -49,6 +56,8 @@ function generateApiKey(): { secret: string; prefix: string } {
 }
 
 export function createIntegrationService(deps: IntegrationServiceDependencies): IntegrationService {
+  const usageIntervalMs = deps.apiKeyUsageIntervalMs ?? DEFAULT_API_KEY_USAGE_INTERVAL_MS;
+
   /**
    * 送信先の検査。理由は利用者へ返すが、検査の内部例外はそのまま外へ出さない。
    * 名前解決の失敗理由をそのまま返すと、内部ネットワークの構成を読み取る手掛かりになる。
@@ -107,7 +116,16 @@ export function createIntegrationService(deps: IntegrationServiceDependencies): 
       const principal = await deps.repository.findApiKeyByHash(hashToken(value));
       if (!principal) return null;
 
-      await deps.repository.touchApiKey(principal.id, deps.now());
+      // 最後に使った時刻は、使われなくなったキーを見分けるためのもの。
+      // 要求のたびに書くと、読み取りだけの要求にも書き込みの待ち時間が乗る。
+      const now = deps.now();
+      if (shouldRecordApiKeyUse(principal.lastUsedAt, now, usageIntervalMs)) {
+        await deps.repository.touchApiKey(
+          principal.id,
+          now,
+          new Date(now.getTime() - usageIntervalMs),
+        );
+      }
       return { workspaceId: principal.workspaceId, scopes: principal.scopes };
     },
 

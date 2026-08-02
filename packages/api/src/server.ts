@@ -21,6 +21,7 @@ const app = createApp({
   allowedOrigins: config.allowedOrigins,
   loginAttemptPolicy: config.loginAttemptPolicy,
   trustProxyForClientAddress: config.trustProxyForClientAddress,
+  apiKeyUsageIntervalMs: config.apiKeyUsageIntervalMs,
 });
 
 // セルフホストでは、ビルド済みの Web を同じプロセスから配信できるようにする。

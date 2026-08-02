@@ -168,6 +168,10 @@ curl -H 'authorization: Bearer <生の鍵>' \
 | --- | --- |
 | `POST /api/imports/employees` | `organization_code`, `employee_number`, `display_name`, `hired_on`（任意） |
 
+API キーの「最後に使った時刻」は、要求のたびには書き直しません。
+`API_KEY_USAGE_INTERVAL_MS`（既定 60000 ミリ秒）より新しい記録があれば、そのままにします。
+この値は使われなくなったキーを見つけるためのもので、この間隔だけ古く見えます。
+
 Webhook は承認・差し戻し・締め・締め解除で送られます。
 受け取り側の署名検証は `@staffweave/connector` の `verifyWebhook` を使ってください。
 署名用の秘密は送信先の登録時にしか返りません。
