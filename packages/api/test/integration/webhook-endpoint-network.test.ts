@@ -214,12 +214,37 @@ describe('Webhook 送信先の登録', () => {
     });
   });
 
+  // 本文には勤怠と申請の内容が入る。公開ネットワークへ平文で出さない。
+  describe('送信先の暗号化', () => {
+    it('公開宛の http を登録できない', async () => {
+      const response = await register('http://hooks.example.test/hook');
+
+      expect(response.status).toBe(400);
+      expect(await endpointCount()).toBe(0);
+    });
+
+    it('公開宛の https を登録できる', async () => {
+      expect((await register('https://hooks.example.test/hook')).status).toBe(201);
+    });
+  });
+
   describe('allow-local', () => {
     it('明示設定のときだけループバックを登録できる', async () => {
       expect((await register('http://127.0.0.1:8787/hook')).status).toBe(400);
       expect(
         (await register('http://127.0.0.1:8787/hook', fixedResolver(), 'allow-local')).status,
       ).toBe(201);
+    });
+
+    it('明示設定でも公開宛の http は拒む', async () => {
+      const response = await register(
+        'http://hooks.example.test/hook',
+        fixedResolver(),
+        'allow-local',
+      );
+
+      expect(response.status).toBe(400);
+      expect(await endpointCount()).toBe(0);
     });
 
     it('明示設定でもメタデータサービスは拒む', async () => {
