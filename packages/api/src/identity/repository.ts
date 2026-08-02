@@ -57,9 +57,7 @@ export interface SessionContextRecord {
 
 export interface IdentityRepository {
   findWorkspaceBySlug(slug: string): Promise<WorkspaceRecord | null>;
-  findWorkspaceById(workspaceId: string): Promise<WorkspaceRecord | null>;
   findUserByEmail(workspaceId: string, email: string): Promise<UserRecord | null>;
-  findUserById(workspaceId: string, userId: string): Promise<UserRecord | null>;
   listRoles(workspaceId: string, userId: string): Promise<Role[]>;
   /**
    * 利用者へ明示的に与えられた閲覧対象の組織。
@@ -75,7 +73,6 @@ export interface IdentityRepository {
     issuedAt: Date;
     expiresAt: Date;
   }): Promise<SessionRecord>;
-  findSessionByTokenHash(tokenHash: string): Promise<SessionRecord | null>;
   /**
    * トークンのハッシュから、認証に要る一式をまとめて引く。
    * セッション・ワークスペース・利用者・ロール・従業員・閲覧範囲はすべて
@@ -201,30 +198,12 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
       return rows[0] ? toWorkspace(rows[0]) : null;
     },
 
-    async findWorkspaceById(workspaceId) {
-      const rows = await db.query<WorkspaceRow>(
-        'SELECT id, slug, name, time_zone FROM workspaces WHERE id = $1',
-        [workspaceId],
-      );
-      return rows[0] ? toWorkspace(rows[0]) : null;
-    },
-
     async findUserByEmail(workspaceId, email) {
       const rows = await db.query<UserRow>(
         `SELECT id, workspace_id, email, password_hash, display_name, locale, status
            FROM users
           WHERE workspace_id = $1 AND email = $2`,
         [workspaceId, email],
-      );
-      return rows[0] ? toUser(rows[0]) : null;
-    },
-
-    async findUserById(workspaceId, userId) {
-      const rows = await db.query<UserRow>(
-        `SELECT id, workspace_id, email, password_hash, display_name, locale, status
-           FROM users
-          WHERE workspace_id = $1 AND id = $2`,
-        [workspaceId, userId],
       );
       return rows[0] ? toUser(rows[0]) : null;
     },
@@ -285,16 +264,6 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
       const row = rows[0];
       if (!row) throw new Error('セッションを作成できませんでした');
       return toSession(row);
-    },
-
-    async findSessionByTokenHash(tokenHash) {
-      const rows = await db.query<SessionRow>(
-        `SELECT id, workspace_id, user_id, issued_at, expires_at, revoked_at
-           FROM sessions
-          WHERE token_hash = $1`,
-        [tokenHash],
-      );
-      return rows[0] ? toSession(rows[0]) : null;
     },
 
     async findSessionContextByTokenHash(tokenHash) {
