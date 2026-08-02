@@ -36,6 +36,36 @@ SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred
 
 対象の申請が 0 件なら、遷移は問い合わせません。
 
+## 読む量を期間に比例させる
+
+期間を指定した検索は、期間に比例した行だけを読む。
+ワークスペースの全期間を読んでから日付で捨てる形にしない。
+
+索引の先頭は、必ず問い合わせの条件と同じ順に並べる。
+`(workspace_id, employee_id, business_date)` の索引は、
+従業員を指定しない問い合わせでは期間を絞れません。
+
+### 従業員を指定しない経路
+
+管理者が期間を指定して全体を見る経路は、従業員を条件に持ちません。
+これらのために、日付を 2 番目に置いた索引を別に持ちます（マイグレーション 0023）。
+
+| 索引 | 使う経路 |
+| --- | --- |
+| `attendance_events (workspace_id, business_date, employee_id)` | 異常検出（締め後の変更・修正の多発・重複打刻） |
+| `attendance_calculations (workspace_id, business_date, employee_id)` | 勤怠 CSV の出力 |
+| `workstation_session_observations (workspace_id, business_date, employee_id)` | PC セッション観測の一覧 |
+| `daily_attendance_requests (workspace_id, business_date, employee_id)` | 申請の一覧（状態を指定しない場合） |
+| `monthly_closings (workspace_id, period, employee_id)` | 締めの一覧 |
+| `device_event_receipts (workspace_id, received_at)` | 異常検出（端末の時計差・連番欠落・拒否） |
+
+3 列目の従業員は、期間で絞ったあとに従業員ごとへまとめる問い合わせのために置いています。
+条件としては要りません。
+
+従業員を先頭に置いた既存の索引は残します。
+従業員を指定する経路（1 人の勤務予定、1 日の打刻、計算結果の最新版）は、
+引き続きそちらを使います。片方へ寄せると、もう片方が全走査へ戻ります。
+
 ## 確かめ方
 
 問い合わせの回数は、応答からは分かりません。
@@ -46,3 +76,10 @@ SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred
 この形のテストは、回数そのものを主張します。
 「件数を増やしても回数が変わらない」ことを確かめるため、
 対象を 2 件以上にしたうえで比較します。
+
+索引は、手元のデータ量では効果が出ません。
+実行計画を毎回のテストで固定すると、量や統計の違いで結果が揺れます。
+そのため、テストでは索引の有無と列の並びだけを確かめ、
+効果の確認は `EXPLAIN (ANALYZE, BUFFERS)` で行って PR へ残します。
+
+- `packages/api/test/integration/workspace-range-indexes.test.ts`
