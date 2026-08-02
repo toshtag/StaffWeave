@@ -68,6 +68,13 @@ function service(db: Queryable, now: Date) {
       source: { maxFailures: 50, windowMs: 900_000, blockMs: 900_000 },
     },
     logger: silentLogger,
+    // この経路では監査記録を残さない。呼ばれた時点で分かるようにする。
+    audit: {
+      record: async () => {
+        throw new Error('認証の復元では監査記録を残しません');
+      },
+      listRecent: async () => [],
+    },
   });
 }
 

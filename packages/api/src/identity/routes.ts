@@ -1,6 +1,11 @@
 import { getConnInfo } from '@hono/node-server/conninfo';
-import type { LoginRequest, UpdatePreferencesRequest } from '@staffweave/contracts';
+import type {
+  ChangePasswordRequest,
+  LoginRequest,
+  UpdatePreferencesRequest,
+} from '@staffweave/contracts';
 import {
+  changePasswordRequestSchema,
   loginRequestSchema,
   operations,
   updatePreferencesRequestSchema,
@@ -84,6 +89,14 @@ export function createIdentityRoutes(deps: IdentityRouteDependencies): Hono<AppE
   });
 
   app.get(operations.getSession.path, (c) => c.json(toSessionResponse(currentAuth(c)), 200));
+
+  app.post(operations.changePassword.path, async (c) => {
+    const auth = currentAuth(c);
+    const body = await readBody<ChangePasswordRequest>(c, changePasswordRequestSchema);
+    // 手元のセッションだけ残す。変更した本人をその場で締め出さない。
+    await deps.service.changePassword(auth, getCookie(c, SESSION_COOKIE_NAME), body);
+    return c.body(null, 204);
+  });
 
   app.patch(operations.updatePreferences.path, async (c) => {
     const auth = currentAuth(c);
