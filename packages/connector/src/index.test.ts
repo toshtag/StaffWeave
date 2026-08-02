@@ -113,7 +113,9 @@ describe('verifyWebhook', () => {
  * ここでは要求を出さない。生成の時点で断ることを固定する。
  */
 describe('createConnector', () => {
-  const apiKey = 'sw_00000000_connector-test-key';
+  // 実際に発行される鍵の形（sw_ + 16 進 8 桁 + 秘密）は使わない。
+  // 検査に引っかかるだけでなく、本物と見分けがつかない値をリポジトリへ残さないため。
+  const apiKey = 'connector-test-api-key';
 
   it.each([
     'http://staffweave.example',
