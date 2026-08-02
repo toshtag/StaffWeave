@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
-import { chmod, lstat, open, readFile, rename, unlink } from 'node:fs/promises';
+import { chmod, lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { requireSecureBaseUrl } from '@staffweave/contracts';
 import type { SignedEventPayload } from '@staffweave/domain';
@@ -33,6 +33,12 @@ const OWNER_ONLY = 0o600;
 
 /** 所有者以外に許してよいビット。1 つでも立っていれば危険とみなす。 */
 const SHARED_BITS = 0o077;
+
+/** 資格情報を置くディレクトリの権限。所有者だけが出入りできる。 */
+const OWNER_ONLY_DIRECTORY = 0o700;
+
+/** POSIX の権限が意味を持つ環境か。Windows では mode を安全性の根拠にしない。 */
+const HAS_POSIX_MODE = process.platform !== 'win32';
 
 export function generateKeyPair(): KeyPair {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -79,7 +85,59 @@ async function requireRegularFile(path: string): Promise<{ mode: number } | null
   return { mode: stats.mode };
 }
 
+/**
+ * 資格情報を置くディレクトリを確かめる。
+ *
+ * ファイルが `0600` でも、置き場を他の利用者が書けるなら意味がない。
+ * ファイルを消して、自分の所有する `0600` の通常ファイルへ置き直せる。
+ * 権限もリンクの検査も通るため、差し替えられたことに気付けない。
+ * 置き直された内容には接続先も入るため、以後の打刻は別の宛先へ送られる。
+ *
+ * すでにあるディレクトリの権限は勝手に変えない。
+ * 他の用途と共有しているかもしれない場所を、こちらの都合で狭めないため。
+ * `create` を渡した場合だけ、無ければ所有者専用で作る。
+ *
+ * Windows では POSIX の権限が同じ意味を持たない。判定は行わず、
+ * 保存先の選び方を文書で示すに留める。
+ */
+async function requireSafeDirectory(
+  directory: string,
+  options: { create?: boolean } = {},
+): Promise<void> {
+  if (options.create) {
+    await mkdir(directory, { recursive: true, mode: OWNER_ONLY_DIRECTORY });
+  }
+
+  let stats: Awaited<ReturnType<typeof lstat>>;
+  try {
+    stats = await lstat(directory);
+  } catch {
+    throw new Error(`資格情報の保存先ディレクトリがありません: ${directory}`);
+  }
+
+  if (stats.isSymbolicLink()) {
+    throw new Error(`資格情報の保存先ディレクトリがシンボリックリンクです: ${directory}`);
+  }
+  if (!stats.isDirectory()) {
+    throw new Error(`資格情報の保存先がディレクトリではありません: ${directory}`);
+  }
+  if (!HAS_POSIX_MODE) return;
+
+  if ((stats.mode & SHARED_BITS) !== 0) {
+    throw new Error(
+      '資格情報の保存先ディレクトリを所有者以外が読み書きできます。' +
+        `他の利用者に資格情報を置き換えられます。chmod 700 で直してください: ${directory}`,
+    );
+  }
+  // 所有者が出入りできなければ、この後の読み書きは失敗する。理由を先に伝える。
+  if ((stats.mode & 0o700) !== 0o700) {
+    throw new Error(`資格情報の保存先ディレクトリを所有者が読み書きできません: ${directory}`);
+  }
+}
+
 export async function loadCredentials(path: string): Promise<DeviceCredentials> {
+  // 保存した後にディレクトリの権限が緩められている場合がある。読むたびに確かめる。
+  await requireSafeDirectory(dirname(path));
   const existing = await requireRegularFile(path);
   if (existing === null) {
     throw new Error(`資格情報がありません: ${path}`);
@@ -107,6 +165,7 @@ export async function saveCredentials<T extends DeviceCredentials>(
   path: string,
   credentials: T,
 ): Promise<void> {
+  await requireSafeDirectory(dirname(path), { create: true });
   await requireRegularFile(path);
 
   // 同じディレクトリの一時ファイルへ書いてから置き換える。
