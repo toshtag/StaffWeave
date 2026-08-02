@@ -50,6 +50,8 @@ export const registerDeviceRequestSchema = objectSchema({
   properties: {
     name: nameSchema,
     siteId: uuidSchema,
+    /** 有効時間（分）。既定は 15 分。カードの登録トークンと同じ扱いにする。 */
+    expiresInMinutes: { type: 'integer', minimum: 1, maximum: 1440 },
   },
   required: ['name'],
 });
@@ -59,8 +61,10 @@ export const registerDeviceResponseSchema = objectSchema({
     device: deviceSchema,
     /** 登録トークンはこの応答でしか返さない。サーバーはハッシュだけを保存する。 */
     enrollmentToken: { type: 'string' },
+    /** この時刻を過ぎた登録トークンは使えない。 */
+    enrollmentTokenExpiresAt: timestampSchema,
   },
-  required: ['device', 'enrollmentToken'],
+  required: ['device', 'enrollmentToken', 'enrollmentTokenExpiresAt'],
 });
 
 export const enrollDeviceRequestSchema = objectSchema({

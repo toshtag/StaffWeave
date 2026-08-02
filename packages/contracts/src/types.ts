@@ -469,12 +469,16 @@ export interface DeviceList {
 export interface RegisterDeviceRequest {
   name: string;
   siteId?: string;
+  /** 有効時間（分）。既定は 15 分。 */
+  expiresInMinutes?: number;
 }
 
 export interface RegisterDeviceResponse {
   device: DeviceRecord;
   /** 登録トークンはこの応答でしか返らない。 */
   enrollmentToken: string;
+  /** この時刻を過ぎた登録トークンは使えない。 */
+  enrollmentTokenExpiresAt: string;
 }
 
 export interface EnrollDeviceRequest {

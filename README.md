@@ -96,7 +96,7 @@ curl http://127.0.0.1:8787/api/openapi.json  # API 契約（OpenAPI 3.1）
 
 ```sh
 # 1. 管理者として端末を登録し、一度きりの登録トークンを受け取る
-#    （画面または API で /api/devices を呼び出す）
+#    （画面または API で /api/devices を呼び出す。既定の有効時間は 15 分）
 
 # 2. Agent が登録トークンと引き換えに公開鍵を登録する
 pnpm agent enroll --url http://127.0.0.1:8787 --token <登録トークン>
@@ -115,6 +115,10 @@ pnpm agent card-punch --card <カード識別子>
 # 6. PC セッションの観測を送る
 pnpm agent session-observe --employee E001 --type sign_in
 ```
+
+端末とカードの登録トークンは、どちらも一度きりで、既定では発行から 15 分で切れます。
+`expiresInMinutes` で 1 分から 1440 分のあいだで変えられます。
+期限を過ぎた端末は登録待ちのまま残るため、失効させてから登録し直してください。
 
 IC カードの生の識別子は端末の中で一方向の指紋へ変換され、サーバーへは送られません。
 指紋の計算に使う鍵は、`.env` の `CARD_FINGERPRINT_KEY` から Workspace ごとに導出し、

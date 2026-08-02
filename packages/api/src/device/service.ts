@@ -62,6 +62,9 @@ export interface DeviceService {
   ): Promise<{ result: DeviceEventResponse; created: boolean }>;
 }
 
+/** 登録トークンの既定の有効時間。カードの登録トークンと同じ長さにする。 */
+const DEFAULT_ENROLLMENT_MINUTES = 15;
+
 /** 端末からの冪等キーは端末ごとに独立しているため、従業員側では端末を混ぜて扱う。 */
 function attendanceRequestId(deviceId: string, requestId: string): string {
   return `device:${deviceId}:${requestId}`;
@@ -73,13 +76,21 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
 
     async register(context, input) {
       const token = generateEnrollmentToken();
+      const expiresAt = new Date(
+        deps.now().getTime() + (input.expiresInMinutes ?? DEFAULT_ENROLLMENT_MINUTES) * 60_000,
+      );
       try {
         const device = await deps.repository.create(context.workspace.id, {
           name: input.name,
           siteId: input.siteId ?? null,
           enrollmentTokenHash: hashToken(token),
+          enrollmentTokenExpiresAt: expiresAt,
         });
-        return { device, enrollmentToken: token };
+        return {
+          device,
+          enrollmentToken: token,
+          enrollmentTokenExpiresAt: expiresAt.toISOString(),
+        };
       } catch (error) {
         if (isForeignKeyViolation(error)) throw notFound('拠点');
         throw error;
@@ -135,6 +146,12 @@ export function createDeviceService(deps: DeviceServiceDependencies): DeviceServ
         const found = await devices.findByEnrollmentTokenHash(enrollmentTokenHash);
         if (!found) {
           throw new ApiError('unauthenticated', '登録トークンが一致しません');
+        }
+        // 期限切れは、使用済みや状態の不一致と区別して伝える。
+        // 断るかどうかを決めるのは、ここではなく更新の条件のほう。
+        const expiresAt = found.enrollmentTokenExpiresAt;
+        if (expiresAt === null || expiresAt.getTime() <= deps.now().getTime()) {
+          throw new ApiError('unauthenticated', 'この登録トークンは有効期限を過ぎています');
         }
 
         const next = applyDeviceEvent(
