@@ -48,7 +48,18 @@ export function createConnector(options: ConnectorOptions): StaffweaveConnector 
   async function request(path: string): Promise<Response> {
     const response = await fetch(`${base}/api${path}`, {
       headers: { authorization: `Bearer ${options.apiKey}` },
+      // 接続先を検査できるのは、渡された URL に対してだけ。
+      // リダイレクトへ追従すると、検査していない宛先へ API キーと要求が出る。
+      redirect: 'manual',
     });
+    if (response.status >= 300 && response.status < 400) {
+      // 転送先も API キーも理由に含めない。追従しないという事実と応答コードだけで足りる。
+      throw new ConnectorError(
+        response.status,
+        `サーバーがリダイレクトを返しました（HTTP ${response.status}）。` +
+          'connector は追従しません。最終的に応答する URL を指定してください。',
+      );
+    }
     if (!response.ok) {
       throw new ConnectorError(response.status, `取得に失敗しました（HTTP ${response.status}）`);
     }
