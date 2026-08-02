@@ -293,6 +293,38 @@ describe('API キー', () => {
     expect(response.status).toBe(401);
   });
 
+  it('最後に使った時刻は、間隔の中では書き直さない', async () => {
+    const instance = app();
+    const created = await createKey(instance, ['payroll:read']);
+
+    async function usePayrollExport(at: string): Promise<void> {
+      const response = await app(at).request('/api/exports/payroll.csv?period=2026-04-01', {
+        headers: { authorization: `Bearer ${created.secret}` },
+      });
+      expect(response.status).toBe(200);
+    }
+
+    async function lastUsedAt(): Promise<Date | null> {
+      const rows = await testDatabase().query<{ last_used_at: Date | null }>(
+        'SELECT last_used_at FROM api_keys WHERE id = $1',
+        [created.apiKey.id],
+      );
+      return rows[0]?.last_used_at ?? null;
+    }
+
+    await usePayrollExport(CLOCK_OUT_AT);
+    const first = await lastUsedAt();
+    expect(first).not.toBeNull();
+
+    // 既定の間隔（60 秒）の中で使う。記録は動かない。
+    await usePayrollExport('2026-04-01T09:00:30.000Z');
+    expect(await lastUsedAt()).toEqual(first);
+
+    // 間隔を過ぎてから使う。記録が進む。
+    await usePayrollExport('2026-04-01T09:05:00.000Z');
+    expect(await lastUsedAt()).toEqual(new Date('2026-04-01T09:05:00.000Z'));
+  });
+
   it('不明な鍵では認証されない', async () => {
     const response = await app().request('/api/exports/payroll.csv?period=2026-04-01', {
       headers: { authorization: 'Bearer sw_00000000_unknown' },
