@@ -8,14 +8,19 @@ staffweave は、従業員の勤務実績を「観測された事実」と「人
 
 ## 現在の状態
 
-**公開判定は保留中です。残っているのはライセンス方針の決定だけです。**
+**正式リリース・実運用投入判定を満たしました（2026-08-02 時点）。**
 
-P14 の実装後のレビューで見つかった認可の適用漏れ・競合制御・秘密情報の扱いは、
-P15（公開前の品質ゲート）で解消し、`release-blocker` を付けた Issue はすべて閉じました。
-ライセンス方針は実装ではなく事業判断であり、決まるまで公開も実データの投入も行いません。
+P15（公開前の品質ゲート）と、公開前に必要と判断した P16 のセキュリティ強化を終えています。
+ライセンスは MIT License です。
 
-公開判定の条件と各項目の状態は [docs/roadmap.md](docs/roadmap.md) を正本とします。
+正式リリースおよび実データを用いた運用の可否は、
+[docs/roadmap.md](docs/roadmap.md) の「正式リリース・実運用投入判定」を正本とします。
+判定の根拠は [docs/release-readiness/2026-08-02.md](docs/release-readiness/2026-08-02.md) にあります。
 ここへは写しません。
+
+この判定は、法令への適合、無停止運用、脆弱性が無いことを保証するものではありません。
+導入にあたっては、利用者自身の責任で確認してください。
+正式なリリースタグはまだ作成していません。
 
 動作するもの:
 
@@ -42,8 +47,9 @@ P15（公開前の品質ゲート）で解消し、`release-blocker` を付け�
 - CSV の入出力、給与連携向けの汎用出力、Webhook、API キーとスコープ
 - 外部連携を作るための connector SDK、バックアップと復元、デモ用データ
 
-ロードマップの P0〜P14 は完了し、P15（公開前の品質ゲート）は実装を終えて判断待ちです。
-P16（認証・運用強化）は、公開前に必要な範囲だけを先に入れてあります。
+ロードマップの P0〜P15 は完了しています。
+P16（認証・運用強化）は、正式リリース前に必要と判断した範囲を先に入れてあります。
+セッション一覧と一括失効、SBOM は未着手です。
 各フェーズの範囲と状態は [docs/roadmap.md](docs/roadmap.md) を参照してください。
 
 このリポジトリは、未実装の機能を「提供済み」として記載しません。
@@ -519,7 +525,9 @@ staffweave は不正打刻の完全な防止や、特定の国・地域の労働
 | [docs/development-policy.md](docs/development-policy.md) | 開発方針・技術選定・守るべき制約 |
 | [docs/module-boundaries.md](docs/module-boundaries.md) | パッケージ構成と依存方向 |
 | [docs/glossary.md](docs/glossary.md) | 日英用語集（識別子・API・DB 名の基準） |
-| [docs/roadmap.md](docs/roadmap.md) | P0〜P22 のロードマップ |
+| [docs/roadmap.md](docs/roadmap.md) | P0〜P22 のロードマップと正式リリース判定 |
+| [docs/decisions/](docs/decisions/) | 実装からは読み取れない判断の記録（ライセンスなど） |
+| [docs/release-readiness/](docs/release-readiness/) | 正式リリース・実運用投入判定の記録 |
 | [docs/performance.md](docs/performance.md) | 問い合わせ回数と索引の決めごと |
 | [docs/security/webhook-target-policy.md](docs/security/webhook-target-policy.md) | Webhook 送信先のネットワーク方針 |
 | [docs/security/webhook-signing.md](docs/security/webhook-signing.md) | Webhook 署名鍵の保存と検証手順 |
@@ -529,3 +537,7 @@ staffweave は不正打刻の完全な防止や、特定の国・地域の労働
 ## ライセンス
 
 MIT License. [LICENSE](LICENSE) を参照してください。
+
+サーバー、Web UI、Agent、connector SDK、CLI、スクリプト、リポジトリ内のドキュメントを
+すべて含みます。採用の背景と見直す条件は
+[docs/decisions/0001-mit-license.md](docs/decisions/0001-mit-license.md) にあります。
