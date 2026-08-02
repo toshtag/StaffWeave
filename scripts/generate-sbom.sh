@@ -69,7 +69,8 @@ docker build --quiet -f docker/api.Dockerfile -t "$IMAGE_TAG" . > /dev/null
 
 # Docker socket を syft へ渡さず、書き出した archive を読ませる。
 # socket を渡すと、この手順が他のコンテナやイメージへも触れるようになる。
-ARCHIVE="$(mktemp -t staffweave-sbom-image)"
+# `mktemp -t` の書式は BSD と GNU で違う。どちらでも同じ意味になる形で書く。
+ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/staffweave-sbom-image.XXXXXX")"
 docker save "$IMAGE_TAG" -o "$ARCHIVE"
 
 echo 'production コンテナの構成を書き出します'
