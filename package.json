@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "セルフホスト可能な勤怠管理基盤",
+  "description": "\u30bb\u30eb\u30d5\u30db\u30b9\u30c8\u53ef\u80fd\u306a\u52e4\u6020\u7ba1\u7406\u57fa\u76e4",
   "license": "MIT",
   "engines": {
     "node": ">=22.11.0"
