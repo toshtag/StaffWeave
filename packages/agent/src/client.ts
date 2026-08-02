@@ -21,6 +21,11 @@ import { signMessage, signPayload } from './credentials.js';
 /**
  * Agent からサーバーへの送信。
  * 送信待ちの再送は呼び出し側が行う。ここでは 1 回の送信だけを担う。
+ *
+ * 接続先の検査は、設定した URL に対してだけ行える。
+ * リダイレクトへ追従すると、検査していない宛先へ登録トークンや打刻が出る。
+ * 307 と 308 は手法と本文を保つため、そのまま再送される。
+ * そこで追従はせず、3xx はその場で失敗として扱う。
  */
 
 export class AgentRequestError extends Error {
@@ -35,7 +40,23 @@ export class AgentRequestError extends Error {
   }
 }
 
+/**
+ * リダイレクトを受け取ったときの失敗。
+ *
+ * 転送先（`Location`）も、送った本文も、資格情報も理由に含めない。
+ * 利用者が直すのに要るのは「追従しない」という事実と応答コードだけ。
+ */
+function rejectRedirect(response: Response): never {
+  throw new AgentRequestError(
+    response.status,
+    'redirect_not_followed',
+    'サーバーがリダイレクトを返しました。Agent は追従しません。最終的に応答する URL を指定してください。',
+  );
+}
+
 async function readError(response: Response): Promise<never> {
+  if (response.status >= 300 && response.status < 400) rejectRedirect(response);
+
   const body: unknown = await response.json().catch(() => null);
   const error = (body as ErrorResponse | null)?.error;
   throw new AgentRequestError(
@@ -53,6 +74,7 @@ export async function enroll(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
+    redirect: 'manual',
   });
   if (!response.ok) await readError(response);
   return (await response.json()) as EnrollDeviceResponse;
@@ -80,6 +102,7 @@ export async function sendEvent(
       'x-staffweave-signature': signature,
     },
     body: JSON.stringify(input),
+    redirect: 'manual',
   });
 
   if (!response.ok) await readError(response);
@@ -103,6 +126,7 @@ export async function registerCard(
       'x-staffweave-signature': signature,
     },
     body: JSON.stringify(input),
+    redirect: 'manual',
   });
 
   if (!response.ok) await readError(response);
@@ -134,6 +158,7 @@ export async function sendCardEvent(
       'x-staffweave-signature': signature,
     },
     body: JSON.stringify(input),
+    redirect: 'manual',
   });
 
   if (!response.ok) await readError(response);
@@ -157,6 +182,7 @@ export async function sendSessionObservations(
       'x-staffweave-signature': signature,
     },
     body: JSON.stringify(input),
+    redirect: 'manual',
   });
 
   if (!response.ok) await readError(response);
