@@ -99,3 +99,8 @@ export const listSessionObservationsQuerySchema = objectSchema({
   },
   required: ['from', 'to'],
 });
+
+/** 業務日は経路に含まれるため、絞り込みの対象は従業員だけ。省略すると本人の記録を返す。 */
+export const getDiscrepancyReportQuerySchema = objectSchema({
+  properties: { employeeId: uuidSchema },
+});

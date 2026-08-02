@@ -225,6 +225,15 @@ export const listWorkSchedulesQuerySchema = objectSchema({
   required: ['employeeId', 'from', 'to'],
 });
 
+/**
+ * 割当は有効期間を持ち、従業員ごとに全期間を返す。
+ * 予定の一覧と違って期間で絞らないため、別の契約にする。
+ */
+export const listEmployeeWorkCyclesQuerySchema = objectSchema({
+  properties: { employeeId: uuidSchema },
+  required: ['employeeId'],
+});
+
 export const calculationStepSchema = objectSchema({
   properties: { label: { type: 'string' }, minutes: { type: 'integer' } },
   required: ['label', 'minutes'],
