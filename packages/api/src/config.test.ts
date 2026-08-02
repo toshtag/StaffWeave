@@ -26,6 +26,7 @@ describe('loadApiConfig', () => {
         source: { maxFailures: 50, windowMs: 900_000, blockMs: 900_000 },
       },
       trustProxyForClientAddress: false,
+      apiKeyUsageIntervalMs: 60_000,
     });
   });
 

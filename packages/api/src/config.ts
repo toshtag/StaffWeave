@@ -6,6 +6,7 @@
  * 一方の設定を誤っただけでもう一方が起動できなくなる状態にはしない。
  */
 
+import { DEFAULT_API_KEY_USAGE_INTERVAL_MS } from '@staffweave/domain';
 import type { WebhookNetworkPolicyMode } from './integration/webhook-network-policy.js';
 import {
   DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
@@ -48,6 +49,8 @@ export interface ApiConfig {
   loginAttemptPolicy: LoginAttemptPolicies;
   /** 逆プロキシが付ける転送元の頭書きを信用するか。 */
   trustProxyForClientAddress: boolean;
+  /** API キーの最後に使った時刻を書き直す間隔。 */
+  apiKeyUsageIntervalMs: number;
 }
 
 /** Webhook 送信ワーカーの動作設定。既定値と許容範囲はこの一箇所で決める。 */
@@ -85,6 +88,13 @@ const API_SETTINGS = {
     fallback: DEFAULT_BULK_REQUEST_BODY_MAX_BYTES,
     min: 4 * 1024,
     max: 128 * 1024 * 1024,
+  },
+  // 下限は、書き込みをまとめる意味が出る間隔。上限は、使われているキーを
+  // 使われていないものと読み違えない長さ。
+  API_KEY_USAGE_INTERVAL_MS: {
+    fallback: DEFAULT_API_KEY_USAGE_INTERVAL_MS,
+    min: 1_000,
+    max: 24 * 60 * 60 * 1000,
   },
   // 少なすぎると打ち間違いで締め出す。多すぎると総当たりを妨げられない。
   LOGIN_MAX_FAILURES_PER_ACCOUNT: {
@@ -314,6 +324,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     trustProxyForClientAddress: readBoolean(
       'TRUST_PROXY_FOR_CLIENT_ADDRESS',
       env.TRUST_PROXY_FOR_CLIENT_ADDRESS,
+    ),
+    apiKeyUsageIntervalMs: readInteger(
+      'API_KEY_USAGE_INTERVAL_MS',
+      env.API_KEY_USAGE_INTERVAL_MS,
+      API_SETTINGS.API_KEY_USAGE_INTERVAL_MS,
     ),
   };
 }

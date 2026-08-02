@@ -104,6 +104,8 @@ export interface AppDependencies {
   loginAttemptPolicy?: LoginAttemptPolicies;
   /** 逆プロキシが付ける転送元の頭書きを信用するか。 */
   trustProxyForClientAddress?: boolean;
+  /** API キーの最後に使った時刻を書き直す間隔。 */
+  apiKeyUsageIntervalMs?: number;
 }
 
 export function createApp(deps: AppDependencies): Hono<AppEnv> {
@@ -138,6 +140,9 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const integrationService = createIntegrationService({
     repository: createIntegrationRepository(deps.db),
     now,
+    ...(deps.apiKeyUsageIntervalMs === undefined
+      ? {}
+      : { apiKeyUsageIntervalMs: deps.apiKeyUsageIntervalMs }),
     webhookTarget:
       deps.webhookTargetValidator ??
       createWebhookTargetValidator(
