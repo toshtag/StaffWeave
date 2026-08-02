@@ -59,7 +59,7 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: ^2.0.12
-        version: 2.0.12(hono@4.12.32)
+        version: 2.0.12(hono@4.12.33)
       '@staffweave/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -70,8 +70,8 @@ importers:
         specifier: workspace:*
         version: link:../domain
       hono:
-        specifier: ^4.9.10
-        version: 4.12.32
+        specifier: ^4.12.33
+        version: 4.12.33
       tsx:
         specifier: ^4.23.1
         version: 4.23.1
@@ -840,8 +840,8 @@ packages:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
 
-  hono@4.12.32:
-    resolution: {integrity: sha512-XcuyW9qE2kJn07PkecMOBd5Vq/hMy7mmGw+idz1yblbg9N17ijJODrvPkn7/dwL3Kulj8LcRJ69DLOWf91dRUg==}
+  hono@4.12.33:
+    resolution: {integrity: sha512-+SwvkaiJtxsiPjhy9LivY/1m7UsNqCJetM1BrZl9A5DkQhlbHQDU730mMiDPWjnoCYOM8Chf3WrCJw27kNTPFQ==}
     engines: {node: '>=16.9.0'}
 
   js-tokens@4.0.0:
@@ -1356,9 +1356,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@hono/node-server@2.0.12(hono@4.12.32)':
+  '@hono/node-server@2.0.12(hono@4.12.33)':
     dependencies:
-      hono: 4.12.32
+      hono: 4.12.33
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -1657,7 +1657,7 @@ snapshots:
 
   gensync@1.0.0-beta.2: {}
 
-  hono@4.12.32: {}
+  hono@4.12.33: {}
 
   js-tokens@4.0.0: {}
 
