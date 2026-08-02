@@ -38,8 +38,8 @@
     "db:verify": "pnpm --filter \"@staffweave/db\" verify"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.5",
-    "@playwright/test": "^1.62.0",
+    "@biomejs/biome": "^2.5.6",
+    "@playwright/test": "^1.62.1",
     "@staffweave/api": "workspace:*",
     "@staffweave/db": "workspace:*",
     "@types/node": "^24.13.3",
