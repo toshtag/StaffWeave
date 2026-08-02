@@ -1,9 +1,7 @@
-import { copyFile, mkdtemp, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Database } from '@staffweave/db';
-import { createDatabase, MIGRATIONS_DIR, migrate } from '@staffweave/db';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { migrate } from '@staffweave/db';
+import { describe, expect, it } from 'vitest';
+import { migrationsUpTo, useTemporaryDatabases } from '../support/migration-database.js';
 
 /**
  * 応答の再現に必要な値の追加が、すでに動いている環境を壊さないことを確かめる。
@@ -23,29 +21,6 @@ const LAST_VERSION_BEFORE_RESPONSE_VALUES = 17;
 
 const NOW = new Date('2026-04-01T00:00:00.000Z');
 const BUSINESS_DATE = '2026-04-01';
-
-function requireTestDatabaseUrl(): string {
-  const url = process.env.TEST_DATABASE_URL;
-  if (!url) throw new Error('TEST_DATABASE_URL が設定されていません。');
-  return url;
-}
-
-function urlFor(databaseName: string): string {
-  const url = new URL(requireTestDatabaseUrl());
-  url.pathname = `/${databaseName}`;
-  return url.toString();
-}
-
-/** 指定した版までのマイグレーションだけを置いた一時ディレクトリ。内容は原本と同一にする。 */
-async function migrationsUpTo(version: number): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'staffweave-migrations-'));
-  for (const fileName of await readdir(MIGRATIONS_DIR)) {
-    if (!fileName.endsWith('.sql')) continue;
-    if (Number(fileName.slice(0, 4)) > version) continue;
-    await copyFile(join(MIGRATIONS_DIR, fileName), join(directory, fileName));
-  }
-  return directory;
-}
 
 interface Workspace {
   workspaceId: string;
@@ -141,59 +116,45 @@ async function receiptOf(db: Database, requestId: string): Promise<ReceiptValues
   return rows[0];
 }
 
-let admin: Database;
-let upgraded: Database;
-let fresh: Database;
 let upgradedWorkspace: Workspace;
 let freshWorkspace: Workspace;
 let acceptedEventId: string;
 
-beforeAll(async () => {
-  admin = createDatabase({ connectionString: urlFor('postgres'), maxConnections: 1 });
-  for (const name of [UPGRADED, FRESH]) {
-    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
-    await admin.query(`CREATE DATABASE ${name}`);
-  }
-
-  upgraded = createDatabase({ connectionString: urlFor(UPGRADED), maxConnections: 1 });
-  fresh = createDatabase({ connectionString: urlFor(FRESH), maxConnections: 1 });
-
+const temporary = useTemporaryDatabases([UPGRADED, FRESH], async ({ database }) => {
   // 0017 までを適用し、当時の形で受理と拒否の記録を保存してから 0018 を適用する。
-  await migrate(upgraded, await migrationsUpTo(LAST_VERSION_BEFORE_RESPONSE_VALUES));
-  upgradedWorkspace = await createWorkspaceWith(upgraded, 'default');
-  acceptedEventId = await insertAttendanceEvent(upgraded, upgradedWorkspace, 'legacy-accepted');
-  await insertLegacyReceipt(upgraded, upgradedWorkspace, {
+  await migrate(database(UPGRADED), await migrationsUpTo(LAST_VERSION_BEFORE_RESPONSE_VALUES));
+  upgradedWorkspace = await createWorkspaceWith(database(UPGRADED), 'default');
+  acceptedEventId = await insertAttendanceEvent(
+    database(UPGRADED),
+    upgradedWorkspace,
+    'legacy-accepted',
+  );
+  await insertLegacyReceipt(database(UPGRADED), upgradedWorkspace, {
     requestId: 'legacy-accepted',
     sequence: 1,
     outcome: 'accepted',
     attendanceEventId: acceptedEventId,
   });
   for (const [index, reason] of ['unknown_card', 'sequence_replay', 'punch_rejected'].entries()) {
-    await insertLegacyReceipt(upgraded, upgradedWorkspace, {
+    await insertLegacyReceipt(database(UPGRADED), upgradedWorkspace, {
       requestId: `legacy-rejected-${reason}`,
       sequence: index + 2,
       outcome: 'rejected',
       reason,
     });
   }
-  await migrate(upgraded);
+  await migrate(database(UPGRADED));
 
-  await migrate(fresh);
-  freshWorkspace = await createWorkspaceWith(fresh, 'default');
-}, 60_000);
-
-afterAll(async () => {
-  await upgraded?.close();
-  await fresh?.close();
-  for (const name of [UPGRADED, FRESH]) {
-    await admin?.query(`DROP DATABASE IF EXISTS ${name}`);
-  }
-  await admin?.close();
+  await migrate(database(FRESH));
+  freshWorkspace = await createWorkspaceWith(database(FRESH), 'default');
 });
+
+const upgraded = () => temporary.database(UPGRADED);
+const fresh = () => temporary.database(FRESH);
 
 describe('0017 まで適用済みのデータベース', () => {
   it('受理した記録の種別を打刻イベントから補う', async () => {
-    expect(await receiptOf(upgraded, 'legacy-accepted')).toEqual({
+    expect(await receiptOf(upgraded(), 'legacy-accepted')).toEqual({
       event_type: 'clock_in',
       rejection_code: null,
       rejection_message: null,
@@ -201,12 +162,12 @@ describe('0017 まで適用済みのデータベース', () => {
   });
 
   it('断った記録の理由を detail の reason から補う', async () => {
-    expect(await receiptOf(upgraded, 'legacy-rejected-unknown_card')).toEqual({
+    expect(await receiptOf(upgraded(), 'legacy-rejected-unknown_card')).toEqual({
       event_type: null,
       rejection_code: 'not_found',
       rejection_message: '登録されたカードが見つかりません',
     });
-    expect(await receiptOf(upgraded, 'legacy-rejected-sequence_replay')).toEqual({
+    expect(await receiptOf(upgraded(), 'legacy-rejected-sequence_replay')).toEqual({
       event_type: null,
       rejection_code: 'conflict',
       rejection_message: '連番がすでに受け取った値以下です',
@@ -214,7 +175,7 @@ describe('0017 まで適用済みのデータベース', () => {
   });
 
   it('元の文言が残っていない拒否には、種別を伴わない文言を入れる', async () => {
-    expect(await receiptOf(upgraded, 'legacy-rejected-punch_rejected')).toEqual({
+    expect(await receiptOf(upgraded(), 'legacy-rejected-punch_rejected')).toEqual({
       event_type: null,
       rejection_code: 'conflict',
       rejection_message: 'この打刻は受け付けられません',
@@ -222,7 +183,7 @@ describe('0017 まで適用済みのデータベース', () => {
   });
 
   it('保存されていた受領記録の件数と結果を変えない', async () => {
-    const rows = await upgraded.query<{ outcome: string; count: number }>(
+    const rows = await upgraded().query<{ outcome: string; count: number }>(
       'SELECT outcome, count(*)::int AS count FROM device_event_receipts GROUP BY outcome',
     );
 
@@ -234,14 +195,14 @@ describe('0017 まで適用済みのデータベース', () => {
 
   it('補ったあとも受領記録は書き換えられない', async () => {
     await expect(
-      upgraded.query('DELETE FROM device_event_receipts WHERE request_id = $1', [
+      upgraded().query('DELETE FROM device_event_receipts WHERE request_id = $1', [
         'legacy-accepted',
       ]),
     ).rejects.toThrow(/追記のみ/);
   });
 
   it('もう一度適用しても何も起きない', async () => {
-    const result = await migrate(upgraded);
+    const result = await migrate(upgraded());
 
     expect(result.appliedVersions).toEqual([]);
   });
@@ -250,7 +211,7 @@ describe('0017 まで適用済みのデータベース', () => {
 describe('空のデータベース', () => {
   /** 応答の再現に必要な値を欠いた受領記録を作ろうとする。 */
   const invalid = (columns: string, values: string) =>
-    fresh.query(
+    fresh().query(
       `INSERT INTO device_event_receipts
          (workspace_id, device_id, sequence, request_id, device_time,
           clock_skew_seconds, sequence_step, ${columns})
@@ -285,24 +246,24 @@ describe('空のデータベース', () => {
   });
 
   it('受理と拒否のどちらも保存できる', async () => {
-    const eventId = await insertAttendanceEvent(fresh, freshWorkspace, 'fresh-accepted');
+    const eventId = await insertAttendanceEvent(fresh(), freshWorkspace, 'fresh()-accepted');
 
     await expect(
-      fresh.query(
+      fresh().query(
         `INSERT INTO device_event_receipts
            (workspace_id, device_id, sequence, request_id, device_time, clock_skew_seconds,
             sequence_step, attendance_event_id, business_date, outcome, event_type)
-         VALUES ($1, $2, 1, 'fresh-accepted', $3, 0, 1, $4, $5, 'accepted', 'clock_in')`,
+         VALUES ($1, $2, 1, 'fresh()-accepted', $3, 0, 1, $4, $5, 'accepted', 'clock_in')`,
         [freshWorkspace.workspaceId, freshWorkspace.deviceId, NOW, eventId, BUSINESS_DATE],
       ),
     ).resolves.toBeDefined();
 
     await expect(
-      fresh.query(
+      fresh().query(
         `INSERT INTO device_event_receipts
            (workspace_id, device_id, sequence, request_id, device_time, clock_skew_seconds,
             sequence_step, outcome, rejection_code, rejection_message)
-         VALUES ($1, $2, 2, 'fresh-rejected', $3, 0, 1, 'rejected', 'conflict', 'すでに退勤済みです')`,
+         VALUES ($1, $2, 2, 'fresh()-rejected', $3, 0, 1, 'rejected', 'conflict', 'すでに退勤済みです')`,
         [freshWorkspace.workspaceId, freshWorkspace.deviceId, NOW],
       ),
     ).resolves.toBeDefined();

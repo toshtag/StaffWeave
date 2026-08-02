@@ -1,10 +1,8 @@
-import { copyFile, mkdtemp, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Database } from '@staffweave/db';
-import { createDatabase, MIGRATIONS_DIR, migrate } from '@staffweave/db';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { migrate } from '@staffweave/db';
+import { describe, expect, it } from 'vitest';
 import { createSessionObservationRepository } from '../../src/session/repository.js';
+import { migrationsUpTo, useTemporaryDatabases } from '../support/migration-database.js';
 
 /**
  * 受領記録の追加が、すでに動いている環境を壊さないことを確かめる。
@@ -29,29 +27,6 @@ const REQUEST_INDEX = 'workstation_session_observations_request_idx';
 
 /** 0016 より前に受け取った、観測が 2 件入るまとめ送り。 */
 const LEGACY_REQUEST_ID = 'legacy-session-request';
-
-function requireTestDatabaseUrl(): string {
-  const url = process.env.TEST_DATABASE_URL;
-  if (!url) throw new Error('TEST_DATABASE_URL が設定されていません。');
-  return url;
-}
-
-function urlFor(databaseName: string): string {
-  const url = new URL(requireTestDatabaseUrl());
-  url.pathname = `/${databaseName}`;
-  return url.toString();
-}
-
-/** 指定した版までのマイグレーションだけを置いた一時ディレクトリ。内容は原本と同一にする。 */
-async function migrationsUpTo(version: number): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'staffweave-migrations-'));
-  for (const fileName of await readdir(MIGRATIONS_DIR)) {
-    if (!fileName.endsWith('.sql')) continue;
-    if (Number(fileName.slice(0, 4)) > version) continue;
-    await copyFile(join(MIGRATIONS_DIR, fileName), join(directory, fileName));
-  }
-  return directory;
-}
 
 interface Workspace {
   workspaceId: string;
@@ -134,64 +109,44 @@ async function requestIndexOf(db: Database): Promise<string | undefined> {
   return rows[0]?.indexdef;
 }
 
-let admin: Database;
-let upgraded: Database;
-let indexed: Database;
-let fresh: Database;
 let upgradedWorkspace: Workspace;
 let indexedWorkspace: Workspace;
 let freshWorkspace: Workspace;
 
-beforeAll(async () => {
-  admin = createDatabase({ connectionString: urlFor('postgres'), maxConnections: 1 });
-  for (const name of [UPGRADED, INDEXED, FRESH]) {
-    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
-    await admin.query(`CREATE DATABASE ${name}`);
-  }
-
-  upgraded = createDatabase({ connectionString: urlFor(UPGRADED), maxConnections: 1 });
-  indexed = createDatabase({ connectionString: urlFor(INDEXED), maxConnections: 1 });
-  fresh = createDatabase({ connectionString: urlFor(FRESH), maxConnections: 1 });
-
+const temporary = useTemporaryDatabases([UPGRADED, INDEXED, FRESH], async ({ database }) => {
   // 0015 までを適用し、当時の形でまとめ送り 1 回分を保存してから 0016 を適用する。
-  await migrate(upgraded, await migrationsUpTo(LAST_VERSION_BEFORE_RECEIPTS));
-  upgradedWorkspace = await createWorkspaceWith(upgraded, 'default');
+  await migrate(database(UPGRADED), await migrationsUpTo(LAST_VERSION_BEFORE_RECEIPTS));
+  upgradedWorkspace = await createWorkspaceWith(database(UPGRADED), 'default');
   for (const observationType of ['sign_in', 'lock']) {
-    await insertObservation(upgraded, upgradedWorkspace, {
+    await insertObservation(database(UPGRADED), upgradedWorkspace, {
       observationType,
       requestId: LEGACY_REQUEST_ID,
     });
   }
-  await migrate(upgraded);
+  await migrate(database(UPGRADED));
 
   // 0016 までを適用した環境へ、索引だけを足す 0017 を当てる。
-  await migrate(indexed, await migrationsUpTo(LAST_VERSION_BEFORE_REQUEST_INDEX));
-  indexedWorkspace = await createWorkspaceWith(indexed, 'default');
+  await migrate(database(INDEXED), await migrationsUpTo(LAST_VERSION_BEFORE_REQUEST_INDEX));
+  indexedWorkspace = await createWorkspaceWith(database(INDEXED), 'default');
   for (const observationType of ['sign_in', 'lock']) {
-    await insertObservation(indexed, indexedWorkspace, {
+    await insertObservation(database(INDEXED), indexedWorkspace, {
       observationType,
       requestId: LEGACY_REQUEST_ID,
     });
   }
-  await migrate(indexed);
+  await migrate(database(INDEXED));
 
-  await migrate(fresh);
-  freshWorkspace = await createWorkspaceWith(fresh, 'default');
-}, 60_000);
-
-afterAll(async () => {
-  await upgraded?.close();
-  await indexed?.close();
-  await fresh?.close();
-  for (const name of [UPGRADED, INDEXED, FRESH]) {
-    await admin?.query(`DROP DATABASE IF EXISTS ${name}`);
-  }
-  await admin?.close();
+  await migrate(database(FRESH));
+  freshWorkspace = await createWorkspaceWith(database(FRESH), 'default');
 });
+
+const upgraded = () => temporary.database(UPGRADED);
+const indexed = () => temporary.database(INDEXED);
+const fresh = () => temporary.database(FRESH);
 
 describe('0015 まで適用済みのデータベース', () => {
   it('保存されていた観測をそのまま残す', async () => {
-    const rows = await upgraded.query<{ observation_type: string }>(
+    const rows = await upgraded().query<{ observation_type: string }>(
       'SELECT observation_type FROM workstation_session_observations WHERE request_id = $1',
       [LEGACY_REQUEST_ID],
     );
@@ -200,7 +155,7 @@ describe('0015 まで適用済みのデータベース', () => {
   });
 
   it('受け取り済みの要求へ受領記録を作り足さない', async () => {
-    const rows = await upgraded.query<{ count: number }>(
+    const rows = await upgraded().query<{ count: number }>(
       'SELECT count(*)::int AS count FROM workstation_session_receipts',
     );
 
@@ -209,7 +164,7 @@ describe('0015 まで適用済みのデータベース', () => {
   });
 
   it('もう一度適用しても何も起きない', async () => {
-    const result = await migrate(upgraded);
+    const result = await migrate(upgraded());
 
     expect(result.appliedVersions).toEqual([]);
   });
@@ -217,7 +172,7 @@ describe('0015 まで適用済みのデータベース', () => {
 
 describe('0016 まで適用済みのデータベース', () => {
   it('冪等キーで観測を引ける索引を足す', async () => {
-    const definition = await requestIndexOf(indexed);
+    const definition = await requestIndexOf(indexed());
 
     expect(definition).toBeDefined();
     expect(definition).toContain('workstation_session_observations');
@@ -228,7 +183,7 @@ describe('0016 まで適用済みのデータベース', () => {
   });
 
   it('保存されていた観測をそのまま残す', async () => {
-    const rows = await indexed.query<{ observation_type: string }>(
+    const rows = await indexed().query<{ observation_type: string }>(
       'SELECT observation_type FROM workstation_session_observations WHERE request_id = $1',
       [LEGACY_REQUEST_ID],
     );
@@ -237,12 +192,12 @@ describe('0016 まで適用済みのデータベース', () => {
   });
 
   it('索引を足したあとも同じ冪等キーの観測を保存できる', async () => {
-    await insertObservation(indexed, indexedWorkspace, {
+    await insertObservation(indexed(), indexedWorkspace, {
       observationType: 'sign_out',
       requestId: LEGACY_REQUEST_ID,
     });
 
-    const rows = await indexed.query<{ count: number }>(
+    const rows = await indexed().query<{ count: number }>(
       'SELECT count(*)::int AS count FROM workstation_session_observations WHERE request_id = $1',
       [LEGACY_REQUEST_ID],
     );
@@ -250,7 +205,7 @@ describe('0016 まで適用済みのデータベース', () => {
   });
 
   it('受領記録のない要求を、観測から再送と判定できる', async () => {
-    const observations = createSessionObservationRepository(indexed);
+    const observations = createSessionObservationRepository(indexed());
 
     await expect(
       observations.existsLegacyRequest(indexedWorkspace.workspaceId, LEGACY_REQUEST_ID),
@@ -261,7 +216,7 @@ describe('0016 まで適用済みのデータベース', () => {
   });
 
   it('もう一度適用しても何も起きない', async () => {
-    const result = await migrate(indexed);
+    const result = await migrate(indexed());
 
     expect(result.appliedVersions).toEqual([]);
   });
@@ -269,7 +224,7 @@ describe('0016 まで適用済みのデータベース', () => {
 
 describe('空のデータベース', () => {
   it('最初から冪等キーの索引を持つ', async () => {
-    const definition = await requestIndexOf(fresh);
+    const definition = await requestIndexOf(fresh());
 
     expect(definition).toBeDefined();
     expect(definition).not.toContain('UNIQUE');
@@ -277,38 +232,38 @@ describe('空のデータベース', () => {
 
   it('同じ冪等キーの観測を複数保存できる', async () => {
     for (const observationType of ['sign_in', 'lock', 'sign_out']) {
-      await insertObservation(fresh, freshWorkspace, {
+      await insertObservation(fresh(), freshWorkspace, {
         observationType,
-        requestId: 'fresh-session-request',
+        requestId: 'fresh()-session-request',
       });
     }
 
-    const rows = await fresh.query<{ count: number }>(
+    const rows = await fresh().query<{ count: number }>(
       'SELECT count(*)::int AS count FROM workstation_session_observations WHERE request_id = $1',
-      ['fresh-session-request'],
+      ['fresh()-session-request'],
     );
     expect(rows[0]?.count).toBe(3);
   });
 
   it('同じワークスペースでは同じ冪等キーの受領記録を 1 件しか持てない', async () => {
-    await insertReceipt(fresh, freshWorkspace, { requestId: 'unique-session-request' });
+    await insertReceipt(fresh(), freshWorkspace, { requestId: 'unique-session-request' });
 
     await expect(
-      insertReceipt(fresh, freshWorkspace, { requestId: 'unique-session-request', sequence: 2 }),
+      insertReceipt(fresh(), freshWorkspace, { requestId: 'unique-session-request', sequence: 2 }),
     ).rejects.toThrow(/workstation_session_receipts_request_key/);
   });
 
   it('ワークスペースが違えば同じ冪等キーを使える', async () => {
-    const other = await createWorkspaceWith(fresh, 'other');
+    const other = await createWorkspaceWith(fresh(), 'other');
 
     await expect(
-      insertReceipt(fresh, other, { requestId: 'unique-session-request' }),
+      insertReceipt(fresh(), other, { requestId: 'unique-session-request' }),
     ).resolves.toBeUndefined();
   });
 
   it('受領記録の内容を強制する', async () => {
     const invalid = (columns: string, values: string) =>
-      fresh.query(
+      fresh().query(
         `INSERT INTO workstation_session_receipts
            (workspace_id, device_id, request_id, ${columns})
          VALUES ($1, $2, $3, ${values})`,
@@ -325,7 +280,7 @@ describe('空のデータベース', () => {
       invalid('sequence, sequence_step, outcome, accepted, skipped', "1, 1, 'accepted', -1, 0"),
     ).rejects.toThrow(/counts_non_negative/);
     await expect(
-      fresh.query(
+      fresh().query(
         `INSERT INTO workstation_session_receipts
            (workspace_id, device_id, request_id, sequence, sequence_step, outcome, accepted, skipped)
          VALUES ($1, $2, 'short', 1, 1, 'accepted', 0, 0)`,
@@ -335,11 +290,11 @@ describe('空のデータベース', () => {
   });
 
   it('端末が別のワークスペースなら受領記録を作れない', async () => {
-    const other = await createWorkspaceWith(fresh, 'foreign');
+    const other = await createWorkspaceWith(fresh(), 'foreign');
 
     await expect(
       insertReceipt(
-        fresh,
+        fresh(),
         { ...freshWorkspace, deviceId: other.deviceId },
         {
           requestId: 'foreign-session-request',
@@ -349,10 +304,10 @@ describe('空のデータベース', () => {
   });
 
   it('受領記録は書き換えられない', async () => {
-    await insertReceipt(fresh, freshWorkspace, { requestId: 'append-only-request' });
+    await insertReceipt(fresh(), freshWorkspace, { requestId: 'append-only-request' });
 
     await expect(
-      fresh.query('DELETE FROM workstation_session_receipts WHERE request_id = $1', [
+      fresh().query('DELETE FROM workstation_session_receipts WHERE request_id = $1', [
         'append-only-request',
       ]),
     ).rejects.toThrow(/追記のみ/);

@@ -1,11 +1,9 @@
-import { copyFile, mkdtemp, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { deriveWebhookSigningKey, verifyWebhook } from '@staffweave/connector';
 import type { Database } from '@staffweave/db';
-import { createDatabase, MIGRATIONS_DIR, migrate } from '@staffweave/db';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { migrate } from '@staffweave/db';
+import { describe, expect, it } from 'vitest';
 import { signWebhookMessage } from '../../src/integration/webhook-signature.js';
+import { migrationsUpTo, useTemporaryDatabases } from '../support/migration-database.js';
 
 /**
  * 保存列の改名が、すでに動いている環境を壊さないことを確かめる。
@@ -25,29 +23,6 @@ const FRESH = 'staffweave_migration_fresh_test';
 
 const LAST_VERSION_BEFORE_RENAME = 14;
 
-function urlFor(databaseName: string): string {
-  const url = new URL(requireTestDatabaseUrl());
-  url.pathname = `/${databaseName}`;
-  return url.toString();
-}
-
-function requireTestDatabaseUrl(): string {
-  const url = process.env.TEST_DATABASE_URL;
-  if (!url) throw new Error('TEST_DATABASE_URL が設定されていません。');
-  return url;
-}
-
-/** 0014 までのマイグレーションだけを置いた一時ディレクトリ。内容は原本と同一にする。 */
-async function migrationsUpTo(version: number): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), 'staffweave-migrations-'));
-  for (const fileName of await readdir(MIGRATIONS_DIR)) {
-    if (!fileName.endsWith('.sql')) continue;
-    if (Number(fileName.slice(0, 4)) > version) continue;
-    await copyFile(join(MIGRATIONS_DIR, fileName), join(directory, fileName));
-  }
-  return directory;
-}
-
 async function columnsOf(db: Database, table: string): Promise<string[]> {
   const rows = await db.query<{ column_name: string }>(
     'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
@@ -56,26 +31,13 @@ async function columnsOf(db: Database, table: string): Promise<string[]> {
   return rows.map((row) => row.column_name);
 }
 
-let admin: Database;
-let upgraded: Database;
-let fresh: Database;
-
-beforeAll(async () => {
-  admin = createDatabase({ connectionString: urlFor('postgres'), maxConnections: 1 });
-  for (const name of [UPGRADED, FRESH]) {
-    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
-    await admin.query(`CREATE DATABASE ${name}`);
-  }
-
-  upgraded = createDatabase({ connectionString: urlFor(UPGRADED), maxConnections: 1 });
-  fresh = createDatabase({ connectionString: urlFor(FRESH), maxConnections: 1 });
-
+const temporary = useTemporaryDatabases([UPGRADED, FRESH], async ({ database }) => {
   // 0014 までを適用し、当時の形で送信先を 1 件登録してから 0015 を適用する。
-  await migrate(upgraded, await migrationsUpTo(LAST_VERSION_BEFORE_RENAME));
-  const workspaces = await upgraded.query<{ id: string }>(
+  await migrate(database(UPGRADED), await migrationsUpTo(LAST_VERSION_BEFORE_RENAME));
+  const workspaces = await database(UPGRADED).query<{ id: string }>(
     "INSERT INTO workspaces (slug, name) VALUES ('default', '既定') RETURNING id",
   );
-  await upgraded.query(
+  await database(UPGRADED).query(
     `INSERT INTO webhook_endpoints (workspace_id, name, url, secret_hash, event_types)
      VALUES ($1, $2, $3, $4, $5)`,
     [
@@ -86,23 +48,17 @@ beforeAll(async () => {
       ['attendance_request.approved'],
     ],
   );
-  await migrate(upgraded);
+  await migrate(database(UPGRADED));
 
-  await migrate(fresh);
-}, 60_000);
-
-afterAll(async () => {
-  await upgraded?.close();
-  await fresh?.close();
-  for (const name of [UPGRADED, FRESH]) {
-    await admin?.query(`DROP DATABASE IF EXISTS ${name}`);
-  }
-  await admin?.close();
+  await migrate(database(FRESH));
 });
+
+const upgraded = () => temporary.database(UPGRADED);
+const fresh = () => temporary.database(FRESH);
 
 describe('0014 まで適用済みのデータベース', () => {
   it('保存されていた値をそのまま署名鍵として引き継ぐ', async () => {
-    const rows = await upgraded.query<{ signing_key: string }>(
+    const rows = await upgraded().query<{ signing_key: string }>(
       'SELECT signing_key FROM webhook_endpoints',
     );
 
@@ -110,14 +66,14 @@ describe('0014 まで適用済みのデータベース', () => {
   });
 
   it('改名前の列は残さない', async () => {
-    const columns = await columnsOf(upgraded, 'webhook_endpoints');
+    const columns = await columnsOf(upgraded(), 'webhook_endpoints');
 
     expect(columns).toContain('signing_key');
     expect(columns).not.toContain('secret_hash');
   });
 
   it('登録済みの送信先の署名を受け取り側が検証できる', async () => {
-    const rows = await upgraded.query<{ signing_key: string }>(
+    const rows = await upgraded().query<{ signing_key: string }>(
       'SELECT signing_key FROM webhook_endpoints',
     );
     const signingKey = rows[0]?.signing_key;
@@ -151,7 +107,7 @@ describe('0014 まで適用済みのデータベース', () => {
   });
 
   it('もう一度適用しても何も起きない', async () => {
-    const result = await migrate(upgraded);
+    const result = await migrate(upgraded());
 
     expect(result.appliedVersions).toEqual([]);
   });
@@ -159,19 +115,19 @@ describe('0014 まで適用済みのデータベース', () => {
 
 describe('空のデータベース', () => {
   it('最初から署名鍵の列だけを持つ', async () => {
-    const columns = await columnsOf(fresh, 'webhook_endpoints');
+    const columns = await columnsOf(fresh(), 'webhook_endpoints');
 
     expect(columns).toContain('signing_key');
     expect(columns).not.toContain('secret_hash');
   });
 
   it('署名鍵の形式を強制する', async () => {
-    const workspaces = await fresh.query<{ id: string }>(
+    const workspaces = await fresh().query<{ id: string }>(
       "INSERT INTO workspaces (slug, name) VALUES ('format', '形式') RETURNING id",
     );
     const workspaceId = workspaces[0]?.id ?? '';
     const insert = (signingKey: string) =>
-      fresh.query(
+      fresh().query(
         `INSERT INTO webhook_endpoints (workspace_id, name, url, signing_key, event_types)
          VALUES ($1, '送信先', 'https://example.test/hooks', $2, $3)`,
         [workspaceId, signingKey, ['attendance_request.approved']],

@@ -1,6 +1,7 @@
 import type { Database } from '@staffweave/db';
-import { createDatabase, migrate } from '@staffweave/db';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { migrate } from '@staffweave/db';
+import { describe, expect, it } from 'vitest';
+import { useTemporaryDatabases } from '../support/migration-database.js';
 
 /**
  * マイグレーションを同時に走らせても、両方が正常に終わることを固定する。
@@ -15,33 +16,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const CONCURRENT = 'staffweave_migration_concurrency_test';
 
-function urlFor(databaseName: string): string {
-  const base = process.env.TEST_DATABASE_URL;
-  if (!base) throw new Error('TEST_DATABASE_URL が設定されていません。');
-  const url = new URL(base);
-  url.pathname = `/${databaseName}`;
-  return url.toString();
-}
-
-let admin: Database;
 let first: Database;
 let second: Database;
 
-beforeAll(async () => {
-  admin = createDatabase({ connectionString: urlFor('postgres'), maxConnections: 1 });
-  await admin.query(`DROP DATABASE IF EXISTS ${CONCURRENT}`);
-  await admin.query(`CREATE DATABASE ${CONCURRENT}`);
-
+useTemporaryDatabases([CONCURRENT], async ({ connect }) => {
   // 別々の接続の集まりを使い、別プロセスからの適用に近い形にする。
-  first = createDatabase({ connectionString: urlFor(CONCURRENT), maxConnections: 2 });
-  second = createDatabase({ connectionString: urlFor(CONCURRENT), maxConnections: 2 });
-});
-
-afterAll(async () => {
-  await first?.close();
-  await second?.close();
-  await admin?.query(`DROP DATABASE IF EXISTS ${CONCURRENT}`);
-  await admin?.close();
+  first = connect(CONCURRENT, 2);
+  second = connect(CONCURRENT, 2);
 });
 
 describe('同時に走らせたマイグレーション', () => {
