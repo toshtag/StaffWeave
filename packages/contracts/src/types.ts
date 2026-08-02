@@ -79,6 +79,11 @@ export interface LoginRequest {
   workspaceSlug?: string;
 }
 
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
 export interface UpdatePreferencesRequest {
   locale: Locale;
 }
