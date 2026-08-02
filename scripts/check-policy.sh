@@ -143,6 +143,46 @@ else
   fail '正式リリース判定の記録がありません: docs/release-readiness/'
 fi
 
+echo 'SBOM'
+for required in docs/security/sbom.md scripts/generate-sbom.sh scripts/verify-sbom.mjs; do
+  if [ -f "$required" ]; then
+    pass "$required があります"
+  else
+    fail "$required がありません"
+  fi
+done
+
+if grep -qE '^\| SBOM \| 未着手 \|' docs/roadmap.md; then
+  fail 'roadmap が SBOM を未着手のままにしています'
+else
+  pass 'roadmap の SBOM の状態が実装と合っています'
+fi
+
+# 生成物は commit ごとに作り直す。追跡すると、古い構成が新しい版の説明として残る。
+if printf '%s\n' "$TRACKED" | grep -qE '\.cdx\.json'; then
+  fail 'SBOM の生成物が Git で追跡されています'
+else
+  pass 'SBOM の生成物は追跡されていません'
+fi
+
+# 通常の検証で Docker と外部の道具を必須にしない。オフラインで確かめられなくなる。
+if grep -E '"verify"' package.json | grep -q 'sbom'; then
+  fail 'pnpm verify が SBOM の生成を巻き込んでいます'
+else
+  pass 'pnpm verify は SBOM の生成を必要としません'
+fi
+
+# 新しく足した Action は完全なコミット SHA で固定する。
+# tag は同じ名前のまま指す先が変わりうるため、版として当てにできない。
+SBOM_JOB=$(sed -n '/^  sbom:/,$p' .github/workflows/ci.yml)
+UNPINNED=$(printf '%s\n' "$SBOM_JOB" | grep -E 'uses:' | grep -vE 'uses: [^@]+@[0-9a-f]{40}( |$)' || true)
+if [ -n "$UNPINNED" ]; then
+  printf '%s\n' "$UNPINNED"
+  fail 'SBOM のジョブに、コミット SHA で固定していない Action があります'
+else
+  pass 'SBOM のジョブの Action はコミット SHA で固定されています'
+fi
+
 echo 'マイグレーション'
 DUPLICATES=$(git ls-files 'packages/db/migrations/*.sql' | sed 's#.*/##' | cut -c1-4 | sort | uniq -d)
 if [ -n "$DUPLICATES" ]; then

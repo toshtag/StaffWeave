@@ -49,7 +49,7 @@ P15（公開前の品質ゲート）と、公開前に必要と判断した P16 
 
 ロードマップの P0〜P15 は完了しています。
 P16（認証・運用強化）は、正式リリース前に必要と判断した範囲を先に入れてあります。
-セッション一覧と一括失効、SBOM は未着手です。
+セッション一覧と一括失効は未着手です。
 各フェーズの範囲と状態は [docs/roadmap.md](docs/roadmap.md) を参照してください。
 
 このリポジトリは、未実装の機能を「提供済み」として記載しません。
@@ -488,7 +488,14 @@ pnpm check:audit       # 依存の既知脆弱性（moderate 以上があれば�
 
 pnpm test:unit         # 単体テストのみ（DB 不要）
 pnpm test:integration  # 統合テストのみ（DB 必要）
+
+pnpm sbom:generate     # 配布物の構成一覧を書き出す（Docker 必要）
+pnpm sbom:verify       # 書き出した構成一覧を検証する（Docker 必要）
 ```
+
+SBOM は `pnpm verify` に含めていません。通常の開発で Docker と外部の道具を
+必須にすると、オフラインで検証できなくなるためです。専用の CI ジョブで実行します。
+対象と読み方は [docs/security/sbom.md](docs/security/sbom.md) を参照してください。
 
 `pnpm verify` は CI が実行する検証と同じ内容です。
 手元で通れば CI でも通る状態にするため、片方だけに項目を足しません。
@@ -533,6 +540,7 @@ staffweave は不正打刻の完全な防止や、特定の国・地域の労働
 | [docs/security/webhook-signing.md](docs/security/webhook-signing.md) | Webhook 署名鍵の保存と検証手順 |
 | [docs/security/card-fingerprint-key.md](docs/security/card-fingerprint-key.md) | IC カード指紋鍵の設定と Workspace ごとの分離 |
 | [docs/security/csv-output.md](docs/security/csv-output.md) | CSV 出力の無害化と、取り込み側から見える差 |
+| [docs/security/sbom.md](docs/security/sbom.md) | 配布物の構成一覧（SBOM）の対象と読み方 |
 
 ## ライセンス
 

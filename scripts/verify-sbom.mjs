@@ -153,7 +153,10 @@ function checkContainer(raw, document) {
   // 実行イメージには開発用の道具を入れない。入っていれば Dockerfile 側の問題。
   const developmentOnly = ['vitest', '@playwright/test', '@biomejs/biome', 'typescript'];
   const leaked = developmentOnly.filter((name) => names.has(name));
-  check(leaked.length === 0, `${CONTAINER}: 開発用の依存が入っていない${leaked.length === 0 ? '' : `（${leaked.join(', ')}）`}`);
+  check(
+    leaked.length === 0,
+    `${CONTAINER}: 開発用の依存が入っていない${leaked.length === 0 ? '' : `（${leaked.join(', ')}）`}`,
+  );
 
   check(
     typeof document.metadata?.component?.name === 'string',

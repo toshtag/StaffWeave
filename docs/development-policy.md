@@ -124,6 +124,7 @@ staffweave の実装判断で迷ったとき、この文書が優先されます
 | リポジトリの決めごと | `pnpm check:policy` |
 | 依存の脆弱性 | `pnpm check:audit` |
 | コンテナのビルド | `docker build -f docker/api.Dockerfile` |
+| 配布物の構成一覧 | `pnpm sbom:generate`、`pnpm sbom:verify`（専用ジョブ） |
 
 `pnpm check:policy` が見るのは、レビューで見落としやすく、後から直すと影響が大きいものだけです。
 
@@ -132,6 +133,9 @@ staffweave の実装判断で迷ったとき、この文書が優先されます
 - 生成ツールに由来する定型文が含まれていないか
 - ライセンスの表示が `LICENSE`・README・決定の記録で一致しているか
 - 正式リリース判定の記録が残っているか
+- SBOM の生成・検証の手順と文書が揃っているか
+- SBOM の生成物を追跡していないか
+- SBOM のジョブが使う Action をコミット SHA で固定しているか
 - 旧い認可契約（閲覧範囲が空なら全件）の説明が残っていないか
 - マイグレーションの版番号とファイル名が規約どおりか
 - ドメイン層がフレームワークや上位パッケージへ依存していないか
@@ -145,6 +149,11 @@ GitHub の Issue や PR の件数は取りに行きません。ネットワー�
 オフラインで検証できなくなり、GitHub の障害でコードの検証まで失敗します。
 Issue の現在の状態は GitHub を正本とし、正式リリースのたびに数え直します
 （[release-readiness/](release-readiness/)）。
+
+SBOM の生成と検証は `pnpm verify` に含めません。Docker と外部の道具が要るため、
+通常の開発でオフライン検証ができなくなり、変更の確認も遅くなります。
+専用の CI ジョブと、正式リリース前の確認で実行します
+（[security/sbom.md](security/sbom.md)）。
 
 `pnpm check:audit` は、依存に moderate 以上の既知脆弱性があれば失敗させます。
 すぐに直せないものは `scripts/audit-exceptions.txt` へ、勧告 ID・期限・理由を書いて見送れます。
