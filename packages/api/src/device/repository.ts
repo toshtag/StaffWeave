@@ -324,7 +324,12 @@ export function createDeviceRepository(db: Queryable): DeviceRepository {
     async markRevoked(workspaceId, deviceId, revokedAt) {
       const rows = await db.query<DeviceRow>(
         `UPDATE devices
-            SET state = 'revoked', revoked_at = $3, enrollment_token_hash = NULL, updated_at = now()
+            SET state = 'revoked',
+                revoked_at = $3,
+                -- 失効させた端末の登録トークンは、未使用でも使えなくする。
+                enrollment_token_hash = NULL,
+                enrollment_token_expires_at = NULL,
+                updated_at = now()
           WHERE workspace_id = $1 AND id = $2
           RETURNING ${DEVICE_COLUMNS}`,
         [workspaceId, deviceId, revokedAt],

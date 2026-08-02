@@ -1,6 +1,7 @@
 import { generateKeyPair, signPayload } from '@staffweave/agent';
 import type {
   DeviceEventResponse,
+  DeviceList,
   DeviceReceiptList,
   DeviceRecord,
   EnrollDeviceResponse,
@@ -169,6 +170,69 @@ describe('端末の登録', () => {
     });
 
     expect(second.status).toBe(401);
+  });
+
+  it('登録トークンに有効期限を返す', async () => {
+    const registered = await registerDevice(app(), fixture.adminCookie);
+
+    // 既定は 15 分。カードの登録トークンと同じ長さにする。
+    expect(registered.enrollmentTokenExpiresAt).toBe('2026-04-01T00:15:00.000Z');
+  });
+
+  it('有効期限を過ぎた登録トークンは使えない', async () => {
+    const registered = await registerDevice(app(), fixture.adminCookie);
+
+    const later = app({ now: '2026-04-01T00:16:00.000Z' });
+    const response = await later.request('/api/device-agent/enroll', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        enrollmentToken: registered.enrollmentToken,
+        publicKey: generateKeyPair().publicKeyPem,
+      }),
+    });
+
+    expect(response.status).toBe(401);
+    // 端末は登録待ちのまま残る。失効させてから登録し直す。
+    const listed = await app().request('/api/devices', authorized(fixture.adminCookie));
+    const devices = ((await listed.json()) as DeviceList).devices;
+    expect(devices.find((device) => device.id === registered.device.id)?.state).toBe('pending');
+  });
+
+  it('有効時間を指定できる', async () => {
+    const response = await app().request(
+      '/api/devices',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: { name: '短い端末', expiresInMinutes: 1 },
+      }),
+    );
+    const registered = (await response.json()) as RegisterDeviceResponse;
+
+    expect(registered.enrollmentTokenExpiresAt).toBe('2026-04-01T00:01:00.000Z');
+  });
+
+  it('期限切れの端末を失効させて登録し直せる', async () => {
+    const instance = app();
+    const expired = await registerDevice(instance, fixture.adminCookie);
+
+    const revoked = await instance.request(
+      `/api/devices/${expired.device.id}/revoke`,
+      authorized(fixture.adminCookie, { method: 'POST' }),
+    );
+    expect(revoked.status).toBe(200);
+
+    const reissued = await registerDevice(instance, fixture.adminCookie);
+    const response = await instance.request('/api/device-agent/enroll', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        enrollmentToken: reissued.enrollmentToken,
+        publicKey: generateKeyPair().publicKeyPem,
+      }),
+    });
+
+    expect(response.status).toBe(200);
   });
 
   it('Ed25519 でない鍵は受け付けない', async () => {
