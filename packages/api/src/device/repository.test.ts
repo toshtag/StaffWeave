@@ -1,5 +1,5 @@
-import type { Queryable, QueryParameter } from '@staffweave/db';
 import { describe, expect, it } from 'vitest';
+import { recordingDatabase } from '../../test/support/fake-database.js';
 import { createDeviceRepository } from './repository.js';
 
 /**
@@ -10,30 +10,6 @@ import { createDeviceRepository } from './repository.js';
  * 一度きりを決めるのは更新の条件であり、その条件が落ちても
  * 通常の登録は成功するため、テストで固定しておかないと気付けない。
  */
-
-interface RecordedQuery {
-  text: string;
-  params: readonly QueryParameter[];
-}
-
-function recordingDatabase(rows: Record<string, unknown>[]): {
-  queries: RecordedQuery[];
-  db: Queryable;
-} {
-  const queries: RecordedQuery[] = [];
-  return {
-    queries,
-    db: {
-      query: async <T = Record<string, unknown>>(
-        text: string,
-        params: readonly QueryParameter[] = [],
-      ): Promise<T[]> => {
-        queries.push({ text, params });
-        return rows as T[];
-      },
-    },
-  };
-}
 
 const deviceRow = {
   id: 'device-1',

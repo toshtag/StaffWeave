@@ -1,5 +1,5 @@
-import type { Queryable, QueryParameter } from '@staffweave/db';
 import { describe, expect, it } from 'vitest';
+import { byQuery, recordingDatabase } from '../../test/support/fake-database.js';
 import { createApprovalRepository } from './repository.js';
 
 /**
@@ -8,11 +8,6 @@ import { createApprovalRepository } from './repository.js';
  * 申請ごとに引く形へ戻しても、応答の内容は変わらないため気付けない。
  * 変わるのは問い合わせの回数だけであり、それはここでしか確かめられない。
  */
-
-interface RecordedQuery {
-  text: string;
-  params: readonly QueryParameter[];
-}
 
 interface RequestRow {
   id: string;
@@ -62,31 +57,16 @@ function transitionRow(requestId: string, event: string, occurredAt: string): Tr
   };
 }
 
-/** 申請の問い合わせと遷移の問い合わせを、SQL の対象テーブルで振り分ける。 */
-function recordingDatabase(
-  requests: RequestRow[],
-  transitions: TransitionRow[],
-): { queries: RecordedQuery[]; db: Queryable } {
-  const queries: RecordedQuery[] = [];
-  return {
-    queries,
-    db: {
-      query: async <T = Record<string, unknown>>(
-        text: string,
-        params: readonly QueryParameter[] = [],
-      ): Promise<T[]> => {
-        queries.push({ text, params });
-        return (text.includes('attendance_request_transitions') ? transitions : requests) as T[];
-      },
-    },
-  };
-}
-
 const TRANSITION_QUERY = /attendance_request_transitions/;
+
+/** 申請の問い合わせと遷移の問い合わせを、SQL の対象テーブルで振り分ける。 */
+function requestsAndTransitions(requests: RequestRow[], transitions: TransitionRow[]) {
+  return recordingDatabase(byQuery([['attendance_request_transitions', transitions]], requests));
+}
 
 describe('listRequests', () => {
   it('申請が何件あっても、遷移の問い合わせは 1 回だけ行う', async () => {
-    const { queries, db } = recordingDatabase(
+    const { queries, db } = requestsAndTransitions(
       [requestRow('request-1', '2026-04-01'), requestRow('request-2', '2026-04-02')],
       [
         transitionRow('request-1', 'SUBMIT', '2026-04-01T01:00:00.000Z'),
@@ -104,7 +84,7 @@ describe('listRequests', () => {
   });
 
   it('遷移をまとめて読むときは、対象の申請だけを条件にする', async () => {
-    const { queries, db } = recordingDatabase(
+    const { queries, db } = requestsAndTransitions(
       [requestRow('request-1', '2026-04-01'), requestRow('request-2', '2026-04-02')],
       [],
     );
@@ -121,7 +101,7 @@ describe('listRequests', () => {
   });
 
   it('遷移を申請ごとに振り分け、読み出した順序を保つ', async () => {
-    const { db } = recordingDatabase(
+    const { db } = requestsAndTransitions(
       [requestRow('request-1', '2026-04-01'), requestRow('request-2', '2026-04-02')],
       [
         transitionRow('request-1', 'SUBMIT', '2026-04-01T01:00:00.000Z'),
@@ -143,7 +123,7 @@ describe('listRequests', () => {
   });
 
   it('遷移を持たない申請は空の配列を返す', async () => {
-    const { db } = recordingDatabase([requestRow('request-1', '2026-04-01')], []);
+    const { db } = requestsAndTransitions([requestRow('request-1', '2026-04-01')], []);
 
     const requests = await createApprovalRepository(db).listRequests('workspace-1', {
       from: '2026-04-01',
@@ -154,7 +134,7 @@ describe('listRequests', () => {
   });
 
   it('申請が 1 件も無ければ、遷移を問い合わせない', async () => {
-    const { queries, db } = recordingDatabase([], []);
+    const { queries, db } = requestsAndTransitions([], []);
 
     const requests = await createApprovalRepository(db).listRequests('workspace-1', {
       from: '2026-04-01',

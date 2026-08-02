@@ -14,18 +14,23 @@ export interface RecordedQuery {
   params: readonly QueryParameter[];
 }
 
-/** 問い合わせに対して返す行の決め方。配列を渡すと、どの問い合わせにも同じ行を返す。 */
-export type FakeRows = Record<string, unknown>[] | ((text: string) => Record<string, unknown>[]);
+/**
+ * 問い合わせに対して返す行の決め方。配列を渡すと、どの問い合わせにも同じ行を返す。
+ *
+ * 行の型は縛らない。作り物は SQL を解釈せず、呼び出し側が「この問い合わせは
+ * この形の行を返す」と決めた結果をそのまま渡すだけであるため。
+ */
+export type FakeRows = readonly unknown[] | ((text: string) => readonly unknown[]);
 
 /** 読み取りにだけ行を返す。更新は行を返さない、という本物の振る舞いへ寄せる。 */
-export function onlyReads(rows: Record<string, unknown>[]): FakeRows {
+export function onlyReads(rows: readonly unknown[]): FakeRows {
   return (text) => (text.trimStart().startsWith('SELECT') ? rows : []);
 }
 
 /** SQL に現れる語で返す行を振り分ける。1 つの経路が複数のテーブルを読む場合に使う。 */
 export function byQuery(
-  cases: readonly [pattern: string, rows: Record<string, unknown>[]][],
-  fallback: Record<string, unknown>[] = [],
+  cases: readonly (readonly [pattern: string, rows: readonly unknown[]])[],
+  fallback: readonly unknown[] = [],
 ): FakeRows {
   return (text) => cases.find(([pattern]) => text.includes(pattern))?.[1] ?? fallback;
 }
@@ -47,7 +52,7 @@ export function recordingDatabase(rows: FakeRows): { queries: RecordedQuery[]; d
         params: readonly QueryParameter[] = [],
       ): Promise<T[]> => {
         queries.push({ text, params });
-        return resolve(text) as T[];
+        return resolve(text) as unknown as T[];
       },
     },
   };

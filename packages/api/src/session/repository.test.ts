@@ -1,5 +1,6 @@
-import type { Queryable, QueryParameter } from '@staffweave/db';
+import type { Queryable } from '@staffweave/db';
 import { describe, expect, it } from 'vitest';
+import { recordingDatabase } from '../../test/support/fake-database.js';
 import { createSessionObservationRepository } from './repository.js';
 
 /**
@@ -9,30 +10,6 @@ import { createSessionObservationRepository } from './repository.js';
  * 冪等キーの一意性を観測側へ移すと通常の複数件送信が壊れ、受領記録側から外すと
  * 同時再送が二重に保存できてしまう。どちらもテストがなければ気付けない。
  */
-
-interface RecordedQuery {
-  text: string;
-  params: readonly QueryParameter[];
-}
-
-function recordingDatabase(rows: Record<string, unknown>[]): {
-  queries: RecordedQuery[];
-  db: Queryable;
-} {
-  const queries: RecordedQuery[] = [];
-  return {
-    queries,
-    db: {
-      query: async <T = Record<string, unknown>>(
-        text: string,
-        params: readonly QueryParameter[] = [],
-      ): Promise<T[]> => {
-        queries.push({ text, params });
-        return rows as T[];
-      },
-    },
-  };
-}
 
 const RECEIVED_AT = new Date('2026-04-01T00:00:00.000Z');
 

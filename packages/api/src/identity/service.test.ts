@@ -1,5 +1,6 @@
-import type { Queryable, QueryParameter } from '@staffweave/db';
+import type { Queryable } from '@staffweave/db';
 import { describe, expect, it } from 'vitest';
+import { onlyReads, recordingDatabase } from '../../test/support/fake-database.js';
 import { silentLogger } from '../shared/logger.js';
 import type { LoginAttemptRepository } from './login-attempt-repository.js';
 import { createIdentityRepository } from './repository.js';
@@ -11,11 +12,6 @@ import { createIdentityService } from './service.js';
  * 復元した内容が同じであれば、分けて引いても応答は変わらない。
  * 変わるのは往復の回数だけであり、それはここでしか確かめられない。
  */
-
-interface RecordedQuery {
-  text: string;
-  params: readonly QueryParameter[];
-}
 
 const ISSUED_AT = new Date('2026-04-01T00:00:00.000Z');
 /** 既定の有効期間は 12 時間。 */
@@ -50,26 +46,6 @@ function contextRow(overrides: Record<string, unknown> = {}): Record<string, unk
   };
 }
 
-function recordingDatabase(rows: Record<string, unknown>[]): {
-  queries: RecordedQuery[];
-  db: Queryable;
-} {
-  const queries: RecordedQuery[] = [];
-  return {
-    queries,
-    db: {
-      query: async <T = Record<string, unknown>>(
-        text: string,
-        params: readonly QueryParameter[] = [],
-      ): Promise<T[]> => {
-        queries.push({ text, params });
-        // 更新は行を返さない。読み取りだけが用意した行を返す。
-        return (text.trimStart().startsWith('SELECT') ? rows : []) as T[];
-      },
-    },
-  };
-}
-
 /** ログインの経路は使わないため、数える先は呼ばれない前提で置く。 */
 const unusedLoginAttempts: LoginAttemptRepository = {
   find: async () => null,
@@ -94,7 +70,7 @@ function service(db: Queryable, now: Date) {
 
 describe('authenticate', () => {
   it('延長が要らない要求では 1 回だけ問い合わせる', async () => {
-    const { queries, db } = recordingDatabase([contextRow()]);
+    const { queries, db } = recordingDatabase(onlyReads([contextRow()]));
 
     await service(db, BEFORE_RENEWAL).authenticate('token');
 
@@ -102,7 +78,7 @@ describe('authenticate', () => {
   });
 
   it('延長が要る要求でも、読み取りは 1 回で済ませる', async () => {
-    const { queries, db } = recordingDatabase([contextRow()]);
+    const { queries, db } = recordingDatabase(onlyReads([contextRow()]));
 
     await service(db, AFTER_RENEWAL).authenticate('token');
 
@@ -111,16 +87,18 @@ describe('authenticate', () => {
   });
 
   it('ロール・閲覧範囲・従業員の紐づけを、同じ問い合わせから復元する', async () => {
-    const { db } = recordingDatabase([
-      contextRow({
-        roles: ['employee', 'organization_manager'],
-        organization_ids: ['organization-1', 'organization-2'],
-        employee_id: 'employee-1',
-        employee_number: 'E001',
-        employee_display_name: '勤怠 花子',
-        organization_id: 'organization-1',
-      }),
-    ]);
+    const { db } = recordingDatabase(
+      onlyReads([
+        contextRow({
+          roles: ['employee', 'organization_manager'],
+          organization_ids: ['organization-1', 'organization-2'],
+          employee_id: 'employee-1',
+          employee_number: 'E001',
+          employee_display_name: '勤怠 花子',
+          organization_id: 'organization-1',
+        }),
+      ]),
+    );
 
     const context = await service(db, BEFORE_RENEWAL).authenticate('token');
 
@@ -137,7 +115,7 @@ describe('authenticate', () => {
   });
 
   it('従業員に紐づかない利用者では employee が null になる', async () => {
-    const { db } = recordingDatabase([contextRow()]);
+    const { db } = recordingDatabase(onlyReads([contextRow()]));
 
     const context = await service(db, BEFORE_RENEWAL).authenticate('token');
 
@@ -146,21 +124,21 @@ describe('authenticate', () => {
   });
 
   it('停止中の利用者は認証しない', async () => {
-    const { db } = recordingDatabase([contextRow({ status: 'suspended' })]);
+    const { db } = recordingDatabase(onlyReads([contextRow({ status: 'suspended' })]));
 
     await expect(service(db, BEFORE_RENEWAL).authenticate('token')).resolves.toBeNull();
   });
 
   it('失効したセッションは認証しない', async () => {
-    const { db } = recordingDatabase([
-      contextRow({ revoked_at: new Date('2026-04-01T00:30:00.000Z') }),
-    ]);
+    const { db } = recordingDatabase(
+      onlyReads([contextRow({ revoked_at: new Date('2026-04-01T00:30:00.000Z') })]),
+    );
 
     await expect(service(db, BEFORE_RENEWAL).authenticate('token')).resolves.toBeNull();
   });
 
   it('有効期限を過ぎたセッションは認証せず、延長もしない', async () => {
-    const { queries, db } = recordingDatabase([contextRow()]);
+    const { queries, db } = recordingDatabase(onlyReads([contextRow()]));
 
     const context = await service(db, new Date('2026-04-01T13:00:00.000Z')).authenticate('token');
 
@@ -169,7 +147,7 @@ describe('authenticate', () => {
   });
 
   it('Cookie が無ければ問い合わせない', async () => {
-    const { queries, db } = recordingDatabase([contextRow()]);
+    const { queries, db } = recordingDatabase(onlyReads([contextRow()]));
 
     await expect(service(db, BEFORE_RENEWAL).authenticate(undefined)).resolves.toBeNull();
     expect(queries).toHaveLength(0);
