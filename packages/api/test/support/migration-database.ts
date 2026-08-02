@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { Database } from '@staffweave/db';
 import { createDatabase, MIGRATIONS_DIR } from '@staffweave/db';
 import { afterAll, beforeAll } from 'vitest';
-import { requireTestDatabaseUrl } from '../../../../test/integration-setup.js';
+import { requireTestDatabaseUrl } from '../../../../test/database-url.js';
 
 /**
  * マイグレーションの検査が使う一時データベース。
