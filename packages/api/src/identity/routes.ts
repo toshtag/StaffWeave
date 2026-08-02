@@ -62,12 +62,16 @@ export function createIdentityRoutes(deps: IdentityRouteDependencies): Hono<AppE
       ...(source === undefined ? {} : { source }),
     });
 
+    // Cookie の保持期間は絶対期限に合わせる。
+    // アイドル期限はサーバーが延ばすため、Cookie 側をそちらに合わせると、
+    // 延長したセッションが残っているのにブラウザからは消える食い違いが起きる。
+    // 絶対期限より先に断るかどうかは、引き続きサーバーが決める。
     setCookie(c, SESSION_COOKIE_NAME, result.token, {
       httpOnly: true,
       sameSite: 'Lax',
       secure: deps.useSecureCookie,
       path: '/',
-      expires: result.expiresAt,
+      expires: result.absoluteExpiresAt,
     });
 
     return c.json(toSessionResponse(result.context), 200);
