@@ -6,11 +6,11 @@ import type {
 import type { Database, Queryable, QueryParameter } from '@staffweave/db';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
   createOrganization,
+  createTestApp,
   createUser,
   createWorkspace,
   loginAndGetCookie,
@@ -76,11 +76,7 @@ async function setUp(): Promise<Fixture> {
     email: 'hanako@example.com',
   });
 
-  const instance = createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    now: () => new Date(NOW),
-  });
+  const instance = createTestApp({ now: NOW });
   const adminCookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
 
   const pattern = (await (
@@ -144,7 +140,7 @@ describe('勤務予定の生成にかかる問い合わせ', () => {
     queries: string[];
   }> {
     const { queries, db } = countingDatabase();
-    const instance = createApp({ db, defaultWorkspaceSlug: 'default', now: () => new Date(NOW) });
+    const instance = createTestApp({ db, now: NOW });
     const response = await instance.request(
       '/api/work-schedules/generate',
       authorized(fixture.adminCookie, {

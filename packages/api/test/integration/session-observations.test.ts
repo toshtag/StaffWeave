@@ -9,7 +9,6 @@ import type {
 import { canonicalSessionObservations } from '@staffweave/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import {
   authorized,
   createEmployeeWithAccount,
@@ -17,6 +16,8 @@ import {
   createUser,
   createWorkspace,
   loginAndGetCookie,
+  type TestApp,
+  testAppFactory,
 } from '../support/fixtures.js';
 
 /** Asia/Tokyo の 2026-04-01 における各時刻。 */
@@ -26,15 +27,9 @@ const BREAK_END_AT = '2026-04-01T04:00:00.000Z'; // 13:00
 const CLOCK_OUT_AT = '2026-04-01T09:00:00.000Z'; // 18:00
 const BUSINESS_DATE = '2026-04-01';
 
-function app(now: string = CLOCK_OUT_AT) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
-    now: () => new Date(now),
-  });
-}
+const app = testAppFactory({ now: CLOCK_OUT_AT });
 
-type App = ReturnType<typeof app>;
+type App = TestApp;
 
 interface Fixture {
   adminCookie: string;

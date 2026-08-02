@@ -2,12 +2,17 @@ import type { ErrorResponse } from '@staffweave/contracts';
 import { MAXIMUM_WEBHOOK_URL_LENGTH } from '@staffweave/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { testDatabase } from '../../../../test/integration-setup.js';
-import { createApp } from '../../src/app.js';
 import type {
   WebhookHostResolver,
   WebhookNetworkPolicyMode,
 } from '../../src/integration/webhook-network-policy.js';
-import { authorized, createUser, createWorkspace, loginAndGetCookie } from '../support/fixtures.js';
+import {
+  authorized,
+  createTestApp,
+  createUser,
+  createWorkspace,
+  loginAndGetCookie,
+} from '../support/fixtures.js';
 import {
   fixedResolver,
   PUBLIC_TEST_ADDRESS,
@@ -22,14 +27,13 @@ import {
 
 let adminCookie: string;
 
-function app(
+/** 送信先の検査だけを差し替えたアプリ。名前解決は行わない。 */
+function appCheckingTargets(
   resolver: WebhookHostResolver = fixedResolver(),
   mode: WebhookNetworkPolicyMode = 'public-only',
   timeoutMs?: number,
 ) {
-  return createApp({
-    db: testDatabase(),
-    defaultWorkspaceSlug: 'default',
+  return createTestApp({
     webhookTargetValidator: testWebhookTargetValidator(resolver, mode, timeoutMs),
   });
 }
@@ -40,7 +44,7 @@ async function register(
   mode?: WebhookNetworkPolicyMode,
   timeoutMs?: number,
 ): Promise<Response> {
-  return app(resolver, mode, timeoutMs).request(
+  return appCheckingTargets(resolver, mode, timeoutMs).request(
     '/api/webhook-endpoints',
     authorized(adminCookie, {
       method: 'POST',
@@ -60,7 +64,7 @@ beforeEach(async () => {
   const db = testDatabase();
   const workspaceId = await createWorkspace(db, { slug: 'default' });
   await createUser(db, workspaceId, { email: 'admin@example.com', roles: ['workspace_admin'] });
-  adminCookie = await loginAndGetCookie(app(), { email: 'admin@example.com' });
+  adminCookie = await loginAndGetCookie(appCheckingTargets(), { email: 'admin@example.com' });
 });
 
 describe('Webhook 送信先の登録', () => {
