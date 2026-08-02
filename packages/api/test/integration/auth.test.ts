@@ -308,3 +308,137 @@ describe('ワークスペース境界（認証）', () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe('パスワードの変更', () => {
+  const NEW_PASSWORD = 'staffweave changed pass';
+
+  let workspaceId: string;
+
+  beforeEach(async () => {
+    workspaceId = await createWorkspace(testDatabase(), { slug: 'default', name: '既定' });
+    await createUser(testDatabase(), workspaceId, {
+      email: 'admin@example.com',
+      displayName: '管理 太郎',
+      roles: ['workspace_admin'],
+    });
+  });
+
+  function change(
+    instance: ReturnType<typeof createTestApp>,
+    cookie: string,
+    body: { currentPassword: string; newPassword: string },
+  ): Promise<Response> {
+    return Promise.resolve(
+      instance.request('/api/auth/password', authorized(cookie, { method: 'POST', body })),
+    );
+  }
+
+  it('現在のパスワードを確かめて変更できる', async () => {
+    const instance = createTestApp();
+    const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    const response = await change(instance, cookie, {
+      currentPassword: TEST_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.status).toBe(204);
+    expect(
+      (await login(instance, { email: 'admin@example.com', password: NEW_PASSWORD })).status,
+    ).toBe(200);
+  });
+
+  it('変更後は古いパスワードでログインできない', async () => {
+    const instance = createTestApp();
+    const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    await change(instance, cookie, {
+      currentPassword: TEST_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect((await login(instance, { email: 'admin@example.com' })).status).toBe(401);
+  });
+
+  it('現在のパスワードが違えば変更しない', async () => {
+    const instance = createTestApp();
+    const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    const response = await change(instance, cookie, {
+      currentPassword: 'staffweave wrong pass',
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.status).toBe(401);
+    expect((await login(instance, { email: 'admin@example.com' })).status).toBe(200);
+  });
+
+  it('強度の条件を満たさない新しいパスワードを受け付けない', async () => {
+    const instance = createTestApp();
+    const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    const response = await change(instance, cookie, {
+      currentPassword: TEST_PASSWORD,
+      newPassword: 'aaaaaaaaaaaaaaaa',
+    });
+
+    expect(response.status).toBe(400);
+    expect((await login(instance, { email: 'admin@example.com' })).status).toBe(200);
+  });
+
+  // 漏れたパスワードで開かれたセッションを残さない。
+  it('他のセッションを失効させる', async () => {
+    const instance = createTestApp();
+    const other = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+    const current = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    await change(instance, current, {
+      currentPassword: TEST_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect((await instance.request('/api/auth/session', authorized(other))).status).toBe(401);
+  });
+
+  it('変更したセッションはそのまま使える', async () => {
+    const instance = createTestApp();
+    const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    await change(instance, cookie, {
+      currentPassword: TEST_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect((await instance.request('/api/auth/session', authorized(cookie))).status).toBe(200);
+  });
+
+  it('ログインしていなければ変更できない', async () => {
+    const response = await createTestApp().request('/api/auth/password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ currentPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD }),
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  // 記録するのは変更が行われた事実だけ。古い値も新しい値も残さない。
+  it('監査記録に秘密値を残さない', async () => {
+    const instance = createTestApp();
+    const cookie = await loginAndGetCookie(instance, { email: 'admin@example.com' });
+
+    await change(instance, cookie, {
+      currentPassword: TEST_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+
+    const rows = await testDatabase().query<{ action: string; summary: string; detail: unknown }>(
+      "SELECT action, summary, detail FROM audit_logs WHERE action = 'auth.password_changed'",
+    );
+
+    expect(rows).toHaveLength(1);
+    const recorded = JSON.stringify(rows[0]);
+    expect(recorded).not.toContain(TEST_PASSWORD);
+    expect(recorded).not.toContain(NEW_PASSWORD);
+  });
+});
