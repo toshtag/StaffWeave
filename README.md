@@ -72,11 +72,20 @@ docker compose up -d db
 # 4. マイグレーションを適用
 pnpm db:migrate
 
-# 5. ワークスペースと最初の管理者を作成（初期パスワードが一度だけ表示されます）
+# 5. ワークスペースと最初の管理者を作成
+#    （端末があれば非表示で尋ね、無ければ生成して一度だけ表示します）
 pnpm bootstrap --email admin@example.com
 
 # 6. API と Web を同時に起動
 pnpm dev
+```
+
+初期パスワードを自分で決める場合は、標準入力かファイルで渡します。
+`--password` でも渡せますが、値がシェル履歴とプロセス一覧へ残るため将来やめます。
+
+```sh
+pnpm bootstrap --email admin@example.com --password-stdin < password.txt
+pnpm bootstrap --email admin@example.com --password-file /run/secrets/admin
 ```
 
 - API: http://127.0.0.1:8787
@@ -99,7 +108,8 @@ curl http://127.0.0.1:8787/api/openapi.json  # API 契約（OpenAPI 3.1）
 #    （画面または API で /api/devices を呼び出す。既定の有効時間は 15 分）
 
 # 2. Agent が登録トークンと引き換えに公開鍵を登録する
-pnpm agent enroll --url http://127.0.0.1:8787 --token <登録トークン>
+#    （トークンは標準入力から渡す。端末があれば --token-stdin なしで尋ねます）
+pnpm agent enroll --url http://127.0.0.1:8787 --token-stdin < token.txt
 
 # 3. 署名付きの打刻を送る
 pnpm agent punch --employee E001 --type clock_in
@@ -109,12 +119,19 @@ pnpm agent replay
 
 # 5. IC カードを登録し、カードで打刻する
 #    （管理者が /api/card-credentials/registrations で登録トークンを発行しておく）
-pnpm agent card-register --token <登録トークン> --card <カード識別子>
-pnpm agent card-punch --card <カード識別子>
+pnpm agent card-register --token-file token.txt --card-stdin < card.txt
+pnpm agent card-punch --card-stdin < card.txt
 
 # 6. PC セッションの観測を送る
 pnpm agent session-observe --employee E001 --type sign_in
 ```
+
+登録トークンとカード識別子は、標準入力（`--token-stdin` / `--card-stdin`）、
+権限を制限したファイル（`--token-file` / `--card-file`）、
+または端末からの非表示入力で渡します。
+`--token` と `--card` でも渡せますが、値がシェル履歴とプロセス一覧へ残ります。
+注意を表示したうえで受け付けており、この渡し方は将来やめます。
+標準入力から読めるのは 1 つだけです。2 つ要る場合は片方をファイルで渡してください。
 
 Agent の `--url` には、ループバック以外なら `https` を指定してください。
 端末登録トークン・署名付きの打刻・カード指紋を暗号化なしで送らないため、

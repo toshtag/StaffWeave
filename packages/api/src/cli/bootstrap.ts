@@ -5,8 +5,15 @@
  *   pnpm bootstrap --email admin@example.com
  *   pnpm bootstrap --slug head-office --name "本社" --email admin@example.com
  *
- * パスワードを指定しない場合は生成して一度だけ表示する。
+ * パスワードを指定しない場合、端末があれば非表示で尋ね、無ければ生成して一度だけ表示する。
  * 生成値は保存されないため、その場で控えること。
+ *
+ * 自分で決めた値を渡すときは、次のどちらかを使う。
+ *
+ *   pnpm bootstrap --email admin@example.com --password-stdin < password.txt
+ *   pnpm bootstrap --email admin@example.com --password-file /run/secrets/admin
+ *
+ * `--password` でも渡せるが、値がシェル履歴とプロセス一覧へ残る。将来やめる。
  */
 import { randomBytes } from 'node:crypto';
 import { createDatabase } from '@staffweave/db';
@@ -14,6 +21,7 @@ import { isValidEmail, normalizeEmail, validatePassword } from '@staffweave/doma
 import { loadApiConfig } from '../config.js';
 import { createOrganizationRepository } from '../organization/repository.js';
 import { hashPassword } from '../shared/security/password.js';
+import { readSecret } from './secret-input.js';
 
 function readOption(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
@@ -37,8 +45,14 @@ async function main(): Promise<void> {
     throw new Error('--email に有効なメールアドレスを指定してください');
   }
 
-  const password = readOption('password') ?? generatePassword();
-  const generated = readOption('password') === undefined;
+  const given = await readSecret({
+    name: 'password',
+    prompt: '初期パスワード（入力は表示されません）: ',
+    argv: process.argv,
+    warn: (message) => console.error(message),
+  });
+  const password = given ?? generatePassword();
+  const generated = given === undefined;
   const passwordProblems = validatePassword(password);
   if (passwordProblems.length > 0) {
     throw new Error(`パスワードが条件を満たしません: ${passwordProblems.join(', ')}`);

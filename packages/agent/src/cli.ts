@@ -4,16 +4,19 @@
  * 実機を用意せずに、端末の登録から署名イベントの送信までを試せるようにする。
  * OS 固有の実装は含まない。ここで確かめるのはサーバーとの取り決めだけ。
  *
- *   pnpm agent enroll --url http://127.0.0.1:8787 --token <登録トークン>
- *
- * ループバック以外の接続先には https を指定する。
- * 端末登録トークン・署名付きの打刻・カード指紋を、暗号化なしで送らないため。
+ *   pnpm agent enroll --url https://staffweave.example --token-stdin
  *   pnpm agent punch --employee E001 --type clock_in
  *   pnpm agent replay        直前に送ったイベントをそのまま再送する
  *   pnpm agent status        保存されている資格情報を表示する
- *   pnpm agent card-register --token <登録トークン> --card <カード識別子>
- *   pnpm agent card-punch --card <カード識別子>
+ *   pnpm agent card-register --token-file <path> --card-stdin
+ *   pnpm agent card-punch --card-stdin
  *   pnpm agent session-observe --employee E001 --type sign_in [--at <ISO日時>]
+ *
+ * ループバック以外の接続先には https を指定する。
+ * 端末登録トークン・署名付きの打刻・カード指紋を、暗号化なしで送らないため。
+ *
+ * 登録トークンとカード識別子は、標準入力・ファイル・端末からの非表示入力で渡す。
+ * 引数（`--token` / `--card`）でも渡せるが、値がシェル履歴とプロセス一覧へ残る。将来やめる。
  *
  * カードの生の識別子は端末の中で指紋へ変換し、サーバーへは送らない。
  */
@@ -32,6 +35,7 @@ import {
 } from './client.js';
 import type { DeviceCredentials } from './credentials.js';
 import { generateKeyPair, loadCredentials, saveCredentials } from './credentials.js';
+import { requireSecret } from './secret-input.js';
 
 const DEFAULT_STORE = '.staffweave-agent.json';
 
@@ -52,6 +56,17 @@ function requireOption(name: string): string {
   return value;
 }
 
+/** 秘密値は引数を既定にしない。標準入力・ファイル・端末からの非表示入力で受け取る。 */
+function secret(name: string, prompt: string): Promise<string> {
+  return requireSecret({
+    name,
+    prompt,
+    argv: process.argv,
+    warn: (message) => console.error(message),
+    interactive: process.stdin.isTTY === true,
+  });
+}
+
 interface LastEvent {
   sequence: number;
   requestId: string;
@@ -67,7 +82,7 @@ interface StoredCredentials extends DeviceCredentials {
 async function runEnroll(): Promise<void> {
   // 登録トークンと公開鍵を送る前に確かめる。送ってからでは遅い。
   const baseUrl = requireSecureBaseUrl(requireOption('url'));
-  const token = requireOption('token');
+  const token = await secret('token', '登録トークン（入力は表示されません）: ');
   const keyPair = generateKeyPair();
 
   const result = await enroll(baseUrl, {
@@ -154,9 +169,9 @@ function requireCardKey(credentials: StoredCredentials): string {
 
 async function runCardRegister(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
-  const token = requireOption('token');
+  const token = await secret('token', '登録トークン（入力は表示されません）: ');
   // 実機の読み取り装置の代わりに、指定された識別子を読み取ったものとして扱う。
-  const rawCardId = requireOption('card');
+  const rawCardId = await secret('card', 'カード識別子（入力は表示されません）: ');
 
   const credential = await registerCard(credentials, {
     registrationToken: token,
@@ -169,7 +184,7 @@ async function runCardRegister(): Promise<void> {
 
 async function runCardPunch(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
-  const rawCardId = requireOption('card');
+  const rawCardId = await secret('card', 'カード識別子（入力は表示されません）: ');
   const eventType = option('type');
   if (eventType !== undefined && !isAttendanceEventType(eventType)) {
     throw new Error(`--type が不正です: ${eventType}`);
