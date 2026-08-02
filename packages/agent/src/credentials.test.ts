@@ -48,6 +48,8 @@ async function sharedBitsOf(target: string): Promise<number> {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'staffweave-credentials-'));
+  // mkdtemp は 0700 で作る。置き場の検査を通る前提を明示しておく。
+  await chmod(directory, 0o700);
   path = join(directory, 'agent.json');
 });
 
@@ -155,5 +157,111 @@ describe('loadCredentials', () => {
     await saveCredentials(path, credentials({ baseUrl: 'http://127.1:8787/' }));
 
     expect((await loadCredentials(path)).baseUrl).toBe('http://127.0.0.1:8787');
+  });
+});
+
+/**
+ * 置き場のディレクトリの検査。
+ *
+ * ファイルが 0600 でも、置き場を他の利用者が書けるなら意味がない。
+ * ファイルを消して、自分の所有する 0600 の通常ファイルへ置き直せる。
+ * 権限もリンクの検査も通るため、差し替えられたことに気付けない。
+ */
+describe('保存先ディレクトリ', () => {
+  it.each([0o777, 0o770, 0o755, 0o707, 0o701])('0%s のディレクトリへ保存しない', async (mode) => {
+    const loose = join(directory, 'loose');
+    await mkdir(loose);
+    await chmod(loose, mode);
+
+    await expect(saveCredentials(join(loose, 'agent.json'), credentials())).rejects.toThrow(
+      /chmod 700/,
+    );
+  });
+
+  it('0700 のディレクトリへは保存できる', async () => {
+    const safe = join(directory, 'safe');
+    await mkdir(safe, { mode: 0o700 });
+
+    await expect(saveCredentials(join(safe, 'agent.json'), credentials())).resolves.toBeUndefined();
+  });
+
+  it('無いディレクトリを所有者だけが入れる権限で作る', async () => {
+    const created = join(directory, 'created', 'nested');
+
+    await saveCredentials(join(created, 'agent.json'), credentials());
+
+    expect((await stat(created)).mode & 0o077).toBe(0);
+  });
+
+  // 作成時の mode は umask に狭められるだけだが、緩い umask では広がりうる。
+  it('umask 000 でも所有者だけが入れる権限で作る', async () => {
+    const previous = process.umask(0o000);
+    const created = join(directory, 'umask-created');
+    try {
+      await saveCredentials(join(created, 'agent.json'), credentials());
+    } finally {
+      process.umask(previous);
+    }
+
+    expect((await stat(created)).mode & 0o077).toBe(0);
+  });
+
+  it('すでにあるディレクトリの権限を勝手に変えない', async () => {
+    const safe = join(directory, 'kept');
+    await mkdir(safe, { mode: 0o750 });
+    await chmod(safe, 0o700);
+
+    await saveCredentials(join(safe, 'agent.json'), credentials());
+
+    expect((await stat(safe)).mode & 0o777).toBe(0o700);
+  });
+
+  it('ディレクトリがシンボリックリンクなら保存しない', async () => {
+    const real = join(directory, 'real');
+    await mkdir(real, { mode: 0o700 });
+    const link = join(directory, 'link');
+    await symlink(real, link);
+
+    await expect(saveCredentials(join(link, 'agent.json'), credentials())).rejects.toThrow(
+      /シンボリックリンク/,
+    );
+  });
+
+  it('保存後にディレクトリの権限を緩めたら読み込まない', async () => {
+    const safe = join(directory, 'later');
+    await mkdir(safe, { mode: 0o700 });
+    const target = join(safe, 'agent.json');
+    await saveCredentials(target, credentials());
+
+    await chmod(safe, 0o777);
+
+    await expect(loadCredentials(target)).rejects.toThrow(/chmod 700/);
+  });
+
+  it('権限を戻せば読み込める', async () => {
+    const safe = join(directory, 'restored');
+    await mkdir(safe, { mode: 0o700 });
+    const target = join(safe, 'agent.json');
+    const saved = credentials();
+    await saveCredentials(target, saved);
+
+    await chmod(safe, 0o777);
+    await chmod(safe, 0o700);
+
+    expect(await loadCredentials(target)).toEqual(saved);
+  });
+
+  it('断る理由に資格情報を含めない', async () => {
+    const loose = join(directory, 'secret-free');
+    await mkdir(loose);
+    await chmod(loose, 0o777);
+    const saved = credentials();
+
+    const error = await saveCredentials(join(loose, 'agent.json'), saved).catch(
+      (thrown: unknown) => thrown as Error,
+    );
+
+    expect(error.message).not.toContain(saved.privateKeyPem);
+    expect(error.message).not.toContain(saved.deviceId);
   });
 });
