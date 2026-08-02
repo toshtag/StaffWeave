@@ -23,6 +23,10 @@ const CLOCK_OUT_AT = '2026-04-01T09:00:00.000Z';
 const BUSINESS_DATE = '2026-04-01';
 const PERIOD = '2026-04-01';
 
+/** 前日（Asia/Tokyo で 2026-03-31 の 09:00）。一覧に複数の申請を並べるために使う。 */
+const PREVIOUS_BUSINESS_DATE = '2026-03-31';
+const PREVIOUS_DAY_IN_AT = '2026-03-31T00:00:00.000Z';
+
 function app(now: string = CLOCK_OUT_AT) {
   return createApp({
     db: testDatabase(),
@@ -101,6 +105,18 @@ async function submit(
     }),
   );
   return { status: response.status, request: (await response.json()) as DailyRequestRecord };
+}
+
+async function submitOn(
+  instance: App,
+  cookie: string,
+  businessDate: string,
+): Promise<DailyRequestRecord> {
+  const response = await instance.request(
+    '/api/attendance/requests',
+    authorized(cookie, { method: 'POST', body: { businessDate } }),
+  );
+  return (await response.json()) as DailyRequestRecord;
 }
 
 async function day(instance: App, cookie: string): Promise<WorkDay> {
@@ -253,6 +269,44 @@ describe('日次申請', () => {
     );
 
     expect(((await response.json()) as DailyRequestList).requests).toHaveLength(1);
+  });
+
+  it('一覧の申請が、それぞれ自分の遷移だけを持つ', async () => {
+    const instance = app();
+
+    // 前の日にも打刻して申請し、差し戻して遷移を 2 件にする。
+    await instance.request(
+      '/api/attendance/events',
+      authorized(fixture.employeeCookie, {
+        method: 'POST',
+        body: { eventType: 'clock_in', requestId: 'in-2026-03-31', occurredAt: PREVIOUS_DAY_IN_AT },
+      }),
+    );
+    const previous = await submitOn(instance, fixture.employeeCookie, PREVIOUS_BUSINESS_DATE);
+    await instance.request(
+      `/api/attendance/requests/${previous.id}/return`,
+      authorized(fixture.approverCookie, {
+        method: 'POST',
+        body: { comment: '打刻が不足しています' },
+      }),
+    );
+
+    const current = await submit(instance, fixture.employeeCookie);
+
+    const response = await instance.request(
+      '/api/attendance/requests?from=2026-03-01&to=2026-04-30',
+      authorized(fixture.approverCookie),
+    );
+    const { requests } = (await response.json()) as DailyRequestList;
+
+    const byId = new Map(requests.map((request) => [request.id, request]));
+    expect(byId.get(previous.id)?.transitions.map((transition) => transition.event)).toEqual([
+      'SUBMIT',
+      'RETURN',
+    ]);
+    expect(byId.get(current.request.id)?.transitions.map((transition) => transition.event)).toEqual(
+      ['SUBMIT'],
+    );
   });
 
   it('従業員は他人の申請を一覧できない', async () => {
