@@ -5,6 +5,9 @@
  * OS 固有の実装は含まない。ここで確かめるのはサーバーとの取り決めだけ。
  *
  *   pnpm agent enroll --url http://127.0.0.1:8787 --token <登録トークン>
+ *
+ * ループバック以外の接続先には https を指定する。
+ * 端末登録トークン・署名付きの打刻・カード指紋を、暗号化なしで送らないため。
  *   pnpm agent punch --employee E001 --type clock_in
  *   pnpm agent replay        直前に送ったイベントをそのまま再送する
  *   pnpm agent status        保存されている資格情報を表示する
@@ -15,6 +18,7 @@
  * カードの生の識別子は端末の中で指紋へ変換し、サーバーへは送らない。
  */
 import { randomUUID } from 'node:crypto';
+import { requireSecureBaseUrl } from '@staffweave/contracts';
 import type { AttendanceEventType } from '@staffweave/domain';
 import { isAttendanceEventType, isSessionObservationType } from '@staffweave/domain';
 import { cardFingerprint } from './card/reader.js';
@@ -61,7 +65,8 @@ interface StoredCredentials extends DeviceCredentials {
 }
 
 async function runEnroll(): Promise<void> {
-  const baseUrl = requireOption('url').replace(/\/$/, '');
+  // 登録トークンと公開鍵を送る前に確かめる。送ってからでは遅い。
+  const baseUrl = requireSecureBaseUrl(requireOption('url'));
   const token = requireOption('token');
   const keyPair = generateKeyPair();
 

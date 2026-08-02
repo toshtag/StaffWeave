@@ -1,3 +1,8 @@
+export {
+  InsecureBaseUrlError,
+  isLoopbackHost,
+  requireSecureBaseUrl,
+} from './client-url.js';
 export type { JsonSchema } from './json-schema.js';
 export { arraySchema, objectSchema } from './json-schema.js';
 export { API_BASE_PATH, buildOpenApiDocument, honoPath } from './openapi.js';
