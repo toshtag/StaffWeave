@@ -257,11 +257,13 @@ describe('保存先ディレクトリ', () => {
     await chmod(loose, 0o777);
     const saved = credentials();
 
-    const error = await saveCredentials(join(loose, 'agent.json'), saved).catch(
+    const error = await saveCredentials(join(loose, 'agent.json'), saved).then(
+      () => null,
       (thrown: unknown) => thrown as Error,
     );
 
-    expect(error.message).not.toContain(saved.privateKeyPem);
-    expect(error.message).not.toContain(saved.deviceId);
+    expect(error?.message).toBeDefined();
+    expect(error?.message).not.toContain(saved.privateKeyPem);
+    expect(error?.message).not.toContain(saved.deviceId);
   });
 });
