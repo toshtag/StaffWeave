@@ -1,5 +1,5 @@
-import type { Queryable, QueryParameter } from '@staffweave/db';
 import { describe, expect, it } from 'vitest';
+import { recordingDatabase } from '../../test/support/fake-database.js';
 import { createIntegrationRepository } from './repository.js';
 
 /**
@@ -9,30 +9,6 @@ import { createIntegrationRepository } from './repository.js';
  * ここで鍵まで読むと、例外やトレースを通じて送信経路の外へ伝わる余地が残る。
  * 取得は送信の直前、ワーカーの `claimNext()` だけに限る。
  */
-
-interface RecordedQuery {
-  text: string;
-  params: readonly QueryParameter[];
-}
-
-function recordingDatabase(rows: Record<string, unknown>[]): {
-  queries: RecordedQuery[];
-  db: Queryable;
-} {
-  const queries: RecordedQuery[] = [];
-  return {
-    queries,
-    db: {
-      query: async <T = Record<string, unknown>>(
-        text: string,
-        params: readonly QueryParameter[] = [],
-      ): Promise<T[]> => {
-        queries.push({ text, params });
-        return rows as T[];
-      },
-    },
-  };
-}
 
 describe('listActiveEndpointIdsFor', () => {
   it('送信待ち登録用の問い合わせでは署名鍵を取得しない', async () => {

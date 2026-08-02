@@ -1,5 +1,5 @@
-import type { Database, Queryable } from '@staffweave/db';
 import { describe, expect, it } from 'vitest';
+import { stubDatabase } from '../../test/support/fake-database.js';
 import { createApp } from '../app.js';
 import type { StructuredLogger } from '../shared/logger.js';
 import { silentLogger } from '../shared/logger.js';
@@ -9,21 +9,10 @@ interface LogEntry {
   fields?: Record<string, unknown>;
 }
 
-function createStubDatabase(overrides: Partial<Database> = {}): Database {
-  const base: Database = {
-    query: async () => [],
-    transaction: async <T>(fn: (tx: Queryable) => Promise<T>) => fn({ query: async () => [] }),
-    session: async <T>(fn: (connection: Queryable) => Promise<T>) => fn({ query: async () => [] }),
-    ping: async () => {},
-    close: async () => {},
-  };
-  return { ...base, ...overrides };
-}
-
 describe('GET /api/health', () => {
   it('外部依存を見ずに 200 を返す', async () => {
     const app = createApp({
-      db: createStubDatabase({
+      db: stubDatabase({
         ping: async () => {
           throw new Error('データベースへ到達できません');
         },
@@ -59,7 +48,7 @@ describe('GET /api/ready', () => {
     const { logger, entries } = recordingLogger();
     const app = createApp({
       logger,
-      db: createStubDatabase({
+      db: stubDatabase({
         ping: async () => {
           throw new Error('connect ECONNREFUSED 10.0.0.5:5432');
         },
@@ -87,7 +76,7 @@ describe('GET /api/ready', () => {
 
   it('未適用のマイグレーションがある場合は 503 を返す', async () => {
     // schema_migrations が空 = すべて未適用。
-    const app = createApp({ db: createStubDatabase(), logger: silentLogger });
+    const app = createApp({ db: stubDatabase(), logger: silentLogger });
 
     const response = await app.request('/api/ready');
     const body = (await response.json()) as {
@@ -102,7 +91,7 @@ describe('GET /api/ready', () => {
 
 describe('存在しない API', () => {
   it('404 を JSON で返す', async () => {
-    const app = createApp({ db: createStubDatabase() });
+    const app = createApp({ db: stubDatabase() });
     const response = await app.request('/api/unknown');
 
     expect(response.status).toBe(404);

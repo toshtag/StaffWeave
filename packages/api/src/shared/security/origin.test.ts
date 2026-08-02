@@ -1,19 +1,9 @@
-import type { Database, Queryable } from '@staffweave/db';
 import { describe, expect, it } from 'vitest';
+import { stubDatabase } from '../../../test/support/fake-database.js';
 import { createApp } from '../../app.js';
 import { SESSION_COOKIE_NAME } from '../../identity/routes.js';
 import { silentLogger } from '../logger.js';
 import { normalizeOrigin } from './origin.js';
-
-function stubDatabase(): Database {
-  return {
-    query: async () => [],
-    transaction: async <T>(fn: (tx: Queryable) => Promise<T>) => fn({ query: async () => [] }),
-    session: async <T>(fn: (connection: Queryable) => Promise<T>) => fn({ query: async () => [] }),
-    ping: async () => {},
-    close: async () => {},
-  };
-}
 
 function app(allowedOrigins: readonly string[] = []) {
   return createApp({ db: stubDatabase(), logger: silentLogger, allowedOrigins });
