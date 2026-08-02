@@ -51,6 +51,25 @@ SELECT request_id, from_state, to_state, event, actor_user_id, comment, occurred
 セッションの延長は、要否を判断してから書きます（`shouldRenew`）。
 要求のたびに書くと、読み取りだけの要求にも書き込みの待ち時間が乗ります。
 
+### 閲覧範囲の判定
+
+「誰の勤怠を見てよいか」の判定材料は、対象の従業員の分だけを読みます。
+1 人を確かめるためにワークスペース全体の配属を読むと、
+読む量が対象ではなく組織の大きさと運用年数で決まります。
+
+- 従業員を指定する検査（`requireVisibleEmployee`）は、その 1 人だけを読む
+- 一覧の絞り込み（`filterVisible`）は、一覧に載っている従業員だけを読む
+- 一覧が従業員に紐づかない行だけなら、読まない
+
+同じ要求で検査と絞り込みの両方を行う経路（異常の一覧など）では、
+読んだ結果を要求の中で使い回します。使い回す範囲は認証コンテキストです。
+コンテキストは要求ごとに作られるため、要求をまたいで残りません。
+またいで残すと、配属の変更が反映されない時間ができます。
+
+件数が多くなる出力（CSV）は、この形ではなく
+`employeeVisibilityCondition` で SQL の条件として渡します。
+読み込んでから捨てるのではなく、読まない形にします。
+
 ## 読み取りの要求で書き込まない
 
 読み取りだけの要求に書き込みを混ぜない。
@@ -115,6 +134,7 @@ UPDATE api_keys SET last_used_at = $2
 - `packages/api/src/approval/repository.test.ts`
 - `packages/api/src/identity/service.test.ts`
 - `packages/api/src/integration/service.test.ts`
+- `packages/api/src/shared/employee-visibility.test.ts`
 
 この形のテストは、回数そのものを主張します。
 「件数を増やしても回数が変わらない」ことを確かめるため、

@@ -8,7 +8,11 @@
  * 認証コンテキストからの変換と、DB への問い合わせを受け持つ。
  */
 import type { QueryParameter } from '@staffweave/db';
-import type { AccessPeriod, EmployeeVisibility } from '@staffweave/domain';
+import type {
+  AccessPeriod,
+  EmployeeOrganizationView,
+  EmployeeVisibility,
+} from '@staffweave/domain';
 import {
   businessDateOf,
   isEmployeeVisible,
@@ -61,10 +65,37 @@ export interface EmployeeVisibilityGuardDependencies {
 export function createEmployeeVisibilityGuard(
   deps: EmployeeVisibilityGuardDependencies,
 ): EmployeeVisibilityGuard {
+  /**
+   * 要求ごとの判定材料。認証コンテキストは要求ごとに作られるため、これを鍵にする。
+   * 1 つの要求で検査と絞り込みの両方を行う経路（異常の一覧など）で、同じ行を二度読まない。
+   * 要求をまたいで残ると配属の変更が反映されないため、コンテキストが消えれば一緒に消える形にする。
+   */
+  const known = new WeakMap<AuthenticatedContext, Map<string, EmployeeOrganizationView | null>>();
+
   /** 期間を指定しない問い合わせの基準日。ワークスペースの時間帯で今日を決める。 */
   const today = (context: AuthenticatedContext): AccessPeriod => {
     const date = businessDateOf(deps.now(), context.workspace.timeZone);
     return { from: date, to: date };
+  };
+
+  /** 対象の従業員について、まだ読んでいないものだけを読む。 */
+  const organizationsOf = async (
+    context: AuthenticatedContext,
+    employeeIds: readonly string[],
+  ): Promise<Map<string, EmployeeOrganizationView | null>> => {
+    let cached = known.get(context);
+    if (cached === undefined) {
+      cached = new Map();
+      known.set(context, cached);
+    }
+
+    const missing = [...new Set(employeeIds)].filter((employeeId) => !cached.has(employeeId));
+    if (missing.length > 0) {
+      const found = await deps.assignments.listEmployeeOrganizations(context.workspace.id, missing);
+      // 見つからなかった従業員も「読んだ」として残す。同じ要求で二度引かない。
+      for (const employeeId of missing) cached.set(employeeId, found.get(employeeId) ?? null);
+    }
+    return cached;
   };
 
   return {
@@ -76,12 +107,12 @@ export function createEmployeeVisibilityGuard(
       if (isEmployeeVisible(visibility, employeeId)) return;
       if (visibility.kind !== 'organizations') throw forbidden();
 
-      const organizations = await deps.assignments.listEmployeeOrganizations(context.workspace.id);
+      const organizations = await organizationsOf(context, [employeeId]);
       if (
         !isEmployeeVisible(
           visibility,
           employeeId,
-          organizations.get(employeeId),
+          organizations.get(employeeId) ?? undefined,
           period ?? today(context),
         )
       ) {
@@ -93,9 +124,15 @@ export function createEmployeeVisibilityGuard(
       const visibility = employeeVisibilityOf(context);
       if (seesWholeWorkspace(visibility)) return [...items];
 
+      // 読むのは一覧に載っている従業員の分だけ。載っていない相手の配属は判定に要らない。
       const organizations =
         visibility.kind === 'organizations'
-          ? await deps.assignments.listEmployeeOrganizations(context.workspace.id)
+          ? await organizationsOf(
+              context,
+              items
+                .map(employeeIdOf)
+                .filter((employeeId): employeeId is string => employeeId !== null),
+            )
           : undefined;
       const fallback = today(context);
 
@@ -105,7 +142,7 @@ export function createEmployeeVisibilityGuard(
         return isEmployeeVisible(
           visibility,
           employeeId,
-          organizations?.get(employeeId),
+          organizations?.get(employeeId) ?? undefined,
           periodOf?.(item) ?? fallback,
         );
       });

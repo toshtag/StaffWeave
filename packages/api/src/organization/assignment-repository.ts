@@ -64,8 +64,14 @@ export interface AssignmentRepository {
   /**
    * 従業員ごとの「雇用元」と「受入組織」。
    * 勤務先別の閲覧権限を判定するために使う。
+   *
+   * 対象の従業員を必ず指定する。判定に要らない相手の配属まで読むと、
+   * 読む量が対象ではなくワークスペースの大きさで決まる。
    */
-  listEmployeeOrganizations(workspaceId: string): Promise<Map<string, EmployeeOrganizationView>>;
+  listEmployeeOrganizations(
+    workspaceId: string,
+    employeeIds: readonly string[],
+  ): Promise<Map<string, EmployeeOrganizationView>>;
 }
 
 interface ContractRow {
@@ -252,7 +258,9 @@ export function createAssignmentRepository(db: Queryable): AssignmentRepository 
       };
     },
 
-    async listEmployeeOrganizations(workspaceId) {
+    async listEmployeeOrganizations(workspaceId, employeeIds) {
+      if (employeeIds.length === 0) return new Map();
+
       // 受入組織との関わりは、契約と配属の両方が続いているあいだだけ。
       // どちらか一方でも終わっていれば、その日には関わりが無い。
       const rows = await db.query<{
@@ -274,8 +282,9 @@ export function createAssignmentRepository(db: Queryable): AssignmentRepository 
            LEFT JOIN assignment_contracts AS contracts
              ON contracts.id = assignments.assignment_contract_id
             AND contracts.workspace_id = employees.workspace_id
-          WHERE employees.workspace_id = $1`,
-        [workspaceId],
+          WHERE employees.workspace_id = $1
+            AND employees.id = ANY($2::uuid[])`,
+        [workspaceId, [...employeeIds]],
       );
 
       const employers = new Map<string, string>();
