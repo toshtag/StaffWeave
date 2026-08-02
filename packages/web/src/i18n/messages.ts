@@ -25,7 +25,6 @@ export interface Messages {
   organizationCode: string;
   organizationName: string;
   noOrganizations: string;
-  notPermitted: string;
   unimplementedNotice: string;
   sessionExpiresAt: string;
   today: string;
@@ -54,8 +53,6 @@ export interface Messages {
   save: string;
   cancel: string;
   recordHistory: string;
-  showHistory: string;
-  correctedMark: string;
   actionAdjust: string;
   actionVoid: string;
   actionAdd: string;
@@ -81,7 +78,6 @@ export interface Messages {
   requestCancelled: string;
   notRequestedYet: string;
   editingLocked: string;
-  requestComment: string;
   approvals: string;
   approve: string;
   returnRequest: string;
@@ -136,7 +132,6 @@ const ja: Messages = {
   organizationCode: 'コード',
   organizationName: '名称',
   noOrganizations: '組織はまだ登録されていません',
-  notPermitted: 'この情報を表示する権限がありません',
   unimplementedNotice: '休憩、勤務時間の計算、申請・承認はまだ実装されていません。',
   sessionExpiresAt: 'セッション有効期限',
   today: '本日の勤怠',
@@ -165,8 +160,6 @@ const ja: Messages = {
   save: '保存',
   cancel: 'やめる',
   recordHistory: '記録の履歴',
-  showHistory: '履歴を表示',
-  correctedMark: '修正済み',
   actionAdjust: '修正',
   actionVoid: '取消',
   actionAdd: '追加',
@@ -193,7 +186,6 @@ const ja: Messages = {
   requestCancelled: '取消済み',
   notRequestedYet: 'まだ申請していません',
   editingLocked: 'この日は打刻の追加や修正ができません',
-  requestComment: '申請コメント',
   approvals: '承認待ちの申請',
   approve: '承認',
   returnRequest: '差し戻し',
@@ -257,7 +249,6 @@ const en: Messages = {
   organizationCode: 'Code',
   organizationName: 'Name',
   noOrganizations: 'No organizations have been registered yet',
-  notPermitted: 'You do not have permission to view this',
   unimplementedNotice: 'Breaks, worked-time calculation, and approvals are not implemented yet.',
   sessionExpiresAt: 'Session expires at',
   today: "Today's attendance",
@@ -286,8 +277,6 @@ const en: Messages = {
   save: 'Save',
   cancel: 'Cancel',
   recordHistory: 'Record history',
-  showHistory: 'Show history',
-  correctedMark: 'Corrected',
   actionAdjust: 'Adjust',
   actionVoid: 'Void',
   actionAdd: 'Add',
@@ -314,7 +303,6 @@ const en: Messages = {
   requestCancelled: 'Cancelled',
   notRequestedYet: 'Not submitted yet',
   editingLocked: 'Punches for this day can no longer be added or corrected',
-  requestComment: 'Comment',
   approvals: 'Requests awaiting approval',
   approve: 'Approve',
   returnRequest: 'Return',
