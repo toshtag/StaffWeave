@@ -23,6 +23,8 @@ const ENROLLMENT_TOKEN_HASH = hashToken('enrollment-token');
 const REGISTRATION_TOKEN_HASH = hashToken('registration-token');
 const PUBLIC_KEY_A = '-----BEGIN PUBLIC KEY-----\nkey-a\n-----END PUBLIC KEY-----\n';
 const PUBLIC_KEY_B = '-----BEGIN PUBLIC KEY-----\nkey-b\n-----END PUBLIC KEY-----\n';
+/** 同時利用そのものを見る検査なので、期限は必ず先にしておく。 */
+const ENROLLMENT_TOKEN_EXPIRES_AT = new Date('2999-01-01T00:00:00.000Z');
 const FINGERPRINT_A = 'a'.repeat(64);
 const FINGERPRINT_B = 'b'.repeat(64);
 
@@ -36,9 +38,10 @@ async function createPendingDevice(): Promise<PendingDevice> {
   const db = testDatabase();
   const workspaceId = await createWorkspace(db, { slug: 'default' });
   const rows = await db.query<{ id: string }>(
-    `INSERT INTO devices (workspace_id, name, enrollment_token_hash)
-     VALUES ($1, $2, $3) RETURNING id`,
-    [workspaceId, '入口の端末', ENROLLMENT_TOKEN_HASH],
+    `INSERT INTO devices
+       (workspace_id, name, enrollment_token_hash, enrollment_token_expires_at)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [workspaceId, '入口の端末', ENROLLMENT_TOKEN_HASH, ENROLLMENT_TOKEN_EXPIRES_AT],
   );
   const deviceId = rows[0]?.id;
   if (deviceId === undefined) throw new Error('端末を作成できませんでした');
