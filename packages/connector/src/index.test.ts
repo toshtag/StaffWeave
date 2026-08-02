@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveWebhookSigningKey, verifyWebhook } from './index.js';
+import { createConnector, deriveWebhookSigningKey, verifyWebhook } from './index.js';
 
 /**
  * 受け取り側の計算を固定値で押さえる。
@@ -103,5 +103,52 @@ describe('verifyWebhook', () => {
     expect(() => verify({ headers: { 'x-staffweave-event': 'unknown.event' } })).toThrow(
       /未知の出来事/,
     );
+  });
+});
+
+/**
+ * API キーはすべての要求へ付く。接続先が暗号化されていなければ、
+ * キーも取り出すデータもそのまま観測できる。
+ *
+ * ここでは要求を出さない。生成の時点で断ることを固定する。
+ */
+describe('createConnector', () => {
+  // 実際に発行される鍵の形（sw_ + 16 進 8 桁 + 秘密）は使わない。
+  // 検査に引っかかるだけでなく、本物と見分けがつかない値をリポジトリへ残さないため。
+  const apiKey = 'connector-test-api-key';
+
+  it.each([
+    'http://staffweave.example',
+    'http://203.0.113.10:8787',
+    'http://10.0.0.1:8787',
+    'http://[2001:db8::1]:8787',
+  ])('ループバック以外の http %s では作らない', (baseUrl) => {
+    expect(() => createConnector({ baseUrl, apiKey })).toThrow(/https/);
+  });
+
+  it.each(['https://staffweave.example', 'http://127.0.0.1:8787', 'http://localhost:8787'])(
+    '%s なら作れる',
+    (baseUrl) => {
+      expect(() => createConnector({ baseUrl, apiKey })).not.toThrow();
+    },
+  );
+
+  it('URL 内の認証情報を断る', () => {
+    expect(() =>
+      createConnector({ baseUrl: 'https://user:secret@staffweave.example', apiKey }),
+    ).toThrow(/認証情報/);
+  });
+
+  it('断る理由に API キーを含めない', () => {
+    const error = (() => {
+      try {
+        createConnector({ baseUrl: 'http://staffweave.example', apiKey });
+        return null;
+      } catch (thrown) {
+        return thrown as Error;
+      }
+    })();
+
+    expect(error?.message).not.toContain(apiKey);
   });
 });

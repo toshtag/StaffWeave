@@ -194,6 +194,10 @@ curl -H 'authorization: Bearer <生の鍵>' \
 | --- | --- |
 | `POST /api/imports/employees` | `organization_code`, `employee_number`, `display_name`, `hired_on`（任意） |
 
+API キーはすべての要求に付きます。`@staffweave/connector` の `createConnector` は、
+ループバック以外の接続先が `https` でなければ、要求を出す前に断ります。
+`curl` などで直接呼び出す場合も、公開ネットワーク越しでは `https` を使ってください。
+
 API キーの「最後に使った時刻」は、要求のたびには書き直しません。
 `API_KEY_USAGE_INTERVAL_MS`（既定 60000 ミリ秒）より新しい記録があれば、そのままにします。
 この値は使われなくなったキーを見つけるためのもので、この間隔だけ古く見えます。
