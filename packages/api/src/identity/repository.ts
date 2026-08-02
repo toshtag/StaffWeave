@@ -42,6 +42,19 @@ export interface SessionRecord {
   revokedAt: Date | null;
 }
 
+/**
+ * セッションから一意に決まる一式。
+ * 要求のたびに復元するため、分けて引かず 1 回で読む。
+ */
+export interface SessionContextRecord {
+  session: SessionRecord;
+  workspace: WorkspaceRecord;
+  user: UserRecord;
+  roles: Role[];
+  employee: EmployeeLinkRecord | null;
+  organizationScopes: string[];
+}
+
 export interface IdentityRepository {
   findWorkspaceBySlug(slug: string): Promise<WorkspaceRecord | null>;
   findWorkspaceById(workspaceId: string): Promise<WorkspaceRecord | null>;
@@ -63,6 +76,12 @@ export interface IdentityRepository {
     expiresAt: Date;
   }): Promise<SessionRecord>;
   findSessionByTokenHash(tokenHash: string): Promise<SessionRecord | null>;
+  /**
+   * トークンのハッシュから、認証に要る一式をまとめて引く。
+   * セッション・ワークスペース・利用者・ロール・従業員・閲覧範囲はすべて
+   * セッションから外部キーでたどれるため、分けて引く理由がない。
+   */
+  findSessionContextByTokenHash(tokenHash: string): Promise<SessionContextRecord | null>;
   renewSession(sessionId: string, expiresAt: Date, seenAt: Date): Promise<void>;
   revokeSessionByTokenHash(tokenHash: string, revokedAt: Date): Promise<void>;
 }
@@ -106,6 +125,58 @@ function toUser(row: UserRow): UserRecord {
     displayName: row.display_name,
     locale: row.locale,
     status: row.status,
+  };
+}
+
+interface SessionContextRow extends SessionRow {
+  slug: string;
+  workspace_name: string;
+  time_zone: string;
+  email: string;
+  password_hash: string;
+  user_display_name: string;
+  locale: Locale;
+  status: 'active' | 'suspended';
+  employee_id: string | null;
+  employee_number: string | null;
+  employee_display_name: string | null;
+  organization_id: string | null;
+  roles: Role[];
+  organization_ids: string[];
+}
+
+function toSessionContext(row: SessionContextRow): SessionContextRecord {
+  return {
+    session: toSession(row),
+    workspace: {
+      id: row.workspace_id,
+      slug: row.slug,
+      name: row.workspace_name,
+      timeZone: row.time_zone,
+    },
+    user: {
+      id: row.user_id,
+      workspaceId: row.workspace_id,
+      email: row.email,
+      passwordHash: row.password_hash,
+      displayName: row.user_display_name,
+      locale: row.locale,
+      status: row.status,
+    },
+    roles: row.roles,
+    employee:
+      row.employee_id === null ||
+      row.employee_number === null ||
+      row.employee_display_name === null ||
+      row.organization_id === null
+        ? null
+        : {
+            id: row.employee_id,
+            employeeNumber: row.employee_number,
+            displayName: row.employee_display_name,
+            organizationId: row.organization_id,
+          },
+    organizationScopes: row.organization_ids,
   };
 }
 
@@ -224,6 +295,57 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
         [tokenHash],
       );
       return rows[0] ? toSession(rows[0]) : null;
+    },
+
+    async findSessionContextByTokenHash(tokenHash) {
+      const rows = await db.query<SessionContextRow>(
+        `SELECT sessions.id,
+                sessions.workspace_id,
+                sessions.user_id,
+                sessions.issued_at,
+                sessions.expires_at,
+                sessions.revoked_at,
+                workspaces.slug,
+                workspaces.name AS workspace_name,
+                workspaces.time_zone,
+                users.email,
+                users.password_hash,
+                users.display_name AS user_display_name,
+                users.locale,
+                users.status,
+                employees.id AS employee_id,
+                employees.employee_number,
+                employees.display_name AS employee_display_name,
+                employees.organization_id,
+                coalesce(granted.roles, '{}') AS roles,
+                coalesce(scoped.organization_ids, '{}') AS organization_ids
+           FROM sessions
+           JOIN workspaces ON workspaces.id = sessions.workspace_id
+           JOIN users
+             ON users.id = sessions.user_id
+            AND users.workspace_id = sessions.workspace_id
+           LEFT JOIN employees
+             ON employees.user_id = users.id
+            AND employees.workspace_id = sessions.workspace_id
+           -- 並び順は分けて引いていたときと同じにする。応答へそのまま出る。
+           LEFT JOIN LATERAL (
+             SELECT array_agg(user_roles.role ORDER BY user_roles.role) AS roles
+               FROM user_roles
+              WHERE user_roles.workspace_id = sessions.workspace_id
+                AND user_roles.user_id = sessions.user_id
+           ) AS granted ON true
+           LEFT JOIN LATERAL (
+             SELECT array_agg(scopes.organization_id ORDER BY scopes.organization_id)
+                      AS organization_ids
+               FROM user_organization_scopes AS scopes
+              WHERE scopes.workspace_id = sessions.workspace_id
+                AND scopes.user_id = sessions.user_id
+           ) AS scoped ON true
+          WHERE sessions.token_hash = $1`,
+        [tokenHash],
+      );
+      const row = rows[0];
+      return row ? toSessionContext(row) : null;
     },
 
     async renewSession(sessionId, expiresAt, seenAt) {
