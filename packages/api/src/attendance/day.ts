@@ -3,6 +3,7 @@ import type { AttendanceEventRecord, WorkDay, WorkScheduleRecord } from '@staffw
 import type {
   BusinessDate,
   CalculationInput,
+  CalculationRules,
   CorrectableEvent,
   WorkSchedule,
 } from '@staffweave/domain';
@@ -78,6 +79,7 @@ async function buildContext(
   employeeId: string,
   businessDate: BusinessDate,
   timeZone: string,
+  knownRules?: CalculationRules,
 ): Promise<DayContext> {
   // トランザクション内では 1 つの接続を共有するため、問い合わせは並列にせず順に行う。
   const history = await repositories.attendance.listEventsForDay(
@@ -90,7 +92,7 @@ async function buildContext(
     employeeId,
     businessDate,
   );
-  const rules = await repositories.schedule.findCalculationRules(workspaceId);
+  const rules = knownRules ?? (await repositories.schedule.findCalculationRules(workspaceId));
   const request = await repositories.approval.findRequest(workspaceId, employeeId, businessDate);
   const closing = await repositories.approval.findClosing(
     workspaceId,
@@ -163,6 +165,9 @@ export async function loadWorkDay(
 /**
  * 計算をやり直し、入力が前回と変わっていれば新しい版として保存する。
  * 打刻・修正・予定の変更のたびに呼ぶ。
+ *
+ * `rules` は、複数の日をまとめて計算し直す呼び出し（勤務予定の生成）のために開ける。
+ * ワークスペース単位の設定であり、日ごとに読み直しても同じ値になる。
  */
 export async function recalculateWorkDay(
   repositories: DayRepositories,
@@ -170,8 +175,16 @@ export async function recalculateWorkDay(
   employeeId: string,
   businessDate: BusinessDate,
   timeZone: string,
+  rules?: CalculationRules,
 ): Promise<WorkDay> {
-  const context = await buildContext(repositories, workspaceId, employeeId, businessDate, timeZone);
+  const context = await buildContext(
+    repositories,
+    workspaceId,
+    employeeId,
+    businessDate,
+    timeZone,
+    rules,
+  );
 
   const fingerprint = fingerprintOf(context.calculationInput);
   const latest = await repositories.calculations.findLatest(workspaceId, employeeId, businessDate);

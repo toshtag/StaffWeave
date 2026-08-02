@@ -373,6 +373,20 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
           workspaceId,
           input.employeeId,
         );
+        // 日ごとに読み直しても同じ値になるものは、繰り返しへ入れない。
+        const rules = await repositories.schedule.findCalculationRules(workspaceId);
+        const existingDates = input.overwrite
+          ? new Set<string>()
+          : new Set(
+              (
+                await repositories.schedule.listWorkSchedules(
+                  workspaceId,
+                  input.employeeId,
+                  from,
+                  to,
+                )
+              ).map((schedule) => schedule.businessDate),
+            );
 
         for (
           let businessDate = from;
@@ -385,17 +399,10 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
             continue;
           }
 
-          if (!input.overwrite) {
-            const existing = await repositories.schedule.findWorkSchedule(
-              workspaceId,
-              input.employeeId,
-              businessDate,
-            );
-            // 手で直した予定を黙って上書きしない。
-            if (existing !== null) {
-              skipped += 1;
-              continue;
-            }
+          // 手で直した予定を黙って上書きしない。
+          if (existingDates.has(businessDate)) {
+            skipped += 1;
+            continue;
           }
 
           const cached = cycles.get(assignment.workCycleId);
@@ -454,6 +461,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
             input.employeeId,
             businessDate,
             timeZone,
+            rules,
           );
           created += 1;
         }
