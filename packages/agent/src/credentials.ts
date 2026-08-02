@@ -1,6 +1,7 @@
 import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { chmod, lstat, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { requireSecureBaseUrl } from '@staffweave/contracts';
 import type { SignedEventPayload } from '@staffweave/domain';
 import { canonicalPayload } from '@staffweave/domain';
 
@@ -96,7 +97,10 @@ export async function loadCredentials(path: string): Promise<DeviceCredentials> 
   if (typeof parsed !== 'object' || parsed === null) {
     throw new Error(`資格情報を読み取れません: ${path}`);
   }
-  return parsed as DeviceCredentials;
+
+  const credentials = parsed as DeviceCredentials;
+  // 保存した後に書き換えられている場合がある。読み込むたびに確かめ直す。
+  return { ...credentials, baseUrl: requireSecureBaseUrl(credentials.baseUrl, '保存された接続先') };
 }
 
 export async function saveCredentials<T extends DeviceCredentials>(

@@ -136,4 +136,24 @@ describe('loadCredentials', () => {
   it('ファイルが無ければその旨を伝える', async () => {
     await expect(loadCredentials(path)).rejects.toThrow(/資格情報がありません/);
   });
+
+  // 保存した後にファイルを書き換えられることがある。読み込むたびに確かめ直す。
+  it('保存された接続先がループバック以外の http なら読まない', async () => {
+    await saveCredentials(path, credentials({ baseUrl: 'https://staffweave.example' }));
+    const saved = JSON.parse(await readFile(path, 'utf8')) as DeviceCredentials;
+    await writeFile(
+      path,
+      JSON.stringify({ ...saved, baseUrl: 'http://staffweave.example' }, null, 2),
+      'utf8',
+    );
+    await chmod(path, 0o600);
+
+    await expect(loadCredentials(path)).rejects.toThrow(/保存された接続先が暗号化されていません/);
+  });
+
+  it('保存された接続先を正規化して返す', async () => {
+    await saveCredentials(path, credentials({ baseUrl: 'http://127.1:8787/' }));
+
+    expect((await loadCredentials(path)).baseUrl).toBe('http://127.0.0.1:8787');
+  });
 });
