@@ -190,6 +190,21 @@ export {
   sessionStateAt,
   shouldRenew,
 } from './identity/session.js';
+export type {
+  DeviceBrowser,
+  DeviceKind,
+  DeviceOs,
+  DeviceSummary,
+} from './identity/user-agent.js';
+export {
+  DEVICE_BROWSER_VALUES,
+  DEVICE_KIND_VALUES,
+  DEVICE_OS_VALUES,
+  isDeviceBrowser,
+  isDeviceKind,
+  isDeviceOs,
+  summarizeUserAgent,
+} from './identity/user-agent.js';
 export {
   DEFAULT_API_KEY_USAGE_INTERVAL_MS,
   shouldRecordApiKeyUse,
