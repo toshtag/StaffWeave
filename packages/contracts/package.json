@@ -8,9 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "emit:openapi": "tsx scripts/emit-openapi.ts",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@staffweave/domain": "workspace:*",
@@ -19,7 +17,6 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
