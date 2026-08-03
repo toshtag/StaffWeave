@@ -37,7 +37,7 @@ pnpm sbom:validate   # 形式の検証だけを行う
 Docker が必要です。production コンテナを実際に構築してから読むためです。
 `pnpm verify` には入れていません。通常の開発で Docker と外部の道具を必須にすると、
 オフラインで検証できなくなり、変更の確認も遅くなります。
-SBOM は専用の CI ジョブと、正式リリース前の確認で実行します。
+SBOM は専用の CI ジョブで実行します。
 
 書き出し先は `artifacts/sbom/` で、Git 管理しません。
 SBOM は commit ごとに作り直します。古い SBOM を新しい commit の構成として使わないでください。

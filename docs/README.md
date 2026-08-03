@@ -25,7 +25,6 @@
 | [module-boundaries.md](module-boundaries.md) | パッケージ構成と依存方向 |
 | [glossary.md](glossary.md) | 日英用語集（識別子・API・DB 名の基準） |
 | [testing.md](testing.md) | 検証コマンドと、テスト用データベースの扱い |
-| [roadmap.md](roadmap.md) | P0〜P22 のロードマップと正式リリース判定 |
 
 ## セキュリティ
 
@@ -45,4 +44,6 @@
 | 文書 | 内容 |
 | --- | --- |
 | [decisions/](decisions/) | 実装からは読み取れない判断の記録（ライセンスなど） |
-| [release-readiness/](release-readiness/) | 正式リリース・実運用投入判定の記録 |
+
+実装の進行状態はここに書きません。要求と完了条件は GitHub Issue、
+実装差分と検証結果は Pull Request、機械的な合否は CI を正本とします。
