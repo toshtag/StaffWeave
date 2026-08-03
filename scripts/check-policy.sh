@@ -261,6 +261,57 @@ else
   pass "PostgreSQL のデータの置き場が版に合っています"
 fi
 
+echo 'コンテナ'
+# docker-compose.yml の top-level のブロックを 1 つ取り出す。
+compose_block() {
+  awk -v key="$1:" '
+    $0 == key { inside = 1; next }
+    inside && /^[^ #]/ { inside = 0 }
+    inside { print }
+  ' docker-compose.yml
+}
+
+# 名前を決めずに置くと、compose は clone 先のディレクトリ名から作る。
+# 同じものを別の場所へ置いただけで、別のネットワークとボリュームが増える。
+NAMELESS=''
+grep -qE '^name: [a-z0-9-]+$' docker-compose.yml || NAMELESS="$NAMELESS プロジェクト"
+compose_block networks | grep -qE '^ +name: ' || NAMELESS="$NAMELESS ネットワーク"
+compose_block volumes | grep -qE '^ +name: ' || NAMELESS="$NAMELESS ボリューム"
+if [ -n "$NAMELESS" ]; then
+  printf '  名前を決めていないもの:%s\n' "$NAMELESS"
+  fail 'compose が作るものの名前を決めていません'
+else
+  pass 'compose が作るものの名前を決めています'
+fi
+
+# 実行段には pnpm を入れていない。入れると、動かすのに要らない容量を配るうえ、
+# 置き場を消した形ではコンテナを起動するたびに取り寄せ直すことになる。
+ENTRY_POINTS=$(grep -hE '^(CMD|ENTRYPOINT) ' docker/api.Dockerfile; grep -hE '^ *command:' docker-compose.yml)
+if printf '%s\n' "$ENTRY_POINTS" | grep -q 'pnpm'; then
+  printf '%s\n' "$ENTRY_POINTS" | grep -n 'pnpm'
+  fail 'コンテナの入口が pnpm を介しています'
+else
+  pass 'コンテナの入口は pnpm を介していません'
+fi
+
+# app とワーカーは同じイメージで動く。ビルドの定義を二か所へ書くと、
+# 同じものを二度作るか、片方だけ古い定義で作られる。
+BUILD_DEFINITIONS=$(grep -cE '^ *dockerfile: ' docker-compose.yml)
+if [ "$BUILD_DEFINITIONS" -eq 1 ]; then
+  pass 'コンテナのビルドの定義は 1 つです'
+else
+  printf '  ビルドの定義: %s 個\n' "$BUILD_DEFINITIONS"
+  fail 'コンテナのビルドの定義が複数あります'
+fi
+
+# .dockerignore は「既定ですべてを除き、要るものだけを戻す」形で書く。
+# 除く側を書き足す形だと、後から増えたディレクトリが黙って渡り続ける。
+if grep -qx '\*' .dockerignore; then
+  pass '.dockerignore はビルドへ渡すものを明示する形です'
+else
+  fail '.dockerignore が、除く側を書き足す形になっています'
+fi
+
 echo '文書'
 # 説明は docs/ を正本とし、文書どうしをリンクで繋いでいる。
 # 移動や改名でリンクが切れると、読む側は正本へ辿り着けないまま README だけを読む。
