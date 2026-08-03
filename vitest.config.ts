@@ -14,6 +14,10 @@ export default defineConfig({
           name: 'unit',
           environment: 'node',
           include: ['packages/*/src/**/*.test.ts'],
+          // 2 つをまとめて流すとき（`pnpm test`）は、単体を先に、統合を後に流す。
+          // 並べる数が違うものを同じ組へ入れると、vitest はどちらに合わせるかを
+          // 決められず、1 件も実行しないまま終わる。
+          sequence: { groupOrder: 0 },
         },
       },
       {
@@ -30,6 +34,7 @@ export default defineConfig({
           // 止めておくと、作るデータベースの数と接続の数も同じ上限で決まる。
           // 接続は 1 ワーカーあたり最大 10 で、既定の max_connections（100）に収まる。
           maxWorkers: 4,
+          sequence: { groupOrder: 1 },
           // 移行の検査は準備で専用のデータベースを作り、全 migration を複数回流す。
           // 開発機では他の処理と計算資源を分け合うため、余裕を持たせる。
           hookTimeout: 120_000,
