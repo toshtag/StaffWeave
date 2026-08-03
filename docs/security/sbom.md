@@ -37,7 +37,11 @@ pnpm sbom:validate   # 形式の検証だけを行う
 Docker が必要です。production コンテナを実際に構築してから読むためです。
 `pnpm verify` には入れていません。通常の開発で Docker と外部の道具を必須にすると、
 オフラインで検証できなくなり、変更の確認も遅くなります。
-SBOM は専用の CI ジョブで実行します。
+SBOM は専用のワークフロー（`.github/workflows/sbom.yml`）で実行します。
+走るのは `main` への push と手動起動のときだけです。SBOM が答えるのは
+「`main` にあるものが何でできているか」で、提案の段階では読み手がいません。
+生成に 45 秒かかるため、PR で作ると待ち時間だけが増えます。
+依存が変わったかどうかは、PR の差分（`pnpm-lock.yaml`）を見れば分かります。
 
 書き出し先は `artifacts/sbom/` で、Git 管理しません。
 SBOM は commit ごとに作り直します。古い SBOM を新しい commit の構成として使わないでください。
@@ -91,7 +95,9 @@ Advisory と突き合わせるときは `purl` を使います。名前だけで
 
 ## 配布
 
-いまは CI の成果物（`staffweave-sbom-<commit SHA>`、保持 14 日）としてだけ取得できます。
+いまは `main` の CI の成果物（`staffweave-sbom-<commit SHA>`、保持 14 日）としてだけ
+取得できます。PR では作らないため、マージ前の構成が要るときは手元で
+`pnpm sbom:generate` を実行してください。
 
 GitHub Release への添付、レジストリのイメージとの関連付け、署名付きの構成証明
 （`actions/attest`）は行っていません。署名する対象がまだ無いためです。

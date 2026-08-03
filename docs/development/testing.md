@@ -19,9 +19,28 @@ pnpm verify   # 「含む」の 7 つを、この順で実行する（DB 必要�
 | 依存の再現性 | `pnpm install --frozen-lockfile` | CI のみ |
 | 二度目の適用で何も起きないこと | `pnpm db:migrate` を二度 | CI のみ |
 | コンテナのビルドと、通信を切った状態での起動 | `docker build -f docker/api.Dockerfile` | CI のみ |
-| 配布物の構成一覧 | `pnpm sbom:generate`、`pnpm sbom:verify` | 専用ジョブ |
+| 配布物の構成一覧 | `pnpm sbom:generate`、`pnpm sbom:verify` | 専用ワークフロー |
 
 `pnpm test:unit` だけは DB が要りません。それ以外のテストは DB を使います。
+
+## CI の分かれ方
+
+手元の `pnpm verify` は 1 本ですが、GitHub Actions は 3 つに分けています。
+合否が返る早い順に、次のとおりです。
+
+| ワークフロー | 走る条件 | 中身 |
+| --- | --- | --- |
+| `ci.yml` | すべての PR と `main` への push | 何も立ち上げずに済む検証 |
+| `runtime.yml` | 上のうち、動かす対象が変わったとき | DB・ブラウザ・Docker を要する検証 |
+| `sbom.yml` | `main` への push と手動起動 | 配布物の構成一覧 |
+
+分けているのは、待ち時間を短くするためです。検証の範囲は減らしていません。
+コードが変われば 3 つすべてが走ります。
+
+文書だけを変えたときに `runtime.yml` を省くのは、結果が変わらないと言えるためです。
+どこまでを「変わらない」とみなすかは `runtime.yml` の `paths` が正本で、
+`pnpm check:policy` が push と PR で同じ一覧になっているかを見ています。
+文書の変更で壊れうるもの（リンク、索引、名称）は `ci.yml` の `pnpm check:policy` が見ます。
 
 ## `pnpm check:policy`
 
@@ -44,7 +63,7 @@ moderate 以上の勧告があれば失敗します。すぐに直せないも�
 
 `pnpm verify` には含めません。Docker と外部の道具が要るため、
 通常の開発でオフライン検証ができなくなり、変更の確認も遅くなります。
-専用の CI ジョブで実行します。対象と読み方は [security/sbom.md](../security/sbom.md)。
+専用のワークフローで実行します。対象と読み方は [security/sbom.md](../security/sbom.md)。
 
 ## テスト用のデータベース
 
