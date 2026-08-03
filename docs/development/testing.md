@@ -44,7 +44,7 @@ moderate 以上の勧告があれば失敗します。すぐに直せないも�
 
 `pnpm verify` には含めません。Docker と外部の道具が要るため、
 通常の開発でオフライン検証ができなくなり、変更の確認も遅くなります。
-専用の CI ジョブで実行します。対象と読み方は [security/sbom.md](security/sbom.md)。
+専用の CI ジョブで実行します。対象と読み方は [security/sbom.md](../security/sbom.md)。
 
 ## テスト用のデータベース
 

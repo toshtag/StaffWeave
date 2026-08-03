@@ -15,16 +15,16 @@
 | --- | --- |
 | [deployment.md](operations/deployment.md) | Docker での起動、公開前の設定、ホストへの公開範囲 |
 | [operations.md](operations/backup.md) | バックアップと復元 |
-| [performance.md](performance.md) | 問い合わせ回数と索引の決めごと |
+| [performance.md](development/performance.md) | 問い合わせ回数と索引の決めごと |
 
 ## 開発する
 
 | 文書 | 内容 |
 | --- | --- |
-| [development-policy.md](development-policy.md) | 設計の前提・技術選定・守るべき制約 |
-| [module-boundaries.md](module-boundaries.md) | パッケージ構成と依存方向 |
-| [glossary.md](glossary.md) | 日英用語集（識別子・API・DB 名の基準） |
-| [testing.md](testing.md) | 検証コマンドと、テスト用データベースの扱い |
+| [development-policy.md](development/policy.md) | 設計の前提・技術選定・守るべき制約 |
+| [module-boundaries.md](development/architecture.md) | パッケージ構成と依存方向 |
+| [glossary.md](development/glossary.md) | 日英用語集（識別子・API・DB 名の基準） |
+| [testing.md](development/testing.md) | 検証コマンドと、テスト用データベースの扱い |
 
 ## セキュリティ
 

@@ -23,7 +23,7 @@ TRACKED=$(git ls-files | grep -v '^scripts/check-policy.sh$')
 
 echo '名称の一貫性'
 # 開発方針の文書は「使わない」という規則の説明として、使わない形そのものを含むため対象から外す。
-NAME_TARGETS=$(printf '%s\n' "$TRACKED" | grep -v '^docs/development-policy.md$')
+NAME_TARGETS=$(printf '%s\n' "$TRACKED" | grep -v '^docs/development/policy.md$')
 if printf '%s\n' "$NAME_TARGETS" | xargs grep -l 'staff-weave' 2>/dev/null | grep . > /dev/null; then
   printf '%s\n' "$NAME_TARGETS" | xargs grep -n 'staff-weave' 2>/dev/null | head -20
   fail '名称に staff-weave の形が使われています'
@@ -450,7 +450,7 @@ for RULE in $DEPENDENCY_RULES; do
     [ "$DEPENDENCY" = "$PACKAGE" ] && continue
     case ",$ALLOWED," in
       *",$DEPENDENCY,"*) ;;
-      *) fail "$PACKAGE が $DEPENDENCY へ依存しています（docs/module-boundaries.md の依存方向に反します）" ;;
+      *) fail "$PACKAGE が $DEPENDENCY へ依存しています（docs/development/architecture.md の依存方向に反します）" ;;
     esac
   done
 done
