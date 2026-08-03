@@ -1,4 +1,4 @@
-import type { Locale } from '@staffweave/domain';
+import type { DeviceBrowser, DeviceKind, DeviceOs, Locale } from '@staffweave/domain';
 
 /**
  * 画面に出す文言。
@@ -34,6 +34,24 @@ export interface Messages {
   passwordChanged: string;
   passwordChangeFailed: string;
   otherSessionsSignedOut: string;
+  activeSessions: string;
+  activeSessionsHint: string;
+  sessionDevice: string;
+  sessionIssuedAt: string;
+  sessionLastSeenAt: string;
+  thisDevice: string;
+  unknownDevice: string;
+  revokeSession: string;
+  revokingSession: string;
+  revokeOtherSessions: string;
+  revokingOtherSessions: string;
+  otherSessionsRevoked: string;
+  noOtherSessions: string;
+  sessionRevokeFailed: string;
+  /** 端末の系統。判別できた分だけを画面の言語で書き直す。 */
+  deviceOs: Record<DeviceOs, string>;
+  deviceBrowser: Record<DeviceBrowser, string>;
+  deviceKind: Record<DeviceKind, string>;
   today: string;
   clockIn: string;
   clockOut: string;
@@ -148,6 +166,42 @@ const ja: Messages = {
   passwordChanged: 'パスワードを変更しました',
   passwordChangeFailed: 'パスワードを変更できませんでした',
   otherSessionsSignedOut: '他の端末のセッションはログアウトしました。',
+  activeSessions: 'ログイン中の端末',
+  activeSessionsHint: '覚えのない端末があれば、その行をログアウトしてください。',
+  sessionDevice: '端末',
+  sessionIssuedAt: 'ログイン日時',
+  sessionLastSeenAt: '最終利用',
+  thisDevice: 'この端末',
+  unknownDevice: '不明な端末',
+  revokeSession: 'ログアウトさせる',
+  revokingSession: 'ログアウトさせています…',
+  revokeOtherSessions: '他の端末からログアウトする',
+  revokingOtherSessions: 'ログアウトしています…',
+  otherSessionsRevoked: '他の端末のセッションを終了しました',
+  noOtherSessions: '他の端末からのログインはありません。',
+  sessionRevokeFailed: 'セッションを終了できませんでした',
+  deviceOs: {
+    windows: 'Windows',
+    macos: 'macOS',
+    ios: 'iOS',
+    ipados: 'iPadOS',
+    android: 'Android',
+    chromeos: 'ChromeOS',
+    linux: 'Linux',
+  },
+  deviceBrowser: {
+    chrome: 'Chrome',
+    safari: 'Safari',
+    firefox: 'Firefox',
+    edge: 'Edge',
+    opera: 'Opera',
+    samsung: 'Samsung Internet',
+  },
+  deviceKind: {
+    desktop: 'パソコン',
+    mobile: 'スマートフォン',
+    tablet: 'タブレット',
+  },
   today: '本日の勤怠',
   clockIn: '出勤',
   clockOut: '退勤',
@@ -272,6 +326,42 @@ const en: Messages = {
   passwordChanged: 'Password changed',
   passwordChangeFailed: 'Could not change the password',
   otherSessionsSignedOut: 'Sessions on other devices have been signed out.',
+  activeSessions: 'Signed-in devices',
+  activeSessionsHint: 'If you do not recognise a device, sign that row out.',
+  sessionDevice: 'Device',
+  sessionIssuedAt: 'Signed in at',
+  sessionLastSeenAt: 'Last used',
+  thisDevice: 'This device',
+  unknownDevice: 'Unknown device',
+  revokeSession: 'Sign out',
+  revokingSession: 'Signing out…',
+  revokeOtherSessions: 'Sign out other devices',
+  revokingOtherSessions: 'Signing out…',
+  otherSessionsRevoked: 'Sessions on other devices have been ended',
+  noOtherSessions: 'No other devices are signed in.',
+  sessionRevokeFailed: 'Could not end the session',
+  deviceOs: {
+    windows: 'Windows',
+    macos: 'macOS',
+    ios: 'iOS',
+    ipados: 'iPadOS',
+    android: 'Android',
+    chromeos: 'ChromeOS',
+    linux: 'Linux',
+  },
+  deviceBrowser: {
+    chrome: 'Chrome',
+    safari: 'Safari',
+    firefox: 'Firefox',
+    edge: 'Edge',
+    opera: 'Opera',
+    samsung: 'Samsung Internet',
+  },
+  deviceKind: {
+    desktop: 'Computer',
+    mobile: 'Phone',
+    tablet: 'Tablet',
+  },
   today: "Today's attendance",
   clockIn: 'Clock in',
   clockOut: 'Clock out',

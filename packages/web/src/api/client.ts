@@ -15,6 +15,8 @@ import type {
   RecordAttendanceEventRequest,
   RecordAttendanceEventResponse,
   ReopenMonthRequest,
+  RevokedSessions,
+  SessionList,
   SessionResponse,
   SubmitDailyRequestRequest,
   UpdatePreferencesRequest,
@@ -71,6 +73,11 @@ export const api = {
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   changePassword: (input: ChangePasswordRequest) =>
     request<void>('/auth/password', { method: 'POST', body: JSON.stringify(input) }),
+  listSessions: () => request<SessionList>('/auth/sessions'),
+  revokeSession: (sessionId: string) =>
+    request<void>(`/auth/sessions/${sessionId}`, { method: 'DELETE' }),
+  revokeOtherSessions: () =>
+    request<RevokedSessions>('/auth/sessions/revoke-others', { method: 'POST' }),
   updatePreferences: (input: UpdatePreferencesRequest) =>
     request<SessionResponse>('/auth/preferences', {
       method: 'PATCH',

@@ -5,6 +5,7 @@ import { LocaleSwitcher } from '../components/LocaleSwitcher.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import { businessToday } from '../session/business-date.ts';
 import { useSession } from '../session/SessionProvider.tsx';
+import { ActiveSessions } from './ActiveSessions.tsx';
 import { AnomalyPanel } from './AnomalyPanel.tsx';
 import { ChangePassword } from './ChangePassword.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
@@ -123,6 +124,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         </section>
 
         <ChangePassword />
+
+        <ActiveSessions />
 
         <OrganizationTable session={session} />
 
