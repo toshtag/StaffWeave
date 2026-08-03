@@ -11,7 +11,6 @@ export interface Messages {
   signOut: string;
   email: string;
   password: string;
-  workspace: string;
   signingIn: string;
   signInFailed: string;
   networkError: string;
@@ -167,7 +166,6 @@ const ja: Messages = {
   signOut: 'ログアウト',
   email: 'メールアドレス',
   password: 'パスワード',
-  workspace: 'ワークスペース',
   signingIn: 'ログインしています',
   signInFailed: 'メールアドレスまたはパスワードが正しくありません',
   networkError: 'サーバーへ接続できませんでした',
@@ -355,7 +353,6 @@ const en: Messages = {
   signOut: 'Sign out',
   email: 'Email address',
   password: 'Password',
-  workspace: 'Workspace',
   signingIn: 'Signing in',
   signInFailed: 'Email address or password is incorrect',
   networkError: 'Could not reach the server',
