@@ -70,7 +70,6 @@ export interface Messages {
   revokeApiKey: string;
   revokingApiKey: string;
   apiKeyRevoked: string;
-  apiKeyRevokedAt: string;
   noApiKeys: string;
   apiKeyCreateFailed: string;
   apiKeyRevokeFailed: string;
@@ -245,7 +244,6 @@ const ja: Messages = {
   revokeApiKey: '失効させる',
   revokingApiKey: '失効させています…',
   apiKeyRevoked: '失効済み',
-  apiKeyRevokedAt: '失効日時',
   noApiKeys: 'API キーはまだありません。',
   apiKeyCreateFailed: 'API キーを作成できませんでした',
   apiKeyRevokeFailed: 'API キーを失効させられませんでした',
@@ -435,7 +433,6 @@ const en: Messages = {
   revokeApiKey: 'Revoke',
   revokingApiKey: 'Revoking…',
   apiKeyRevoked: 'Revoked',
-  apiKeyRevokedAt: 'Revoked at',
   noApiKeys: 'No API keys yet.',
   apiKeyCreateFailed: 'Could not create the API key',
   apiKeyRevokeFailed: 'Could not revoke the API key',
