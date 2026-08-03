@@ -22,8 +22,14 @@ export default defineConfig({
           environment: 'node',
           include: ['packages/*/test/integration/**/*.test.ts'],
           setupFiles: ['./test/integration-setup.ts'],
-          // 同一データベースを共有するため、並列実行せず順番に流す。
-          fileParallelism: false,
+          // ファイルは並列に流す。ワーカーごとに別のデータベースを使うため、
+          // あるファイルの消去が別のファイルのデータへ届かない（test/database-url.ts）。
+          //
+          // 数を 4 で止める。待っているのは計算ではなく PostgreSQL の応答なので、
+          // 枠を増やしても同じ 1 つのサーバーを取り合うだけになる。
+          // 止めておくと、作るデータベースの数と接続の数も同じ上限で決まる。
+          // 接続は 1 ワーカーあたり最大 10 で、既定の max_connections（100）に収まる。
+          maxWorkers: 4,
           // 移行の検査は準備で専用のデータベースを作り、全 migration を複数回流す。
           // 開発機では他の処理と計算資源を分け合うため、余裕を持たせる。
           hookTimeout: 120_000,
