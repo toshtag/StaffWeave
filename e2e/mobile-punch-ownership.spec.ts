@@ -39,7 +39,7 @@ async function selectLocale(page: Page, locale: 'ja-JP' | 'en'): Promise<void> {
 }
 
 async function signOut(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'ログアウト' }).click();
+  await page.getByRole('button', { name: 'ログアウト', exact: true }).click();
   await expect(page.getByRole('button', { name: 'ログイン' })).toBeVisible();
 }
 
