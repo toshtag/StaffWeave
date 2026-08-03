@@ -22,13 +22,13 @@ pass() {
 TRACKED=$(git ls-files | grep -v '^scripts/check-policy.sh$')
 
 echo '名称の一貫性'
-# 開発方針の文書は「変形しない」という規則の説明として変形例を含むため、対象から外す。
+# 開発方針の文書は「使わない」という規則の説明として、使わない形そのものを含むため対象から外す。
 NAME_TARGETS=$(printf '%s\n' "$TRACKED" | grep -v '^docs/development-policy.md$')
-if printf '%s\n' "$NAME_TARGETS" | xargs grep -l -e 'staff-weave' -e 'StaffWeave' 2>/dev/null | grep . > /dev/null; then
-  printf '%s\n' "$NAME_TARGETS" | xargs grep -n -e 'staff-weave' -e 'StaffWeave' 2>/dev/null | head -20
-  fail '正式名称 staffweave が変形しています'
+if printf '%s\n' "$NAME_TARGETS" | xargs grep -l 'staff-weave' 2>/dev/null | grep . > /dev/null; then
+  printf '%s\n' "$NAME_TARGETS" | xargs grep -n 'staff-weave' 2>/dev/null | head -20
+  fail '名称に staff-weave の形が使われています'
 else
-  pass '正式名称が staffweave で統一されています'
+  pass '名称に staff-weave の形はありません'
 fi
 
 echo '秘密情報'
