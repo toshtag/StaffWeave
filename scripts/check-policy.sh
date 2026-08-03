@@ -390,11 +390,11 @@ else
 fi
 
 # docs/README.md は文書の索引。載っていない文書は、置いてあっても読まれない。
-# 記録（decisions / release-readiness）はディレクトリ単位で載せるため、個別には数えない。
+# 決定の記録はディレクトリ単位で載せるため、個別には数えない。
 UNLISTED=''
 for doc in $(git ls-files 'docs/*.md' 'docs/*/*.md'); do
   case "$doc" in
-    docs/README.md | docs/decisions/* | docs/release-readiness/*) continue ;;
+    docs/README.md | docs/decisions/*) continue ;;
   esac
   grep -q "(${doc#docs/})" docs/README.md || UNLISTED="$UNLISTED ${doc#docs/}"
 done
