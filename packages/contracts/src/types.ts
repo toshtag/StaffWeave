@@ -145,10 +145,6 @@ export interface Site {
   createdAt: string;
 }
 
-export interface SiteList {
-  sites: Site[];
-}
-
 export interface CreateSiteRequest {
   organizationId: string;
   code: string;
@@ -163,10 +159,6 @@ export interface Department {
   code: string;
   name: string;
   createdAt: string;
-}
-
-export interface DepartmentList {
-  departments: Department[];
 }
 
 export interface CreateDepartmentRequest {
@@ -254,10 +246,6 @@ export interface LeaveTypeRecord {
   createdAt: string;
 }
 
-export interface LeaveTypeList {
-  leaveTypes: LeaveTypeRecord[];
-}
-
 export interface CreateLeaveTypeRequest {
   code: string;
   name: string;
@@ -277,10 +265,6 @@ export interface WorkCycleRecord {
   cycleLength: number;
   days: WorkCycleDayRecord[];
   createdAt: string;
-}
-
-export interface WorkCycleList {
-  workCycles: WorkCycleRecord[];
 }
 
 export interface CreateWorkCycleRequest {
@@ -662,10 +646,6 @@ export interface AssignmentContractRecord {
   createdAt: string;
 }
 
-export interface AssignmentContractList {
-  contracts: AssignmentContractRecord[];
-}
-
 export interface CreateAssignmentContractRequest {
   code: string;
   name: string;
@@ -704,10 +684,6 @@ export interface UserScopeRecord {
   userId: string;
   organizationId: string;
   grantedAt: string;
-}
-
-export interface UserScopeList {
-  scopes: UserScopeRecord[];
 }
 
 export interface GrantUserScopeRequest {
@@ -778,16 +754,6 @@ export interface WebhookEndpointRecord {
   eventTypes: WebhookEventType[];
   active: boolean;
   createdAt: string;
-}
-
-export interface WebhookEndpointList {
-  endpoints: WebhookEndpointRecord[];
-}
-
-export interface CreateWebhookEndpointRequest {
-  name: string;
-  url: string;
-  eventTypes: WebhookEventType[];
 }
 
 export interface CreateWebhookEndpointResponse {
