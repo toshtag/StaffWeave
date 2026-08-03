@@ -1,9 +1,9 @@
 # バックアップと復元
 
 ```sh
-docker compose --profile app stop app webhook-worker   # 復元の前に接続を止める
-pnpm backup                                        # backups/ へ保存
-pnpm restore backups/staffweave-<日時>.dump         # 復元（既存データは失われます）
+docker compose --profile app stop app worker    # 復元の前に接続を止める
+pnpm backup                                     # backups/ へ保存
+pnpm restore backups/staffweave-<日時>.dump       # 復元（既存データは失われます）
 ```
 
 ## 復元の順序

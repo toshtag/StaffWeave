@@ -11,7 +11,7 @@ pnpm typecheck         # 型検査
 pnpm test              # 単体 + 統合（DB 必要）
 pnpm test:e2e          # ブラウザによる E2E（DB 必要）
 pnpm db:verify         # マイグレーションの適用漏れと内容の変更を検査
-pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・ライセンス・SBOM・認可契約・依存の版・マイグレーション・依存方向）を検査
+pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・ライセンス・SBOM・認可契約・依存の版・コンテナ・マイグレーション・依存方向）を検査
 pnpm check:audit       # 依存の既知脆弱性（moderate 以上があれば失敗）
 
 pnpm test:unit         # 単体テストのみ（DB 不要）
@@ -22,6 +22,7 @@ pnpm sbom:verify       # 書き出した構成一覧を検証する（Docker 必
 ```
 
 コンテナのビルドだけは CI で行います（`docker build -f docker/api.Dockerfile`）。
+ビルドに続けて、通信を切った状態で入口が動くことも確かめます。
 
 ## SBOM
 

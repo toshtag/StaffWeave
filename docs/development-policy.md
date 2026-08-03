@@ -135,7 +135,7 @@ staffweave の実装判断で迷ったとき、この文書が優先されます
 | マイグレーション | `pnpm db:migrate`（二度実行）、`pnpm db:verify` |
 | リポジトリの決めごと | `pnpm check:policy` |
 | 依存の脆弱性 | `pnpm check:audit` |
-| コンテナのビルド | `docker build -f docker/api.Dockerfile` |
+| コンテナのビルドと起動 | `docker build -f docker/api.Dockerfile`、通信を切って入口が動くかの確認 |
 | 配布物の構成一覧 | `pnpm sbom:generate`、`pnpm sbom:verify`（専用ジョブ） |
 
 `pnpm check:policy` が見るのは、レビューで見落としやすく、後から直すと影響が大きいものだけです。
@@ -152,6 +152,10 @@ staffweave の実装判断で迷ったとき、この文書が優先されます
 - `@types/node` の major と、コンテナの Node の major が `.nvmrc` と一致しているか
 - PostgreSQL の版が `docker-compose.yml` と CI で揃い、tag が major を含む形か
 - PostgreSQL のデータの置き場が、その版の配置に合っているか
+- `docker compose` が作るもの（プロジェクト・ネットワーク・ボリューム）の名前を決めているか
+- コンテナの入口が pnpm を介していないか
+- コンテナのビルドの定義が 1 つにまとまっているか
+- `.dockerignore` が、ビルドへ渡すものを明示する形になっているか
 - 文書どうしのリンクがすべて辿れるか
 - `docs/README.md` の索引に、すべての文書が載っているか
 - 旧い認可契約（閲覧範囲が空なら全件）の説明が残っていないか
@@ -172,6 +176,13 @@ SBOM の生成と検証は `pnpm verify` に含めません。Docker と外部�
 通常の開発でオフライン検証ができなくなり、変更の確認も遅くなります。
 専用の CI ジョブと、正式リリース前の確認で実行します
 （[security/sbom.md](security/sbom.md)）。
+
+コンテナの検査が守るのは、動かしている間に増えていくものです。名前を決めずに置くと
+compose が置き場所から作るため、同じものを別の場所へ置いただけで一覧が増えます。
+実行段へ pnpm を置くと、動かすのに要らない容量を配ったうえ、置き場を消した形では
+コンテナを起動するたびに取り寄せに行き、通信できない環境では起動できません。
+入口が pnpm を介していないことは CI が実際に通信を切って確かめます
+（[deployment.md](deployment.md)）。
 
 依存の版の検査が守るのは、宣言と実行環境の食い違いです。実行環境の major は `.nvmrc` を
 正本とし、型定義（`@types/node`）をそこより先へ進めません。先へ進めると、実行環境に無い

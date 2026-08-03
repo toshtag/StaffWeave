@@ -35,7 +35,7 @@ CONNECTIONS=$(docker exec "$CONTAINER" psql \
 if [ "$CONNECTIONS" -gt 0 ]; then
   echo "$DATABASE へ $CONNECTIONS 件の接続が残っています。" >&2
   echo "アプリケーションと送信ワーカーを止めてから、もう一度実行してください。" >&2
-  echo "  docker compose --profile app stop app webhook-worker" >&2
+  echo "  docker compose --profile app stop app worker" >&2
   exit 1
 fi
 

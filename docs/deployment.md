@@ -8,15 +8,68 @@ Docker Compose だけで API と画面を動かす場合の手順と、公開す
 ```sh
 cp .env.example .env
 docker compose --profile app up -d
-docker compose exec app pnpm db:migrate
-docker compose exec app pnpm bootstrap --email admin@example.com
+docker compose exec app tsx packages/db/src/cli.ts up
+docker compose exec app tsx packages/api/src/cli/bootstrap.ts --email admin@example.com
 ```
 
 `http://127.0.0.1:8787` で API と画面の両方が使えます。
-`app` と同じイメージで `webhook-worker` も起動します。
+`app` と同じイメージで `worker` も起動します。
 
 実行用のイメージには、動かすのに必要なものだけが入ります。
 開発用の依存とテストは含まれません。プロセスは非 root（`node`）で動きます。
+
+pnpm も入れていません。動かすのに使うのは tsx だけで、間に置くと容量が増えるうえ、
+起動のたびに pnpm 本体を取り寄せに行き、通信できない環境では起動できなくなります。
+コンテナの中でコマンドを動かす場合は、上のように tsx を直接呼びます。
+
+## 一覧に並ぶもの
+
+`docker compose` が作るものの名前は、置き場所ではなく `docker-compose.yml` で決めています。
+clone 先のディレクトリ名から作らせると、同じものを別の場所へ置いただけで、
+別のネットワークとボリュームが増えます。
+
+| 種類 | 名前 |
+| --- | --- |
+| プロジェクト | `staffweave` |
+| コンテナ | `staffweave-db`、`staffweave-app`、`staffweave-worker` |
+| イメージ | `staffweave`（`app` と `worker` で共有。ビルドは 1 回） |
+| ボリューム | `staffweave-db-data` |
+| ネットワーク | `staffweave` |
+
+## 以前の名前からの移行
+
+すでに動かしている場合、ボリュームは `staffweave_staffweave-db-data`、
+ワーカーのコンテナは `staffweave-webhook-worker` の名前で残っています。
+新しい名前へ中身を移してから起動してください。
+
+```sh
+docker compose --profile app down --remove-orphans
+docker volume create staffweave-db-data
+docker run --rm -v staffweave_staffweave-db-data:/from:ro -v staffweave-db-data:/to \
+  alpine sh -c 'cd /from && cp -a . /to/'
+docker compose --profile app up -d
+```
+
+移した後も元のボリュームはそのまま残るため、問題があれば戻せます。
+中身を確かめたうえで、使われなくなったものを消してください。
+
+```sh
+docker volume rm staffweave_staffweave-db-data
+docker network rm staffweave_default
+docker image rm staffweave-app
+```
+
+## 後片付け
+
+コンテナを作り直しても、増えるのは名前を決めた上の 5 種類だけです。
+イメージを作り直したときに参照されなくなった古いイメージと、ビルドの控えだけは
+Docker 側に残るため、必要に応じて片付けます。
+
+```sh
+docker compose --profile app down    # コンテナとネットワークを消す（データは残る）
+docker image prune -f                # 参照されなくなったイメージを消す
+docker builder prune -f              # ビルドの控えを消す（次のビルドは遅くなる）
+```
 
 ## データベースの版
 
@@ -44,7 +97,7 @@ docker compose exec app pnpm bootstrap --email admin@example.com
 次を必ず行ってください。
 
 - IC カードを使う場合は `.env` の `CARD_FINGERPRINT_KEY` を `openssl rand -hex 32` の出力にする
-- `.env` の `DB_PASSWORD` を変更する（`db`・`app`・`webhook-worker` がこの値を共有します）
+- `.env` の `DB_PASSWORD` を変更する（`db`・`app`・`worker` がこの値を共有します）
 - HTTPS で終端する（`NODE_ENV=production` のとき、セッション Cookie に `Secure` が付きます）
 
 `DB_PASSWORD` は接続文字列（URL）へそのまま入るため、URL で意味を持つ文字
