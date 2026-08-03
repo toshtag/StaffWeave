@@ -22,13 +22,6 @@ export function isApiScope(value: string): value is ApiScope {
   return (API_SCOPES as readonly string[]).includes(value);
 }
 
-export const API_SCOPE_LABELS: Record<ApiScope, string> = {
-  'attendance:read': '勤怠と集計の読み取り',
-  'attendance:write': '打刻の記録',
-  'payroll:read': '給与連携向けの出力',
-  'organization:read': '組織・従業員の読み取り',
-};
-
 /** キーが与えられた範囲を満たしているか。 */
 export function hasScope(granted: readonly string[], required: ApiScope): boolean {
   return granted.includes(required);

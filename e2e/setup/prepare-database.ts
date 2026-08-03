@@ -15,6 +15,8 @@ export interface SeededAccount {
   password: string;
   employeeNumber: string;
   displayName: string;
+  /** 省略すると employee。管理の画面を確かめる従業員だけ上げる。 */
+  role?: 'workspace_admin' | 'organization_manager' | 'employee';
 }
 
 /**
@@ -116,6 +118,20 @@ export const E2E_SESSION_EMPLOYEE: SeededAccount = {
   displayName: '検証 十一郎',
 };
 
+/**
+ * API キーの管理画面を確かめるための管理者。
+ *
+ * 検査の中で鍵を作り、失効させるため、他の画面テストと共有しない。
+ * 共有すると、別の検査が作った鍵が一覧に混ざる。
+ */
+export const E2E_API_KEY_ADMIN: SeededAccount = {
+  email: 'api-key-admin@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E012',
+  displayName: '検証 十二郎',
+  role: 'workspace_admin',
+};
+
 const SEEDED_ACCOUNTS = [
   E2E_EMPLOYEE,
   E2E_MOBILE_EMPLOYEE,
@@ -128,6 +144,7 @@ const SEEDED_ACCOUNTS = [
   E2E_STORED_PUNCH_EMPLOYEE,
   E2E_PASSWORD_EMPLOYEE,
   E2E_SESSION_EMPLOYEE,
+  E2E_API_KEY_ADMIN,
 ];
 
 export function e2eDatabaseUrl(): string {
@@ -199,10 +216,11 @@ export default async function prepareDatabase(): Promise<void> {
         const userId = user[0]?.id;
         if (!userId) throw new Error('利用者を作成できませんでした');
 
-        await tx.query(
-          "INSERT INTO user_roles (workspace_id, user_id, role) VALUES ($1, $2, 'employee')",
-          [workspaceId, userId],
-        );
+        await tx.query('INSERT INTO user_roles (workspace_id, user_id, role) VALUES ($1, $2, $3)', [
+          workspaceId,
+          userId,
+          account.role ?? 'employee',
+        ]);
 
         await tx.query(
           `INSERT INTO employees

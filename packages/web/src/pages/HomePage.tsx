@@ -7,6 +7,7 @@ import { businessToday } from '../session/business-date.ts';
 import { useSession } from '../session/SessionProvider.tsx';
 import { ActiveSessions } from './ActiveSessions.tsx';
 import { AnomalyPanel } from './AnomalyPanel.tsx';
+import { ApiKeys } from './ApiKeys.tsx';
 import { ChangePassword } from './ChangePassword.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
 import { PendingApprovals } from './PendingApprovals.tsx';
@@ -128,6 +129,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         <ActiveSessions />
 
         <OrganizationTable session={session} />
+
+        <ApiKeys session={session} />
 
         <p className="notice">{messages.unimplementedNotice}</p>
       </main>

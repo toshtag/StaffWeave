@@ -1,9 +1,13 @@
 import type {
   AnomalyList,
+  ApiKeyList,
+  ApiKeyRecord,
   ChangePasswordRequest,
   CloseMonthRequest,
   CorrectAttendanceRequest,
   CorrectAttendanceResponse,
+  CreateApiKeyRequest,
+  CreateApiKeyResponse,
   DailyRequestList,
   DailyRequestRecord,
   DecideDailyRequestRequest,
@@ -84,6 +88,11 @@ export const api = {
       body: JSON.stringify(input),
     }),
   listOrganizations: () => request<OrganizationList>('/organizations'),
+  listApiKeys: () => request<ApiKeyList>('/api-keys'),
+  createApiKey: (input: CreateApiKeyRequest) =>
+    request<CreateApiKeyResponse>('/api-keys', { method: 'POST', body: JSON.stringify(input) }),
+  revokeApiKey: (apiKeyId: string) =>
+    request<ApiKeyRecord>(`/api-keys/${apiKeyId}/revoke`, { method: 'POST' }),
   listAnomalies: (query: { from: string; to: string }) =>
     request<AnomalyList>(`/audit/anomalies?${new URLSearchParams(query).toString()}`),
   getTodayAttendance: () => request<WorkDay>('/attendance/today'),
