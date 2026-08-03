@@ -59,17 +59,15 @@ Agent と connector はリダイレクトを追従しません。3xx を受け�
 
 IC カードの生の識別子は端末の中で一方向の指紋へ変換され、サーバーへは送られません。
 指紋の計算に使う鍵は、`.env` の `CARD_FINGERPRINT_KEY` から Workspace ごとに導出し、
-端末の登録時に渡します。共通の鍵そのものは端末へ渡りません。
-この鍵はデータベースへ保存されないため、データベースの内容だけでは物理カードと結び付けられません。
+端末の登録時に渡します。
 
 ```sh
 openssl rand -hex 32   # CARD_FINGERPRINT_KEY へ設定する値を作る
 ```
 
 `CARD_FINGERPRINT_KEY` が未設定なら、IC カードの経路は 404 で断ります。
-32 文字未満の値や見本のままの値では API は起動しません。
-鍵を変更すると導出後の鍵も変わり、登録済みのカードは登録し直しになります。
-詳細は [security/card-fingerprint-key.md](security/card-fingerprint-key.md) を参照してください。
+鍵の要件、鍵を変えたときに何が起きるか、どこに含まれてどこに含まれないかは
+[security/card-fingerprint-key.md](security/card-fingerprint-key.md) を正本とします。
 
 ## 資格情報の保存
 
