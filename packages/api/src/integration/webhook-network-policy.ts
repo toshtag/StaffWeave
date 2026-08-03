@@ -282,7 +282,7 @@ export interface WebhookNetworkPolicyDependencies {
  * `Resolver` なら中断でき、問い合わせもイベントループ側で行われる。
  *
  * 代償として `hosts` ファイルだけにある別名は解決できない。ローカル宛の送信先は
- * DNS で解決できる名前か IP リテラルで指定する。README に記載している。
+ * DNS で解決できる名前か IP リテラルで指定する。docs/integrations.md に記載している。
  */
 const defaultResolver: WebhookHostResolver = async (hostname, signal) => {
   const resolver = new Resolver();
