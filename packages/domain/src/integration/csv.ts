@@ -17,7 +17,7 @@ const FORMULA_LEADERS = ['=', '+', '-', '@', '\t', '\r'];
  * 無害化に使う印。
  *
  * 表計算はこの印を「以降を文字列として扱う」指示として読み、セルには表示しない。
- * 読み取り側（{@link parseCsv}）は同じ規則で外すため、staffweave 同士の
+ * 読み取り側（{@link parseCsv}）は同じ規則で外すため、StaffWeave 同士の
  * 書き出しと取り込みでは値が変わらない。
  */
 const TEXT_MARKER = "'";
