@@ -93,7 +93,8 @@ services:
       WEBHOOK_SEND_TIMEOUT_MS: ${WEBHOOK_SEND_TIMEOUT_MS:-10000}
       WEBHOOK_CLAIM_LEASE_MS: ${WEBHOOK_CLAIM_LEASE_MS:-60000}
       WEBHOOK_NETWORK_POLICY: ${WEBHOOK_NETWORK_POLICY:-public-only}
-    command: ['pnpm', '--filter', '@staffweave/api', 'webhook-worker']
+    # イメージには pnpm を入れていないため、tsx を直接呼ぶ。
+    command: ['tsx', '--env-file-if-exists=.env', 'packages/api/src/cli/run-webhook-worker.ts']
 
 volumes:
   staffweave-db-data:
