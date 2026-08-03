@@ -520,6 +520,24 @@ else
   pass '文書のリンクはすべて辿れます'
 fi
 
+# 見出しがファイル名を名乗るなら、指し先と同じ名前にする。
+# 食い違うと、読む側はその名前のファイルを探し、どこにも無いまま終わる。
+# 辿れるかどうかの検査は通ってしまうため、名前どうしを別に突き合わせる。
+MISLABELED=$(for doc in $(git ls-files '*.md'); do
+  grep -oE '\[[^]]*\.md\]\([^)#][^)]*\)' "$doc" 2>/dev/null \
+    | grep -vE '\]\((https?|mailto):' \
+    | sed -E 's/^\[(.*)\]\((.*)\)$/\1\t\2/' \
+    | while IFS="$(printf '\t')" read -r label target; do
+        [ "${label##*/}" = "${target##*/}" ] || printf '  %s: [%s](%s)\n' "$doc" "$label" "$target"
+      done
+done)
+if [ -n "$MISLABELED" ]; then
+  printf '%s\n' "$MISLABELED"
+  fail 'リンクの見出しが、指し先と違うファイル名を名乗っています'
+else
+  pass 'リンクの見出しは指し先と同じ名前です'
+fi
+
 # docs/README.md は文書の索引。載っていない文書は、置いてあっても読まれない。
 # 決定の記録はディレクトリ単位で載せるため、個別には数えない。
 UNLISTED=''
