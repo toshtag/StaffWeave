@@ -148,7 +148,17 @@ jobs:
       - name: 画面テスト用データベースを用意
         run: psql "$DATABASE_URL" -c 'CREATE DATABASE staffweave_e2e'
 
+      # ブラウザは 1 回の取得に 25 秒かかる。中身は Playwright の版で決まるため、
+      # pnpm-lock.yaml が同じ間は取り直さない。
+      - name: 前に取得したブラウザを使う
+        id: browser
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: ブラウザを取得
+        if: steps.browser.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps chromium
 
       - name: 画面テスト
