@@ -31,7 +31,7 @@ services:
     # alpine ではなく Debian を使う。musl はロケールを実装しておらず、
     # en_US.utf8 と名乗ったまま C と同じ並びになる。宣言と挙動が食い違う。
     # 拡張と道具も Debian のほうが揃う。判断は docs/decisions/0001-database-collation.md。
-    image: postgres:18-bookworm
+    image: postgres:18.4-bookworm
     container_name: staffweave-db
     restart: unless-stopped
     # 資格情報はここへ書かず、.env から与える。
