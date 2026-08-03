@@ -181,13 +181,17 @@ fi
 
 # 新しく足した Action は完全なコミット SHA で固定する。
 # tag は同じ名前のまま指す先が変わりうるため、版として当てにできない。
-SBOM_JOB=$(sed -n '/^  sbom:/,$p' .github/workflows/ci.yml)
-UNPINNED=$(printf '%s\n' "$SBOM_JOB" | grep -E 'uses:' | grep -vE 'uses: [^@]+@[0-9a-f]{40}( |$)' || true)
-if [ -n "$UNPINNED" ]; then
-  printf '%s\n' "$UNPINNED"
-  fail 'SBOM のジョブに、コミット SHA で固定していない Action があります'
+SBOM_WORKFLOW='.github/workflows/sbom.yml'
+if [ ! -f "$SBOM_WORKFLOW" ]; then
+  fail "$SBOM_WORKFLOW がありません"
 else
-  pass 'SBOM のジョブの Action はコミット SHA で固定されています'
+  UNPINNED=$(grep -E 'uses:' "$SBOM_WORKFLOW" | grep -vE 'uses: [^@]+@[0-9a-f]{40}( |$)' || true)
+  if [ -n "$UNPINNED" ]; then
+    printf '%s\n' "$UNPINNED"
+    fail 'SBOM のワークフローに、コミット SHA で固定していない Action があります'
+  else
+    pass 'SBOM のワークフローの Action はコミット SHA で固定されています'
+  fi
 fi
 
 echo '依存の版'
