@@ -106,6 +106,12 @@ jobs:
       - name: 適用漏れと内容の変更が無いことを確認
         run: pnpm db:verify
 
+      - name: まとめて流せることを確認
+        # CI は単体と統合を別のジョブへ分けている。まとめて流す `pnpm test`
+        # （`pnpm verify` が使う）だけが壊れても、分けたジョブでは気付けない。
+        # テストを 1 件も選ばずに起動し、2 つの設定が組み上がることだけを見る。
+        run: pnpm test --testNamePattern '__no_such_test__' --passWithNoTests
+
       - name: 統合テスト
         run: pnpm test:integration
 

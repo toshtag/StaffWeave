@@ -17,6 +17,7 @@ pnpm verify   # 「含む」の 7 つを、この順で実行する（DB 必要�
 | リポジトリの決めごと | `pnpm check:policy` | 含む |
 | 依存の既知脆弱性 | `pnpm check:audit` | 含む |
 | 依存の再現性 | `pnpm install --frozen-lockfile` | CI のみ |
+| 単体と統合をまとめて流せること | `pnpm test`（テストを選ばずに起動する） | CI のみ |
 | 二度目の適用で何も起きないこと | `pnpm db:migrate` を二度 | CI のみ |
 | コンテナのビルドと、通信を切った状態での起動 | `docker build -f docker/api.Dockerfile` | CI のみ |
 | 配布物の構成一覧 | `pnpm sbom:generate`、`pnpm sbom:verify` | 専用ワークフロー |
