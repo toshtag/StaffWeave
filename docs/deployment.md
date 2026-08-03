@@ -81,6 +81,31 @@ docker builder prune -f              # ビルドの控えを消す（次のビ�
 `pnpm check:policy` は、`docker-compose.yml` と CI が同じ major を使っているかまでを見ます。
 外部のデータベースの版までは見られません。
 
+## 並び（照合順序）
+
+クラスタは、次の指定で初期化します。`db` は `POSTGRES_INITDB_ARGS` でこれを渡します。
+
+```
+--locale-provider=builtin --builtin-locale=C.UTF-8
+--lc-collate=C --lc-ctype=C --encoding=UTF8
+```
+
+並びを OS の libc へ委ねません。libc の照合順序は版によって変わることがあり、
+変わると `text` の索引が黙って狂います。エラーは出ず、`REINDEX` するまで
+検索結果が欠けます。builtin プロバイダは libc から独立していて、
+OS を上げても基盤イメージを変えても並びが変わりません。
+
+既定の並びは符号位置順です。日本語の読み順にはなりません。
+言語順が必要な問い合わせは、その場で明示します。
+
+```sql
+SELECT ... ORDER BY name COLLATE "ja-x-icu";
+```
+
+外部の PostgreSQL へつなぐ場合は、同じ指定で初期化したクラスタを使ってください。
+別の照合順序で作ったクラスタへ dump を復元すると、索引の並びが変わります。
+判断の背景は [decisions/0003-database-collation.md](decisions/0003-database-collation.md) にあります。
+
 ## 複数インスタンス
 
 複数のインスタンスを同時に起動しても構いません。

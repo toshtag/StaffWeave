@@ -38,3 +38,4 @@
 | --- | --- |
 | [0001](0001-mit-license.md) | MIT License を StaffWeave 全体のライセンスとする |
 | [0002](0002-copyright-holder.md) | 著作権表示の名義を権利者の個人名にする |
+| [0003](0003-database-collation.md) | データベースの並びを libc から切り離し、基盤に Debian を使う |

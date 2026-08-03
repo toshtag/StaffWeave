@@ -28,7 +28,10 @@ x-app-environment: &app-environment
 
 services:
   db:
-    image: postgres:18-alpine
+    # alpine ではなく Debian を使う。musl はロケールを実装しておらず、
+    # en_US.utf8 と名乗ったまま C と同じ並びになる。宣言と挙動が食い違う。
+    # 拡張と道具も Debian のほうが揃う。判断は docs/decisions/0003-database-collation.md。
+    image: postgres:18-bookworm
     container_name: staffweave-db
     restart: unless-stopped
     # 資格情報はここへ書かず、.env から与える。
@@ -38,6 +41,14 @@ services:
       POSTGRES_USER: ${DB_USER:-staffweave}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-staffweave}
       POSTGRES_DB: ${DB_NAME:-staffweave}
+      # 並びを OS の libc へ委ねない。builtin プロバイダは libc から独立していて、
+      # OS を上げても並びが変わらない。libc の照合順序は版で変わることがあり、
+      # 変わると text の索引が黙って狂う（REINDEX するまで検索結果が欠ける）。
+      # 言語順が要る問い合わせは COLLATE "ja-x-icu" のように明示する。
+      # CI の service にも同じ値を書く。片方だけ違うと、手元と CI で並びが変わる。
+      POSTGRES_INITDB_ARGS: >-
+        --locale-provider=builtin --builtin-locale=C.UTF-8
+        --lc-collate=C --lc-ctype=C --encoding=UTF8
       # 日跨ぎ勤務の判定は業務日として明示的に計算するため、DB のタイムゾーンは UTC で固定する。
       TZ: UTC
       PGTZ: UTC
