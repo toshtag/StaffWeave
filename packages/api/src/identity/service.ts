@@ -14,7 +14,7 @@ import {
   validatePassword,
 } from '@staffweave/domain';
 import type { AuditRepository } from '../audit/repository.js';
-import { ApiError, invalidRequest, unauthenticated } from '../shared/errors.js';
+import { ApiError, invalidRequest } from '../shared/errors.js';
 import type { StructuredLogger } from '../shared/logger.js';
 import { hashPassword, verifyPassword } from '../shared/security/password.js';
 import { generateToken, hashToken } from '../shared/security/tokens.js';
@@ -402,9 +402,4 @@ export function createIdentityService(deps: IdentityServiceDependencies): Identi
       return revoked;
     },
   };
-}
-
-export function requireContext(context: AuthenticatedContext | null): AuthenticatedContext {
-  if (!context) throw unauthenticated();
-  return context;
 }
