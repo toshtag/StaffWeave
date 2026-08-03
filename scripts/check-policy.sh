@@ -194,6 +194,48 @@ else
   fi
 fi
 
+echo 'ワークフロー'
+# 検証は 3 つのワークフローへ分けている。どれが欠けても、そこにあった検証が黙って消える。
+#
+#   ci.yml       どの変更でも走らせる静的検証
+#   runtime.yml  データベース・ブラウザ・Docker を動かす検証
+#   sbom.yml     配布物の構成一覧
+RUNTIME_WORKFLOW='.github/workflows/runtime.yml'
+for required in .github/workflows/ci.yml "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW"; do
+  if [ -f "$required" ]; then
+    pass "$required があります"
+  else
+    fail "$required がありません"
+  fi
+done
+
+# runtime.yml は push と pull_request で同じ paths を持つ。
+# GitHub Actions は YAML の別名を読まないため一覧を二度書いており、
+# 片方だけを直すと、PR で走った検証が main で走らなくなる。
+if [ -f "$RUNTIME_WORKFLOW" ]; then
+  # `paths:` から、次の同じ深さのキーまでに並ぶ一覧の要素を取り出す。
+  workflow_paths() {
+    awk -v event="  $1:" '
+      $0 == event { inside = 1; next }
+      inside && /^  [^ ]/ { inside = 0 }
+      inside && /^    paths:/ { collecting = 1; next }
+      collecting && /^      - / { sub(/^      - /, ""); print; next }
+      collecting { collecting = 0 }
+    ' "$RUNTIME_WORKFLOW"
+  }
+  PUSH_PATHS=$(workflow_paths push)
+  PR_PATHS=$(workflow_paths pull_request)
+  if [ -z "$PUSH_PATHS" ]; then
+    fail 'runtime.yml の push に paths がありません'
+  elif [ "$PUSH_PATHS" != "$PR_PATHS" ]; then
+    printf '  push のみ: %s\n' "$(printf '%s\n' "$PUSH_PATHS" | grep -vxF "$PR_PATHS" | tr '\n' ' ')"
+    printf '  PR のみ:   %s\n' "$(printf '%s\n' "$PR_PATHS" | grep -vxF "$PUSH_PATHS" | tr '\n' ' ')"
+    fail 'runtime.yml の対象が push と pull_request で食い違っています'
+  else
+    pass "runtime.yml の対象が push と pull_request で揃っています（$(printf '%s\n' "$PUSH_PATHS" | grep -c .) 件）"
+  fi
+fi
+
 echo '依存の版'
 # 実行環境の major は .nvmrc を正本とする。
 NODE_MAJOR=$(sed -n '1s/^v\{0,1\}\([0-9][0-9]*\).*$/\1/p' .nvmrc)
@@ -247,7 +289,7 @@ esac
 # 開発機と CI が別の版で動くと、ローカルで通った SQL が CI では別の版で走る。
 # tag は「版-基盤」の形で書く（`18.4-bookworm`、`18-bookworm`）。
 # latest や bookworm 単独のような動く tag は、版として当てにできない。
-PG_TAGS=$(grep -hoE 'image: postgres:[^ ]+' docker-compose.yml .github/workflows/ci.yml \
+PG_TAGS=$(grep -hoE 'image: postgres:[^ ]+' docker-compose.yml "$RUNTIME_WORKFLOW" \
   | sed 's/^image: postgres://' \
   | sort -u)
 if [ "$(printf '%s\n' "$PG_TAGS" | grep -c .)" -ne 1 ]; then
@@ -274,7 +316,7 @@ initdb_options() {
   ' "$1" | sort -u
 }
 COMPOSE_INITDB=$(initdb_options docker-compose.yml)
-CI_INITDB=$(initdb_options .github/workflows/ci.yml)
+CI_INITDB=$(initdb_options "$RUNTIME_WORKFLOW")
 if [ -z "$COMPOSE_INITDB" ]; then
   fail 'compose が POSTGRES_INITDB_ARGS を指定していません'
 elif [ "$COMPOSE_INITDB" != "$CI_INITDB" ]; then
