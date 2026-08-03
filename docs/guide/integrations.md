@@ -1,9 +1,9 @@
 # 外部連携
 
 API キー、CSV の入出力、Webhook の扱いをまとめます。
-CSV の無害化は [security/csv-output.md](security/csv-output.md)、
-Webhook の署名鍵は [security/webhook-signing.md](security/webhook-signing.md)、
-送信先の方針は [security/webhook-target-policy.md](security/webhook-target-policy.md) を正本とします。
+CSV の無害化は [security/csv-output.md](../security/csv-output.md)、
+Webhook の署名鍵は [security/webhook-signing.md](../security/webhook-signing.md)、
+送信先の方針は [security/webhook-target-policy.md](../security/webhook-target-policy.md) を正本とします。
 
 ## API キー
 
@@ -53,7 +53,7 @@ API キーの「最後に使った時刻」は、要求のたびには書き直�
 | `POST /api/imports/employees` | `organization_code`, `employee_number`, `display_name`, `hired_on`（任意） |
 
 大きな CSV を取り込む場合は、要求本文の上限を確認してください
-（[security/http-hardening.md](security/http-hardening.md)）。
+（[security/http-hardening.md](../security/http-hardening.md)）。
 
 ## Webhook
 
@@ -63,7 +63,7 @@ Webhook は承認・差し戻し・締め・締め解除で送られます。
 
 署名は対称鍵の HMAC-SHA256 です。データベースに保存している値は照合用のハッシュではなく、
 **そのまま正当な署名を作れる鍵**です。データベースとバックアップを機密情報として扱ってください
-（[security/webhook-signing.md](security/webhook-signing.md)）。
+（[security/webhook-signing.md](../security/webhook-signing.md)）。
 
 ### 送信ワーカー
 
@@ -91,7 +91,7 @@ HTTP 要求を出す道具になります。そこで、送信先のアドレス
 この値は API とワーカーの**両方**へ設定します。片方だけ緩めた状態は作れません。
 
 許す宛先の範囲、`http` を認める条件、検査の手順、応答と上限時間の扱いは
-[security/webhook-target-policy.md](security/webhook-target-policy.md) を正本とします。
+[security/webhook-target-policy.md](../security/webhook-target-policy.md) を正本とします。
 ここへは写しません。
 
 送信先を検査していても、受け取り側の認証、署名検証、`eventId` による重複排除は引き続き必要です。

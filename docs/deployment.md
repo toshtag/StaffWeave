@@ -1,7 +1,7 @@
 # Docker での配置
 
 Docker Compose だけで API と画面を動かす場合の手順と、公開するときの設定です。
-手元での開発は [getting-started.md](getting-started.md) を参照してください。
+手元での開発は [getting-started.md](guide/getting-started.md) を参照してください。
 
 ## 起動
 

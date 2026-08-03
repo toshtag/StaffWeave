@@ -4,10 +4,10 @@
 
 | 文書 | 内容 |
 | --- | --- |
-| [features.md](features.md) | 現在の状態と、実際に動作する機能 |
-| [getting-started.md](getting-started.md) | ローカルでの起動、初期化、稼働確認、デモ用データ |
-| [device-agent.md](device-agent.md) | 打刻端末・IC カード・Agent の資格情報の扱い |
-| [integrations.md](integrations.md) | API キー、CSV の入出力、Webhook |
+| [features.md](guide/features.md) | 現在の状態と、実際に動作する機能 |
+| [getting-started.md](guide/getting-started.md) | ローカルでの起動、初期化、稼働確認、デモ用データ |
+| [device-agent.md](guide/device-agent.md) | 打刻端末・IC カード・Agent の資格情報の扱い |
+| [integrations.md](guide/integrations.md) | API キー、CSV の入出力、Webhook |
 
 ## 運用する
 

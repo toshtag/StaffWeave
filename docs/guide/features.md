@@ -50,7 +50,7 @@ StaffWeave が「その時点で実際に動作するもの」を列挙します
 - API キーの作成・一覧・失効の管理画面（日本語・英語）
 - バックアップと復元、デモ用データ
 
-詳細は [integrations.md](integrations.md) と [operations.md](operations.md)。
+詳細は [integrations.md](integrations.md) と [operations.md](../operations.md)。
 
 ## まだ無いもの
 
