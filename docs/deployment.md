@@ -40,31 +40,6 @@ pnpm も入れていません。動かすのに使うのは tsx だけで、間�
 プロジェクト名を前に付けるのは compose の仕事で、キーの側にも書くと
 `staffweave_staffweave-db-data` のように同じ語が重なります。
 
-## 以前の名前からの移行
-
-すでに動かしている場合、ボリュームは `staffweave_staffweave-db-data`、
-ワーカーのコンテナは `staffweave-webhook-worker` の名前で残っています。
-新しい名前へ中身を移してから起動してください。
-
-```sh
-docker compose --profile app down --remove-orphans
-docker volume create staffweave_db_data
-docker run --rm -v staffweave_staffweave-db-data:/from:ro -v staffweave_db_data:/to \
-  alpine sh -c 'cd /from && cp -a . /to/'
-docker compose --profile app up -d
-```
-
-一度 `staffweave-db-data` へ移してある場合は、移し元をその名前に読み替えてください。
-
-移した後も元のボリュームはそのまま残るため、問題があれば戻せます。
-中身を確かめたうえで、使われなくなったものを消してください。
-
-```sh
-docker volume rm staffweave_staffweave-db-data
-docker network rm staffweave_default
-docker image rm staffweave-app
-```
-
 ## 後片付け
 
 コンテナを作り直しても、増えるのは名前を決めた上の 5 種類だけです。
@@ -89,28 +64,16 @@ docker builder prune -f              # ビルドの控えを消す（次のビ�
 
 ## 並び（照合順序）
 
-クラスタは、次の指定で初期化します。`db` は `POSTGRES_INITDB_ARGS` でこれを渡します。
+クラスタは builtin プロバイダの `C.UTF-8` で初期化します。指定そのものは
+`docker-compose.yml` の `POSTGRES_INITDB_ARGS` が正本で、
+そう決めた理由は [decisions/0003-database-collation.md](decisions/0003-database-collation.md) にあります。
 
-```
---locale-provider=builtin --builtin-locale=C.UTF-8
---lc-collate=C --lc-ctype=C --encoding=UTF8
-```
+運用で効いてくるのは次の 2 点です。
 
-並びを OS の libc へ委ねません。libc の照合順序は版によって変わることがあり、
-変わると `text` の索引が黙って狂います。エラーは出ず、`REINDEX` するまで
-検索結果が欠けます。builtin プロバイダは libc から独立していて、
-OS を上げても基盤イメージを変えても並びが変わりません。
-
-既定の並びは符号位置順です。日本語の読み順にはなりません。
-言語順が必要な問い合わせは、その場で明示します。
-
-```sql
-SELECT ... ORDER BY name COLLATE "ja-x-icu";
-```
-
-外部の PostgreSQL へつなぐ場合は、同じ指定で初期化したクラスタを使ってください。
-別の照合順序で作ったクラスタへ dump を復元すると、索引の並びが変わります。
-判断の背景は [decisions/0003-database-collation.md](decisions/0003-database-collation.md) にあります。
+- 既定の並びは符号位置順で、日本語の読み順にはなりません。
+  言語順が必要な問い合わせは `ORDER BY name COLLATE "ja-x-icu"` のように、その場で明示します。
+- 外部の PostgreSQL へつなぐ場合は、同じ指定で初期化したクラスタを使ってください。
+  別の照合順序で作ったクラスタへ dump を復元すると、`text` の索引の並びが変わります。
 
 ## 複数インスタンス
 
