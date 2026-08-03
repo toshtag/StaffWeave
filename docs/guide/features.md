@@ -49,7 +49,7 @@
 - API キーの作成・一覧・失効の管理画面（日本語・英語）
 - バックアップと復元、デモ用データ
 
-詳細は [integrations.md](integrations.md) と [operations.md](../operations/backup.md)。
+詳細は [integrations.md](integrations.md) と [operations/backup.md](../operations/backup.md)。
 
 ## まだ無いもの
 
