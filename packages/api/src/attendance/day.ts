@@ -66,9 +66,6 @@ function fingerprintOf(input: CalculationInput): string {
 }
 
 interface DayContext {
-  history: AttendanceEventRecord[];
-  effectiveEvents: AttendanceEventRecord[];
-  schedule: WorkScheduleRecord | null;
   calculationInput: CalculationInput;
   day: Omit<WorkDay, 'calculation'>;
 }
@@ -113,9 +110,6 @@ async function buildContext(
   const summary = summarizeWorkDay(businessDate, events);
 
   return {
-    history,
-    effectiveEvents,
-    schedule,
     calculationInput: {
       businessDate,
       timeZone,

@@ -21,7 +21,6 @@ const LAST_VERSION_BEFORE_SCOPING = 19;
 interface Organizations {
   workspaceId: string;
   homeId: string;
-  otherId: string;
   homeSiteId: string;
   otherSiteId: string;
 }
@@ -51,7 +50,6 @@ async function createOrganizations(db: Database, slug: string): Promise<Organiza
   return {
     workspaceId,
     homeId,
-    otherId,
     homeSiteId: sites.find((row) => row.organization_id === homeId)?.id ?? '',
     otherSiteId: sites.find((row) => row.organization_id === otherId)?.id ?? '',
   };

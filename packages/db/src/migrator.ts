@@ -19,7 +19,6 @@ export interface AppliedMigration {
   version: number;
   name: string;
   checksum: string;
-  applied_at: Date;
 }
 
 export interface MigrationStatus {
@@ -84,7 +83,7 @@ export async function getMigrationStatus(
   await ensureMigrationTable(db);
   const files = await loadMigrationFiles(directory);
   const applied = await db.query<AppliedMigration>(
-    'SELECT version, name, checksum, applied_at FROM schema_migrations ORDER BY version',
+    'SELECT version, name, checksum FROM schema_migrations ORDER BY version',
   );
   const appliedByVersion = new Map(applied.map((row) => [row.version, row]));
 
