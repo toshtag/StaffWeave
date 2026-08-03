@@ -65,7 +65,7 @@ docker builder prune -f              # ビルドの控えを消す（次のビ�
 
 クラスタは builtin プロバイダの `C.UTF-8` で初期化します。指定そのものは
 `docker-compose.yml` の `POSTGRES_INITDB_ARGS` が正本で、
-そう決めた理由は [decisions/0003-database-collation.md](../decisions/0003-database-collation.md) にあります。
+そう決めた理由は [decisions/0001-database-collation.md](../decisions/0001-database-collation.md) にあります。
 
 運用で効いてくるのは次の 2 点です。
 

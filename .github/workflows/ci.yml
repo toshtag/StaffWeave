@@ -67,7 +67,7 @@ jobs:
           POSTGRES_PASSWORD: staffweave
           POSTGRES_DB: staffweave
           TZ: UTC
-          # compose と同じ並びで作る。値の意味は docs/decisions/0003-database-collation.md。
+          # compose と同じ並びで作る。値の意味は docs/decisions/0001-database-collation.md。
           POSTGRES_INITDB_ARGS: >-
             --locale-provider=builtin --builtin-locale=C.UTF-8
             --lc-collate=C --lc-ctype=C --encoding=UTF8
@@ -118,7 +118,7 @@ jobs:
           POSTGRES_PASSWORD: staffweave
           POSTGRES_DB: staffweave
           TZ: UTC
-          # compose と同じ並びで作る。値の意味は docs/decisions/0003-database-collation.md。
+          # compose と同じ並びで作る。値の意味は docs/decisions/0001-database-collation.md。
           POSTGRES_INITDB_ARGS: >-
             --locale-provider=builtin --builtin-locale=C.UTF-8
             --lc-collate=C --lc-ctype=C --encoding=UTF8
