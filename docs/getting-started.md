@@ -5,7 +5,7 @@ Docker だけで動かす場合は [deployment.md](deployment.md) を参照し�
 
 ## 必要なもの
 
-- Node.js 22.11 以上（`.nvmrc` は 24）
+- Node.js 22.12 以上（`.nvmrc` は 24）
 - pnpm 11
 - Docker（PostgreSQL 用）
 
