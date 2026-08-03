@@ -408,3 +408,25 @@ h3 {
   padding: 0.125rem 0.5rem;
   white-space: nowrap;
 }
+
+/* 作成の直後だけ出す、控えるための領域。閉じるのは利用者が決める。 */
+.issued-secret {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.secret-value {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 0.5rem 0;
+  user-select: all;
+}
+
+.checkbox {
+  align-items: center;
+  display: flex;
+  font-weight: 400;
+  gap: 0.5rem;
+}

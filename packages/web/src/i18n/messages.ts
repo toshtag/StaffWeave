@@ -1,4 +1,4 @@
-import type { DeviceBrowser, DeviceKind, DeviceOs, Locale } from '@staffweave/domain';
+import type { ApiScope, DeviceBrowser, DeviceKind, DeviceOs, Locale } from '@staffweave/domain';
 
 /**
  * 画面に出す文言。
@@ -52,6 +52,31 @@ export interface Messages {
   deviceOs: Record<DeviceOs, string>;
   deviceBrowser: Record<DeviceBrowser, string>;
   deviceKind: Record<DeviceKind, string>;
+  apiKeys: string;
+  apiKeysHint: string;
+  apiKeyName: string;
+  apiKeyPrefix: string;
+  apiKeyScopes: string;
+  apiKeyCreatedAt: string;
+  apiKeyLastUsedAt: string;
+  apiKeyNeverUsed: string;
+  createApiKey: string;
+  creatingApiKey: string;
+  apiKeyCreated: string;
+  apiKeySecretOnce: string;
+  apiKeySecretCopied: string;
+  copySecret: string;
+  dismissSecret: string;
+  revokeApiKey: string;
+  revokingApiKey: string;
+  apiKeyRevoked: string;
+  apiKeyRevokedAt: string;
+  noApiKeys: string;
+  apiKeyCreateFailed: string;
+  apiKeyRevokeFailed: string;
+  selectAtLeastOneScope: string;
+  /** スコープの説明。契約に現れる値を画面の言語で書き直す。 */
+  apiScope: Record<ApiScope, string>;
   today: string;
   clockIn: string;
   clockOut: string;
@@ -201,6 +226,35 @@ const ja: Messages = {
     desktop: 'パソコン',
     mobile: 'スマートフォン',
     tablet: 'タブレット',
+  },
+  apiKeys: 'API キー',
+  apiKeysHint: '外部連携へ渡す鍵です。鍵の値は作成した直後の一度しか表示されません。',
+  apiKeyName: '名前',
+  apiKeyPrefix: '先頭 8 文字',
+  apiKeyScopes: '許す範囲',
+  apiKeyCreatedAt: '作成日時',
+  apiKeyLastUsedAt: '最終利用',
+  apiKeyNeverUsed: '未使用',
+  createApiKey: 'API キーを作る',
+  creatingApiKey: '作成しています…',
+  apiKeyCreated: 'API キーを作成しました',
+  apiKeySecretOnce: 'この値は今だけ表示されます。控えてから閉じてください。',
+  apiKeySecretCopied: '控えました',
+  copySecret: '鍵をコピーする',
+  dismissSecret: '控えたので閉じる',
+  revokeApiKey: '失効させる',
+  revokingApiKey: '失効させています…',
+  apiKeyRevoked: '失効済み',
+  apiKeyRevokedAt: '失効日時',
+  noApiKeys: 'API キーはまだありません。',
+  apiKeyCreateFailed: 'API キーを作成できませんでした',
+  apiKeyRevokeFailed: 'API キーを失効させられませんでした',
+  selectAtLeastOneScope: '許す範囲を 1 つ以上選んでください',
+  apiScope: {
+    'attendance:read': '勤怠と集計の読み取り',
+    'attendance:write': '打刻の記録',
+    'payroll:read': '給与連携向けの出力',
+    'organization:read': '組織・従業員の読み取り',
   },
   today: '本日の勤怠',
   clockIn: '出勤',
@@ -361,6 +415,36 @@ const en: Messages = {
     desktop: 'Computer',
     mobile: 'Phone',
     tablet: 'Tablet',
+  },
+  apiKeys: 'API keys',
+  apiKeysHint:
+    'Keys handed to external integrations. A key value is shown only once, right after it is created.',
+  apiKeyName: 'Name',
+  apiKeyPrefix: 'First 8 characters',
+  apiKeyScopes: 'Allowed scope',
+  apiKeyCreatedAt: 'Created at',
+  apiKeyLastUsedAt: 'Last used',
+  apiKeyNeverUsed: 'Never used',
+  createApiKey: 'Create API key',
+  creatingApiKey: 'Creating…',
+  apiKeyCreated: 'API key created',
+  apiKeySecretOnce: 'This value is shown only now. Copy it before closing.',
+  apiKeySecretCopied: 'Copied',
+  copySecret: 'Copy key',
+  dismissSecret: 'I have copied it — close',
+  revokeApiKey: 'Revoke',
+  revokingApiKey: 'Revoking…',
+  apiKeyRevoked: 'Revoked',
+  apiKeyRevokedAt: 'Revoked at',
+  noApiKeys: 'No API keys yet.',
+  apiKeyCreateFailed: 'Could not create the API key',
+  apiKeyRevokeFailed: 'Could not revoke the API key',
+  selectAtLeastOneScope: 'Select at least one scope',
+  apiScope: {
+    'attendance:read': 'Read attendance and totals',
+    'attendance:write': 'Record punches',
+    'payroll:read': 'Payroll export',
+    'organization:read': 'Read organizations and employees',
   },
   today: "Today's attendance",
   clockIn: 'Clock in',
