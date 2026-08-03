@@ -39,9 +39,14 @@ services:
           'CMD-SHELL',
           'pg_isready -U "${DB_USER:-staffweave}" -d "${DB_NAME:-staffweave}"',
         ]
-      interval: 5s
+      # 起動の直後だけ 1 秒ごとに確かめる。準備できた時点ですぐ次へ進むため、
+      # app が待つ時間が interval の分だけ伸びない。
+      start_period: 30s
+      start_interval: 1s
+      # 準備できた後は間隔を空ける。落ちていないことを毎秒確かめる理由がない。
+      interval: 30s
       timeout: 3s
-      retries: 20
+      retries: 3
 
   # アプリケーション本体。`docker compose --profile app up -d` で起動する。
   # 開発中は pnpm dev を使い、この定義はセルフホストの確認と CI のビルド検査に使う。
