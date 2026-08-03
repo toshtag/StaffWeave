@@ -55,8 +55,7 @@ docker builder prune -f              # ビルドの控えを消す（次のビ�
 ## データベースの版
 
 `docker compose` が起動する `db` が、動作を確かめている構成です。
-版はここに書かず、`docker-compose.yml` の `db` を正本とします。
-二か所へ書くと、必ず片方が古くなります。
+使っている版は `docker-compose.yml` の `db` を見てください。
 
 外部の PostgreSQL へつなぐ場合は、`db` と同じ major に合わせてください。
 `pnpm check:policy` は、`docker-compose.yml` と CI が同じ major を使っているかまでを見ます。
