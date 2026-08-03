@@ -123,15 +123,15 @@ check_scope_exception "$HISTORICAL_SCOPE_FILE" 1 '歴史的な旧説明は 0012 
 check_scope_exception "$CONTRACT_TEST_FILE" 4 '契約テストが列挙する旧表現は 4 件のままです'
 
 echo 'ライセンス'
-# ライセンスは法的な表示、README、決定の記録の 3 か所に現れる。
-# どれか 1 つだけが変わった状態を作れないようにする。
+# ライセンスは LICENSE と README の 2 か所に現れる。
+# 片方だけが変わった状態を作れないようにする。
 if grep -q 'MIT License' LICENSE; then
   pass 'LICENSE が MIT License です'
 else
   fail 'LICENSE が MIT License ではありません'
 fi
 
-# 名義は決定 0002 で実在の権利者へ改めた。いない集団を指す形へ戻ると、
+# 名義は実在の権利者にする。いない集団（`staffweave contributors` など）を指す形だと、
 # 再配布を受け取った側が、誰の許諾で使っているのかを辿れなくなる。
 if grep -qE '^Copyright \(c\) [0-9]{4} Pocket \(@toshtag\)$' LICENSE; then
   pass 'LICENSE の著作権表示が権利者の名義です'
@@ -144,13 +144,6 @@ if grep -q 'MIT License' README.md; then
   pass 'README がライセンスを MIT License として示しています'
 else
   fail 'README のライセンス表記が MIT License ではありません'
-fi
-
-LICENSE_DECISION='docs/decisions/0001-mit-license.md'
-if [ -f "$LICENSE_DECISION" ]; then
-  pass 'ライセンスの決定が記録されています'
-else
-  fail "ライセンスの決定の記録がありません: $LICENSE_DECISION"
 fi
 
 # 判断待ちの表現が残っていれば、決定と文書が食い違っている。

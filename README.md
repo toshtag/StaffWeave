@@ -22,5 +22,3 @@ PC のログイン・ログオフの記録も取り込めますが、これで�
 ## ライセンス
 
 MIT License です（[LICENSE](LICENSE)）。リポジトリの中身はすべて含みます。
-選んだ理由と、見直すとしたらどんなときかは
-[decisions/0001](docs/decisions/0001-mit-license.md) にあります。
