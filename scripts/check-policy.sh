@@ -240,17 +240,18 @@ case "$TYPES_NODE" in
     ;;
 esac
 
-# 開発機と CI が別の major で動くと、ローカルで通った SQL が CI では別の版で走る。
-# tag は必ず major を含む形で書く。latest のような動く tag は、版として当てにできない。
+# 開発機と CI が別の版で動くと、ローカルで通った SQL が CI では別の版で走る。
+# tag は「版-基盤」の形で書く（`18.4-bookworm`、`18-bookworm`）。
+# latest や bookworm 単独のような動く tag は、版として当てにできない。
 PG_TAGS=$(grep -hoE 'image: postgres:[^ ]+' docker-compose.yml .github/workflows/ci.yml \
   | sed 's/^image: postgres://' \
   | sort -u)
 if [ "$(printf '%s\n' "$PG_TAGS" | grep -c .)" -ne 1 ]; then
   printf '  postgres: %s\n' "$(printf '%s ' $PG_TAGS)"
   fail 'PostgreSQL の版が compose と CI で食い違っています'
-elif ! printf '%s' "$PG_TAGS" | grep -qE '^[0-9]+-[a-z][a-z0-9]*$'; then
+elif ! printf '%s' "$PG_TAGS" | grep -qE '^[0-9]+(\.[0-9]+)?-[a-z][a-z0-9]*$'; then
   printf '  postgres: %s\n' "$PG_TAGS"
-  fail 'PostgreSQL の tag が「major-基盤」の形になっていません'
+  fail 'PostgreSQL の tag が「版-基盤」の形になっていません'
 else
   pass "PostgreSQL の版が compose と CI で揃っています（$PG_TAGS）"
 fi
@@ -286,7 +287,7 @@ fi
 # 18 以降の公式イメージは、データを major ごとの下位ディレクトリへ置く。
 # /var/lib/postgresql/data を結び付けたままにすると、使われない場所を渡して起動しなくなる。
 # image の tag だけを上げて結び付けを直し忘れる形が、この検査の対象。
-PG_MAJOR=$(printf '%s\n' "$PG_TAGS" | head -1 | sed 's/-.*$//')
+PG_MAJOR=$(printf '%s\n' "$PG_TAGS" | head -1 | sed 's/[.-].*$//')
 if ! printf '%s' "$PG_MAJOR" | grep -qE '^[0-9]+$'; then
   fail 'compose から PostgreSQL の major を読めません'
 elif [ "$PG_MAJOR" -ge 18 ] && grep -q ':/var/lib/postgresql/data$' docker-compose.yml; then
