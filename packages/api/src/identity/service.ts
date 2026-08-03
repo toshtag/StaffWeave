@@ -205,7 +205,7 @@ export function createIdentityService(deps: IdentityServiceDependencies): Identi
       const slug = input.workspaceSlug ?? deps.defaultWorkspaceSlug;
       const email = normalizeEmail(input.email);
       // 利用者が実在するかに関わらず同じ鍵で数える。数え方から登録の有無を漏らさない。
-      const accountKey = `${slug} ${email}`;
+      const accountKey = `${slug}\u0000${email}`;
       const current = now();
 
       // 断っている相手には、照合そのものを行わない。
