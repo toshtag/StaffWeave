@@ -18,6 +18,16 @@ docker compose exec app pnpm bootstrap --email admin@example.com
 実行用のイメージには、動かすのに必要なものだけが入ります。
 開発用の依存とテストは含まれません。プロセスは非 root（`node`）で動きます。
 
+## データベースの版
+
+`docker compose` が起動する `db` が、動作を確かめている構成です。
+版はここに書かず、`docker-compose.yml` の `db` を正本とします。
+二か所へ書くと、必ず片方が古くなります。
+
+外部の PostgreSQL へつなぐ場合は、`db` と同じ major に合わせてください。
+`pnpm check:policy` は、`docker-compose.yml` と CI が同じ major を使っているかまでを見ます。
+外部のデータベースの版までは見られません。
+
 ## 複数インスタンス
 
 複数のインスタンスを同時に起動しても構いません。
