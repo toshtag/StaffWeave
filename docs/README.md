@@ -36,7 +36,7 @@
 | [security/webhook-signing.md](security/webhook-signing.md) | Webhook 署名鍵の保存と検証手順 |
 | [security/card-fingerprint-key.md](security/card-fingerprint-key.md) | IC カード指紋鍵の設定と Workspace ごとの分離 |
 | [security/csv-output.md](security/csv-output.md) | CSV 出力の無害化と、取り込み側から見える差 |
-| [security/employee-data-access-matrix.md](security/employee-data-access-matrix.md) | 従業員データの閲覧範囲 |
+| [security/employee-data-access.md](security/employee-data-access.md) | 従業員データの閲覧範囲 |
 | [security/sbom.md](security/sbom.md) | 配布物の構成一覧（SBOM）の対象と読み方 |
 
 ## 記録
