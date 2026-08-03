@@ -35,8 +35,8 @@ import type {
   WorkPattern,
   WorkScheduleList,
 } from '@staffweave/contracts';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { testDatabase } from '../../../../test/integration-setup.js';
+import { describe, expect, it } from 'vitest';
+import { testDatabase, useSharedData } from '../../../../test/integration-setup.js';
 import {
   authorized,
   createEmployeeWithAccount,
@@ -423,16 +423,16 @@ function csvEmployeeNumbers(csv: string): string[] {
 }
 
 describe('従業員データの閲覧範囲', () => {
-  let fixture: Fixture;
-
-  beforeEach(async () => {
-    fixture = await setUp();
-    await prepareData(fixture);
+  // ここから下は読み取りだけを行うため、準備を 1 度だけ作って使い回す。
+  const fixture = useSharedData(async () => {
+    const built = await setUp();
+    await prepareData(built);
+    return built;
   });
 
   describe('ワークスペース管理者', () => {
     it('従業員一覧に両方の組織の従業員が現れる', async () => {
-      const response = await app().request('/api/employees', authorized(fixture.adminCookie));
+      const response = await app().request('/api/employees', authorized(fixture().adminCookie));
       expect(employeeNumbersOf((await response.json()) as EmployeeList)).toEqual([
         'E001',
         'E002',
@@ -443,7 +443,7 @@ describe('従業員データの閲覧範囲', () => {
     it('勤怠 CSV に両方の組織の従業員が含まれる', async () => {
       const response = await app().request(
         `/api/exports/attendance.csv?${RANGE}`,
-        authorized(fixture.adminCookie),
+        authorized(fixture().adminCookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual(['E001', 'E002', 'E003']);
     });
@@ -451,7 +451,7 @@ describe('従業員データの閲覧範囲', () => {
     it('給与 CSV に両方の組織の従業員が含まれる', async () => {
       const response = await app().request(
         `/api/exports/payroll.csv?period=${PERIOD}`,
-        authorized(fixture.adminCookie),
+        authorized(fixture().adminCookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual(['E001', 'E002', 'E003']);
     });
@@ -459,62 +459,62 @@ describe('従業員データの閲覧範囲', () => {
     it('配属の一覧に両方の配属が現れる', async () => {
       const response = await app().request(
         '/api/employee-assignments',
-        authorized(fixture.adminCookie),
+        authorized(fixture().adminCookie),
       );
       const body = (await response.json()) as EmployeeAssignmentList;
       expect(body.assignments.map((assignment) => assignment.employeeId).sort()).toEqual(
-        [fixture.employeeAId, fixture.employeeBId].sort(),
+        [fixture().employeeAId, fixture().employeeBId].sort(),
       );
     });
 
     it('IC カードの資格情報に全員分が現れる', async () => {
       const response = await app().request(
         '/api/card-credentials',
-        authorized(fixture.adminCookie),
+        authorized(fixture().adminCookie),
       );
       const body = (await response.json()) as CardCredentialList;
       expect(body.cardCredentials.map((credential) => credential.employeeId).sort()).toEqual(
-        [fixture.employeeAId, fixture.employeeBId, fixture.employeeCId].sort(),
+        [fixture().employeeAId, fixture().employeeBId, fixture().employeeCId].sort(),
       );
     });
   });
 
   describe('組織 A の管理者', () => {
     it('従業員一覧に組織 A の従業員だけが現れる', async () => {
-      const response = await app().request('/api/employees', authorized(fixture.managerACookie));
+      const response = await app().request('/api/employees', authorized(fixture().managerACookie));
       expect(employeeNumbersOf((await response.json()) as EmployeeList)).toEqual(['E001']);
     });
 
     it('日次申請の一覧に組織 B の従業員が現れない', async () => {
       const response = await app().request(
         `/api/attendance/requests?${RANGE}`,
-        authorized(fixture.managerACookie),
+        authorized(fixture().managerACookie),
       );
       const body = (await response.json()) as DailyRequestList;
-      expect(body.requests.map((request) => request.employeeId)).toEqual([fixture.employeeAId]);
+      expect(body.requests.map((request) => request.employeeId)).toEqual([fixture().employeeAId]);
     });
 
     it('月次締めの一覧に組織 B の従業員が現れない', async () => {
       const response = await app().request(
         `/api/monthly-closings?${CLOSING_RANGE}`,
-        authorized(fixture.managerACookie),
+        authorized(fixture().managerACookie),
       );
       const body = (await response.json()) as MonthlyClosingList;
-      expect(body.closings.map((closing) => closing.employeeId)).toEqual([fixture.employeeAId]);
+      expect(body.closings.map((closing) => closing.employeeId)).toEqual([fixture().employeeAId]);
     });
 
     it('組織 B の従業員の勤務予定は取得できない', async () => {
       const response = await app().request(
-        `/api/work-schedules?employeeId=${fixture.employeeBId}&${RANGE}`,
-        authorized(fixture.managerACookie),
+        `/api/work-schedules?employeeId=${fixture().employeeBId}&${RANGE}`,
+        authorized(fixture().managerACookie),
       );
       expect(response.status).toBe(403);
     });
 
     it('組織 A の従業員の勤務予定は取得できる', async () => {
       const response = await app().request(
-        `/api/work-schedules?employeeId=${fixture.employeeAId}&${RANGE}`,
-        authorized(fixture.managerACookie),
+        `/api/work-schedules?employeeId=${fixture().employeeAId}&${RANGE}`,
+        authorized(fixture().managerACookie),
       );
       expect(response.status).toBe(200);
       expect(((await response.json()) as WorkScheduleList).workSchedules).not.toHaveLength(0);
@@ -522,16 +522,16 @@ describe('従業員データの閲覧範囲', () => {
 
     it('組織 B の従業員の勤務周期割当は取得できない', async () => {
       const response = await app().request(
-        `/api/employee-work-cycles?employeeId=${fixture.employeeBId}`,
-        authorized(fixture.managerACookie),
+        `/api/employee-work-cycles?employeeId=${fixture().employeeBId}`,
+        authorized(fixture().managerACookie),
       );
       expect(response.status).toBe(403);
     });
 
     it('組織 A の従業員の勤務周期割当は取得できる', async () => {
       const response = await app().request(
-        `/api/employee-work-cycles?employeeId=${fixture.employeeAId}`,
-        authorized(fixture.managerACookie),
+        `/api/employee-work-cycles?employeeId=${fixture().employeeAId}`,
+        authorized(fixture().managerACookie),
       );
       expect(response.status).toBe(200);
       expect(((await response.json()) as EmployeeWorkCycleList).assignments).not.toHaveLength(0);
@@ -540,18 +540,18 @@ describe('従業員データの閲覧範囲', () => {
     it('PC の利用記録の一覧に組織 B の従業員が現れない', async () => {
       const response = await app().request(
         `/api/session-observations?${RANGE}`,
-        authorized(fixture.managerACookie),
+        authorized(fixture().managerACookie),
       );
       const body = (await response.json()) as SessionObservationList;
       expect(body.observations.map((observation) => observation.employeeId)).toEqual([
-        fixture.employeeAId,
+        fixture().employeeAId,
       ]);
     });
 
     it('組織 B の従業員の乖離は取得できない', async () => {
       const response = await app().request(
-        `/api/attendance/days/${BUSINESS_DATE}/discrepancies?employeeId=${fixture.employeeBId}`,
-        authorized(fixture.managerACookie),
+        `/api/attendance/days/${BUSINESS_DATE}/discrepancies?employeeId=${fixture().employeeBId}`,
+        authorized(fixture().managerACookie),
       );
       expect(response.status).toBe(403);
     });
@@ -559,7 +559,7 @@ describe('従業員データの閲覧範囲', () => {
     it('異常の一覧に組織 B の従業員が現れない', async () => {
       const response = await app().request(
         `/api/audit/anomalies?${RANGE}`,
-        authorized(fixture.managerACookie),
+        authorized(fixture().managerACookie),
       );
       const body = (await response.json()) as AnomalyList;
       const employeeIds = new Set(
@@ -567,37 +567,37 @@ describe('従業員データの閲覧範囲', () => {
           .map((anomaly) => anomaly.employeeId)
           .filter((value): value is string => value !== null),
       );
-      expect([...employeeIds]).toEqual([fixture.employeeAId]);
+      expect([...employeeIds]).toEqual([fixture().employeeAId]);
     });
 
     it('配属の一覧が組織 A の従業員の分だけになる', async () => {
       const response = await app().request(
         '/api/employee-assignments',
-        authorized(fixture.managerACookie),
+        authorized(fixture().managerACookie),
       );
       const body = (await response.json()) as EmployeeAssignmentList;
       // 「B が無い」だけでなく「A がある」ことも確かめる。
       // 空配列でも通る検証にすると、絞り込みを外しても気付けない。
       expect(body.assignments.map((assignment) => assignment.employeeId)).toEqual([
-        fixture.employeeAId,
+        fixture().employeeAId,
       ]);
     });
 
     it('IC カードの資格情報が組織 A の従業員の分だけになる', async () => {
       const response = await app().request(
         '/api/card-credentials',
-        authorized(fixture.managerACookie),
+        authorized(fixture().managerACookie),
       );
       const body = (await response.json()) as CardCredentialList;
       expect(body.cardCredentials.map((credential) => credential.employeeId)).toEqual([
-        fixture.employeeAId,
+        fixture().employeeAId,
       ]);
     });
 
     it('勤怠 CSV に組織 B の従業員が含まれない', async () => {
       const response = await app().request(
         `/api/exports/attendance.csv?${RANGE}`,
-        authorized(fixture.managerACookie),
+        authorized(fixture().managerACookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual(['E001']);
     });
@@ -605,7 +605,7 @@ describe('従業員データの閲覧範囲', () => {
     it('給与 CSV に組織 B の従業員が含まれない', async () => {
       const response = await app().request(
         `/api/exports/payroll.csv?period=${PERIOD}`,
-        authorized(fixture.managerACookie),
+        authorized(fixture().managerACookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual(['E001']);
     });
@@ -615,7 +615,7 @@ describe('従業員データの閲覧範囲', () => {
     it('従業員一覧が空になる', async () => {
       const response = await app().request(
         '/api/employees',
-        authorized(fixture.unscopedManagerCookie),
+        authorized(fixture().unscopedManagerCookie),
       );
       expect(employeeNumbersOf((await response.json()) as EmployeeList)).toEqual([]);
     });
@@ -623,7 +623,7 @@ describe('従業員データの閲覧範囲', () => {
     it('日次申請の一覧が空になる', async () => {
       const response = await app().request(
         `/api/attendance/requests?${RANGE}`,
-        authorized(fixture.unscopedManagerCookie),
+        authorized(fixture().unscopedManagerCookie),
       );
       expect(((await response.json()) as DailyRequestList).requests).toEqual([]);
     });
@@ -631,7 +631,7 @@ describe('従業員データの閲覧範囲', () => {
     it('月次締めの一覧が空になる', async () => {
       const response = await app().request(
         `/api/monthly-closings?${CLOSING_RANGE}`,
-        authorized(fixture.unscopedManagerCookie),
+        authorized(fixture().unscopedManagerCookie),
       );
       expect(((await response.json()) as MonthlyClosingList).closings).toEqual([]);
     });
@@ -639,23 +639,23 @@ describe('従業員データの閲覧範囲', () => {
     it('PC の利用記録の一覧が空になる', async () => {
       const response = await app().request(
         `/api/session-observations?${RANGE}`,
-        authorized(fixture.unscopedManagerCookie),
+        authorized(fixture().unscopedManagerCookie),
       );
       expect(((await response.json()) as SessionObservationList).observations).toEqual([]);
     });
 
     it('他の従業員の勤務予定は取得できない', async () => {
       const response = await app().request(
-        `/api/work-schedules?employeeId=${fixture.employeeAId}&${RANGE}`,
-        authorized(fixture.unscopedManagerCookie),
+        `/api/work-schedules?employeeId=${fixture().employeeAId}&${RANGE}`,
+        authorized(fixture().unscopedManagerCookie),
       );
       expect(response.status).toBe(403);
     });
 
     it('他の従業員の乖離は取得できない', async () => {
       const response = await app().request(
-        `/api/attendance/days/${BUSINESS_DATE}/discrepancies?employeeId=${fixture.employeeAId}`,
-        authorized(fixture.unscopedManagerCookie),
+        `/api/attendance/days/${BUSINESS_DATE}/discrepancies?employeeId=${fixture().employeeAId}`,
+        authorized(fixture().unscopedManagerCookie),
       );
       expect(response.status).toBe(403);
     });
@@ -663,7 +663,7 @@ describe('従業員データの閲覧範囲', () => {
     it('異常の一覧に従業員の行が現れない', async () => {
       const response = await app().request(
         `/api/audit/anomalies?${RANGE}`,
-        authorized(fixture.unscopedManagerCookie),
+        authorized(fixture().unscopedManagerCookie),
       );
       const body = (await response.json()) as AnomalyList;
       expect(body.anomalies.filter((anomaly) => anomaly.employeeId !== null)).toEqual([]);
@@ -672,7 +672,7 @@ describe('従業員データの閲覧範囲', () => {
     it('勤怠 CSV が全件にならない', async () => {
       const response = await app().request(
         `/api/exports/attendance.csv?${RANGE}`,
-        authorized(fixture.unscopedManagerCookie),
+        authorized(fixture().unscopedManagerCookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual([]);
     });
@@ -680,7 +680,7 @@ describe('従業員データの閲覧範囲', () => {
     it('給与 CSV が全件にならない', async () => {
       const response = await app().request(
         `/api/exports/payroll.csv?period=${PERIOD}`,
-        authorized(fixture.unscopedManagerCookie),
+        authorized(fixture().unscopedManagerCookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual([]);
     });
@@ -688,7 +688,7 @@ describe('従業員データの閲覧範囲', () => {
     it('他人の IC カードの資格情報は見えない', async () => {
       const response = await app().request(
         '/api/card-credentials',
-        authorized(fixture.unscopedManagerCookie),
+        authorized(fixture().unscopedManagerCookie),
       );
       const body = (await response.json()) as CardCredentialList;
       expect(body.cardCredentials).toEqual([]);
@@ -697,18 +697,18 @@ describe('従業員データの閲覧範囲', () => {
     it('自分自身の IC カードの資格情報だけは見られる', async () => {
       const response = await app().request(
         '/api/card-credentials',
-        authorized(fixture.unscopedManagerWithEmployeeCookie),
+        authorized(fixture().unscopedManagerWithEmployeeCookie),
       );
       const body = (await response.json()) as CardCredentialList;
       expect(body.cardCredentials.map((credential) => credential.employeeId)).toEqual([
-        fixture.employeeCId,
+        fixture().employeeCId,
       ]);
     });
 
     it('勤怠 CSV が自分の行だけになる', async () => {
       const response = await app().request(
         `/api/exports/attendance.csv?${RANGE}`,
-        authorized(fixture.unscopedManagerWithEmployeeCookie),
+        authorized(fixture().unscopedManagerWithEmployeeCookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual(['E003']);
     });
@@ -716,7 +716,7 @@ describe('従業員データの閲覧範囲', () => {
     it('給与 CSV が自分の行だけになる', async () => {
       const response = await app().request(
         `/api/exports/payroll.csv?period=${PERIOD}`,
-        authorized(fixture.unscopedManagerWithEmployeeCookie),
+        authorized(fixture().unscopedManagerWithEmployeeCookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual(['E003']);
     });
@@ -724,15 +724,15 @@ describe('従業員データの閲覧範囲', () => {
     it('自分自身に従業員が紐づいていれば自分のデータだけを見られる', async () => {
       const response = await app().request(
         '/api/employees',
-        authorized(fixture.unscopedManagerWithEmployeeCookie),
+        authorized(fixture().unscopedManagerWithEmployeeCookie),
       );
       expect(employeeNumbersOf((await response.json()) as EmployeeList)).toEqual(['E003']);
     });
 
     it('自分自身の勤務予定は取得できる', async () => {
       const response = await app().request(
-        `/api/work-schedules?employeeId=${fixture.employeeCId}&${RANGE}`,
-        authorized(fixture.unscopedManagerWithEmployeeCookie),
+        `/api/work-schedules?employeeId=${fixture().employeeCId}&${RANGE}`,
+        authorized(fixture().unscopedManagerWithEmployeeCookie),
       );
       expect(response.status).toBe(200);
     });
@@ -743,14 +743,14 @@ describe('従業員データの閲覧範囲', () => {
   // 両者が食い違うと、画面で隠した相手が CSV から読めてしまう。
   describe('受入組織 H の管理者', () => {
     it('従業員一覧に配属された従業員が現れる', async () => {
-      const response = await app().request('/api/employees', authorized(fixture.managerHCookie));
+      const response = await app().request('/api/employees', authorized(fixture().managerHCookie));
       expect(employeeNumbersOf((await response.json()) as EmployeeList)).toEqual(['E002']);
     });
 
     it('勤怠 CSV に配属された従業員が含まれ、無関係な従業員は含まれない', async () => {
       const response = await app().request(
         `/api/exports/attendance.csv?${RANGE}`,
-        authorized(fixture.managerHCookie),
+        authorized(fixture().managerHCookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual(['E002']);
     });
@@ -758,23 +758,23 @@ describe('従業員データの閲覧範囲', () => {
     it('給与 CSV に配属された従業員が含まれ、無関係な従業員は含まれない', async () => {
       const response = await app().request(
         `/api/exports/payroll.csv?period=${PERIOD}`,
-        authorized(fixture.managerHCookie),
+        authorized(fixture().managerHCookie),
       );
       expect(csvEmployeeNumbers(await response.text())).toEqual(['E002']);
     });
 
     it('雇用元が無関係な従業員の勤務予定は取得できない', async () => {
       const response = await app().request(
-        `/api/work-schedules?employeeId=${fixture.employeeAId}&${RANGE}`,
-        authorized(fixture.managerHCookie),
+        `/api/work-schedules?employeeId=${fixture().employeeAId}&${RANGE}`,
+        authorized(fixture().managerHCookie),
       );
       expect(response.status).toBe(403);
     });
 
     it('配属された従業員の勤務予定は取得できる', async () => {
       const response = await app().request(
-        `/api/work-schedules?employeeId=${fixture.employeeBId}&${RANGE}`,
-        authorized(fixture.managerHCookie),
+        `/api/work-schedules?employeeId=${fixture().employeeBId}&${RANGE}`,
+        authorized(fixture().managerHCookie),
       );
       expect(response.status).toBe(200);
     });
@@ -783,37 +783,37 @@ describe('従業員データの閲覧範囲', () => {
   describe('一般従業員', () => {
     it('他の従業員を指定した勤務予定は 403 になる', async () => {
       const response = await app().request(
-        `/api/work-schedules?employeeId=${fixture.employeeBId}&${RANGE}`,
-        authorized(fixture.employeeACookie),
+        `/api/work-schedules?employeeId=${fixture().employeeBId}&${RANGE}`,
+        authorized(fixture().employeeACookie),
       );
       expect(response.status).toBe(403);
     });
 
     it('他の従業員を指定した勤務周期割当は 403 になる', async () => {
       const response = await app().request(
-        `/api/employee-work-cycles?employeeId=${fixture.employeeBId}`,
-        authorized(fixture.employeeACookie),
+        `/api/employee-work-cycles?employeeId=${fixture().employeeBId}`,
+        authorized(fixture().employeeACookie),
       );
       expect(response.status).toBe(403);
     });
 
     it('他の従業員を指定した乖離は 403 になる', async () => {
       const response = await app().request(
-        `/api/attendance/days/${BUSINESS_DATE}/discrepancies?employeeId=${fixture.employeeBId}`,
-        authorized(fixture.employeeACookie),
+        `/api/attendance/days/${BUSINESS_DATE}/discrepancies?employeeId=${fixture().employeeBId}`,
+        authorized(fixture().employeeACookie),
       );
       expect(response.status).toBe(403);
     });
 
     it('従業員一覧は閲覧できない', async () => {
-      const response = await app().request('/api/employees', authorized(fixture.employeeACookie));
+      const response = await app().request('/api/employees', authorized(fixture().employeeACookie));
       expect(response.status).toBe(403);
     });
 
     it('勤怠 CSV は閲覧できない', async () => {
       const response = await app().request(
         `/api/exports/attendance.csv?${RANGE}`,
-        authorized(fixture.employeeACookie),
+        authorized(fixture().employeeACookie),
       );
       expect(response.status).toBe(403);
     });
@@ -821,7 +821,7 @@ describe('従業員データの閲覧範囲', () => {
     it('IC カードの資格情報の一覧は閲覧できない', async () => {
       const response = await app().request(
         '/api/card-credentials',
-        authorized(fixture.employeeACookie),
+        authorized(fixture().employeeACookie),
       );
       expect(response.status).toBe(403);
     });
@@ -829,21 +829,21 @@ describe('従業員データの閲覧範囲', () => {
     it('自分の PC の利用記録だけを見られる', async () => {
       const response = await app().request(
         `/api/session-observations?${RANGE}`,
-        authorized(fixture.employeeACookie),
+        authorized(fixture().employeeACookie),
       );
       const body = (await response.json()) as SessionObservationList;
       expect(body.observations.map((observation) => observation.employeeId)).toEqual([
-        fixture.employeeAId,
+        fixture().employeeAId,
       ]);
     });
 
     it('自分の日次申請だけを見られる', async () => {
       const response = await app().request(
         `/api/attendance/requests?${RANGE}`,
-        authorized(fixture.employeeACookie),
+        authorized(fixture().employeeACookie),
       );
       const body = (await response.json()) as DailyRequestList;
-      expect(body.requests.map((request) => request.employeeId)).toEqual([fixture.employeeAId]);
+      expect(body.requests.map((request) => request.employeeId)).toEqual([fixture().employeeAId]);
     });
   });
 });
@@ -915,9 +915,8 @@ describe('配属の期間と閲覧範囲', () => {
     );
   }
 
-  let fixture: PeriodFixture;
-
-  beforeEach(async () => {
+  // ここから下は読み取りだけを行うため、準備を 1 度だけ作って使い回す。
+  const fixture = useSharedData(async (): Promise<PeriodFixture> => {
     const db = testDatabase();
     const workspaceId = await createWorkspace(db, { slug: 'default' });
     const employerId = await createOrganization(db, workspaceId, { code: 'EMPLOYER' });
@@ -992,7 +991,7 @@ describe('配属の期間と閲覧範囲', () => {
       }
     }
 
-    fixture = {
+    return {
       adminCookie,
       managerHCookie: await loginAndGetCookie(instance, {
         email: 'manager-h@example.com',
@@ -1003,7 +1002,7 @@ describe('配属の期間と閲覧範囲', () => {
   it('従業員一覧には、いま配属されている従業員だけが現れる', async () => {
     const response = await app({ now: `${WORK_DATE}T09:00:00.000Z` }).request(
       '/api/employees',
-      authorized(fixture.managerHCookie),
+      authorized(fixture().managerHCookie),
     );
 
     expect(employeeNumbersOf((await response.json()) as EmployeeList)).toEqual(['E002']);
@@ -1012,7 +1011,7 @@ describe('配属の期間と閲覧範囲', () => {
   it('勤怠 CSV には、その日に配属されていた従業員だけが現れる', async () => {
     const response = await app({ now: `${WORK_DATE}T09:00:00.000Z` }).request(
       `/api/exports/attendance.csv?from=${WORK_DATE}&to=${WORK_DATE}`,
-      authorized(fixture.managerHCookie),
+      authorized(fixture().managerHCookie),
     );
 
     expect(csvEmployeeNumbers(await response.text())).toEqual(['E002']);
@@ -1021,7 +1020,7 @@ describe('配属の期間と閲覧範囲', () => {
   it('給与 CSV には、その月に配属されていた従業員だけが現れる', async () => {
     const response = await app({ now: `${WORK_DATE}T09:00:00.000Z` }).request(
       '/api/exports/payroll.csv?period=2026-04-01',
-      authorized(fixture.managerHCookie),
+      authorized(fixture().managerHCookie),
     );
 
     expect(csvEmployeeNumbers(await response.text())).toEqual(['E002']);
@@ -1030,13 +1029,13 @@ describe('配属の期間と閲覧範囲', () => {
   it('終了した配属の期間を指定しても、いまの勤務予定は取得できない', async () => {
     const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const employees = (await (
-      await instance.request('/api/employees', authorized(fixture.adminCookie))
+      await instance.request('/api/employees', authorized(fixture().adminCookie))
     ).json()) as EmployeeList;
     const past = employees.employees.find((employee) => employee.employeeNumber === 'E001');
 
     const response = await instance.request(
       `/api/work-schedules?employeeId=${past?.id}&from=${WORK_DATE}&to=${WORK_DATE}`,
-      authorized(fixture.managerHCookie),
+      authorized(fixture().managerHCookie),
     );
 
     expect(response.status).toBe(403);
@@ -1045,13 +1044,13 @@ describe('配属の期間と閲覧範囲', () => {
   it('配属されていた期間の勤務予定は取得できる', async () => {
     const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const employees = (await (
-      await instance.request('/api/employees', authorized(fixture.adminCookie))
+      await instance.request('/api/employees', authorized(fixture().adminCookie))
     ).json()) as EmployeeList;
     const past = employees.employees.find((employee) => employee.employeeNumber === 'E001');
 
     const response = await instance.request(
       `/api/work-schedules?employeeId=${past?.id}&from=2026-02-01&to=2026-02-28`,
-      authorized(fixture.managerHCookie),
+      authorized(fixture().managerHCookie),
     );
 
     expect(response.status).toBe(200);
@@ -1060,7 +1059,7 @@ describe('配属の期間と閲覧範囲', () => {
   /** 異常の一覧に現れた従業員を、従業員番号へ直して並べる。 */
   async function anomalyEmployeeNumbers(instance: App, range: string): Promise<string[]> {
     const employees = (await (
-      await instance.request('/api/employees', authorized(fixture.adminCookie))
+      await instance.request('/api/employees', authorized(fixture().adminCookie))
     ).json()) as EmployeeList;
     const numberById = new Map(
       employees.employees.map((employee) => [employee.id, employee.employeeNumber]),
@@ -1068,7 +1067,7 @@ describe('配属の期間と閲覧範囲', () => {
 
     const response = await instance.request(
       `/api/audit/anomalies?${range}`,
-      authorized(fixture.managerHCookie),
+      authorized(fixture().managerHCookie),
     );
     const body = (await response.json()) as AnomalyList;
 
@@ -1097,13 +1096,13 @@ describe('配属の期間と閲覧範囲', () => {
   it('配属される前の期間を指定しても、その従業員の異常は取得できない', async () => {
     const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const employees = (await (
-      await instance.request('/api/employees', authorized(fixture.adminCookie))
+      await instance.request('/api/employees', authorized(fixture().adminCookie))
     ).json()) as EmployeeList;
     const current = employees.employees.find((employee) => employee.employeeNumber === 'E002');
 
     const response = await instance.request(
       `/api/audit/anomalies?employeeId=${current?.id}&from=${PAST_DATE}&to=${PAST_DATE}`,
-      authorized(fixture.managerHCookie),
+      authorized(fixture().managerHCookie),
     );
 
     expect(response.status).toBe(403);
@@ -1112,13 +1111,13 @@ describe('配属の期間と閲覧範囲', () => {
   it('配属されていた期間の異常は取得できる', async () => {
     const instance = app({ now: `${WORK_DATE}T09:00:00.000Z` });
     const employees = (await (
-      await instance.request('/api/employees', authorized(fixture.adminCookie))
+      await instance.request('/api/employees', authorized(fixture().adminCookie))
     ).json()) as EmployeeList;
     const past = employees.employees.find((employee) => employee.employeeNumber === 'E001');
 
     const response = await instance.request(
       `/api/audit/anomalies?employeeId=${past?.id}&from=${PAST_DATE}&to=${PAST_DATE}`,
-      authorized(fixture.managerHCookie),
+      authorized(fixture().managerHCookie),
     );
 
     expect(response.status).toBe(200);
