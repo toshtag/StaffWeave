@@ -1,7 +1,7 @@
 # Docker での配置
 
 Docker Compose だけで API と画面を動かす場合の手順と、公開するときの設定です。
-手元での開発は [getting-started.md](getting-started.md) を参照してください。
+手元での開発は [getting-started.md](../guide/getting-started.md) を参照してください。
 
 ## 起動
 
@@ -66,7 +66,7 @@ docker builder prune -f              # ビルドの控えを消す（次のビ�
 
 クラスタは builtin プロバイダの `C.UTF-8` で初期化します。指定そのものは
 `docker-compose.yml` の `POSTGRES_INITDB_ARGS` が正本で、
-そう決めた理由は [decisions/0003-database-collation.md](decisions/0003-database-collation.md) にあります。
+そう決めた理由は [decisions/0003-database-collation.md](../decisions/0003-database-collation.md) にあります。
 
 運用で効いてくるのは次の 2 点です。
 
@@ -113,4 +113,4 @@ docker builder prune -f              # ビルドの控えを消す（次のビ�
 ## 逆プロキシ
 
 応答のヘッダーは製品の側で付けます。逆プロキシ側で同じヘッダーを重ねる場合の注意と、
-`Origin` を検査する構成の設定は [security/http-hardening.md](security/http-hardening.md) にあります。
+`Origin` を検査する構成の設定は [security/http-hardening.md](../security/http-hardening.md) にあります。

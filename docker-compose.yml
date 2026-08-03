@@ -35,7 +35,7 @@ services:
     container_name: staffweave-db
     restart: unless-stopped
     # 資格情報はここへ書かず、.env から与える。
-    # compose ファイルへ書くと、docs/deployment.md の「公開する前に」で求めている
+    # compose ファイルへ書くと、docs/operations/deployment.md の「公開する前に」で求めている
     # DB_PASSWORD の変更を、利用者が .env だけで行えなくなる。
     environment:
       POSTGRES_USER: ${DB_USER:-staffweave}

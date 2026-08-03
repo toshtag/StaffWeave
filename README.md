@@ -10,8 +10,8 @@
 説明はすべて **[docs/](docs/README.md)** にあります。README には写しません。
 索引を二か所に置くと、文書を足したときに片方が古くなります。
 
-まず読むなら [何が動くのか](docs/features.md) と
-[手元での起動](docs/getting-started.md) です。
+まず読むなら [何が動くのか](docs/guide/features.md) と
+[手元での起動](docs/guide/getting-started.md) です。
 
 ## 免責
 

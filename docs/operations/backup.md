@@ -34,9 +34,9 @@ pnpm restore backups/staffweave-<日時>.dump       # 復元（既存データ�
 
 バックアップには Webhook の署名鍵も含まれます。
 バックアップを読める者は Webhook の署名を生成できるため、
-暗号化とアクセス制限を行ってください（[security/webhook-signing.md](security/webhook-signing.md)）。
+暗号化とアクセス制限を行ってください（[security/webhook-signing.md](../security/webhook-signing.md)）。
 
 `CARD_FINGERPRINT_KEY` はバックアップに含まれません。
 復元後に IC カード機能を使うには、同じ鍵を環境変数へ設定する必要があります。
 別の鍵で復元すると、登録済みのカードはどれも一致しなくなります
-（[security/card-fingerprint-key.md](security/card-fingerprint-key.md)）。
+（[security/card-fingerprint-key.md](../security/card-fingerprint-key.md)）。

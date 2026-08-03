@@ -78,7 +78,7 @@ StaffWeave の実装判断で迷ったとき、この文書が優先されます
 
 - 完全な不正防止や法令適合を保証する表現をしない。
 - 未実装機能を文書や UI で提供済みと表現しない。
-  動作するものの一覧は [features.md](features.md) を正本とし、README へ写さない。
+  動作するものの一覧は [features.md](../guide/features.md) を正本とし、README へ写さない。
 
 ## 実装の進め方
 

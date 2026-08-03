@@ -1,7 +1,7 @@
 # ローカルでの起動
 
 手元の環境で API と画面を動かすまでの手順です。
-Docker だけで動かす場合は [deployment.md](deployment.md) を参照してください。
+Docker だけで動かす場合は [deployment.md](../operations/deployment.md) を参照してください。
 
 ## 必要なもの
 
@@ -47,7 +47,7 @@ pnpm bootstrap --email admin@example.com --password-file /run/secrets/admin
 `--password` でも渡せますが、値がシェル履歴とプロセス一覧へ残るため将来やめます。
 
 初期化時に表示されたパスワードは、画面の「パスワードの変更」から変えてください
-（[security/authentication.md](security/authentication.md)）。
+（[security/authentication.md](../security/authentication.md)）。
 
 ## 稼働確認
 
@@ -75,4 +75,4 @@ pnpm seed:demo --reset    # 作り直す
 | --- | --- |
 | 打刻端末と IC カードを試す | [device-agent.md](device-agent.md) |
 | API キー・CSV・Webhook を使う | [integrations.md](integrations.md) |
-| 変更を検証する | [testing.md](testing.md) |
+| 変更を検証する | [testing.md](../development/testing.md) |
