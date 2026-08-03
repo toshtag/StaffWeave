@@ -266,17 +266,45 @@ PG_TAGS=$(grep -hoE 'image: postgres:[^ ]+' docker-compose.yml .github/workflows
 if [ "$(printf '%s\n' "$PG_TAGS" | grep -c .)" -ne 1 ]; then
   printf '  postgres: %s\n' "$(printf '%s ' $PG_TAGS)"
   fail 'PostgreSQL の版が compose と CI で食い違っています'
-elif ! printf '%s' "$PG_TAGS" | grep -qE '^[0-9]+-alpine$'; then
+elif ! printf '%s' "$PG_TAGS" | grep -qE '^[0-9]+-[a-z][a-z0-9]*$'; then
   printf '  postgres: %s\n' "$PG_TAGS"
-  fail 'PostgreSQL の tag が major を含む形になっていません'
+  fail 'PostgreSQL の tag が「major-基盤」の形になっていません'
 else
   pass "PostgreSQL の版が compose と CI で揃っています（$PG_TAGS）"
+fi
+
+# 並びは libc ではなく builtin プロバイダで決める。ここが抜けたまま初期化すると、
+# 新しく作るクラスタだけ OS のロケールに従い、既存の索引と並びが変わる。
+# 値は compose と CI で同じにする。折り返しの違いを無視して、指定の集合で比べる。
+initdb_options() {
+  awk '
+    /POSTGRES_INITDB_ARGS:/ { inside = 1 }
+    inside {
+      n = gsub(/--[a-z][a-z-]*=[^ "'"'"']+/, "&\n")
+      if (n == 0 && !/POSTGRES_INITDB_ARGS:/) { inside = 0; next }
+      for (i = 1; i <= NF; i++) if ($i ~ /^--[a-z]/) print $i
+    }
+  ' "$1" | sort -u
+}
+COMPOSE_INITDB=$(initdb_options docker-compose.yml)
+CI_INITDB=$(initdb_options .github/workflows/ci.yml)
+if [ -z "$COMPOSE_INITDB" ]; then
+  fail 'compose が POSTGRES_INITDB_ARGS を指定していません'
+elif [ "$COMPOSE_INITDB" != "$CI_INITDB" ]; then
+  printf '  compose: %s\n' "$(printf '%s ' $COMPOSE_INITDB)"
+  printf '  CI:      %s\n' "$(printf '%s ' $CI_INITDB)"
+  fail 'データベースの初期化の指定が compose と CI で食い違っています'
+elif ! printf '%s\n' "$COMPOSE_INITDB" | grep -q '^--locale-provider=builtin$'; then
+  printf '  %s\n' "$(printf '%s ' $COMPOSE_INITDB)"
+  fail '照合順序のプロバイダが builtin になっていません'
+else
+  pass '照合順序の指定が compose と CI で揃っています（builtin）'
 fi
 
 # 18 以降の公式イメージは、データを major ごとの下位ディレクトリへ置く。
 # /var/lib/postgresql/data を結び付けたままにすると、使われない場所を渡して起動しなくなる。
 # image の tag だけを上げて結び付けを直し忘れる形が、この検査の対象。
-PG_MAJOR=$(printf '%s\n' "$PG_TAGS" | head -1 | sed 's/-alpine$//')
+PG_MAJOR=$(printf '%s\n' "$PG_TAGS" | head -1 | sed 's/-.*$//')
 if ! printf '%s' "$PG_MAJOR" | grep -qE '^[0-9]+$'; then
   fail 'compose から PostgreSQL の major を読めません'
 elif [ "$PG_MAJOR" -ge 18 ] && grep -q ':/var/lib/postgresql/data$' docker-compose.yml; then
