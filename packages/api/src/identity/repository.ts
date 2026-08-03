@@ -1,5 +1,12 @@
 import type { Queryable } from '@staffweave/db';
-import type { Locale, Role } from '@staffweave/domain';
+import type {
+  DeviceBrowser,
+  DeviceKind,
+  DeviceOs,
+  DeviceSummary,
+  Locale,
+  Role,
+} from '@staffweave/domain';
 
 /**
  * 認証・利用者まわりの永続化。
@@ -43,6 +50,18 @@ export interface SessionRecord {
 }
 
 /**
+ * 一覧に出す 1 件。
+ *
+ * 端末は判別できた系統だけを持つ。この列を持つ前に開いたセッションは、
+ * 3 つとも判別できなかったセッションと同じく `device` が null になる。
+ * 保存していない名乗りを、こちらの推測で埋めない。
+ */
+export interface SessionSummaryRecord extends SessionRecord {
+  lastSeenAt: Date;
+  device: DeviceSummary | null;
+}
+
+/**
  * セッションから一意に決まる一式。
  * 要求のたびに復元するため、分けて引かず 1 回で読む。
  */
@@ -73,7 +92,30 @@ export interface IdentityRepository {
     tokenHash: string;
     issuedAt: Date;
     expiresAt: Date;
+    /** 端末を判別できなかった場合は省略する。生の名乗りは受け取らない。 */
+    device?: DeviceSummary;
   }): Promise<SessionRecord>;
+  /**
+   * 利用者の、まだ失効していないセッションを新しい順に返す。
+   *
+   * 期限切れは呼び出し側が落とす。期限の判定は絶対期限も見るため、
+   * SQL の `expires_at` だけでは決まらない。ここで半分だけ判定すると、
+   * 判定の正本が二か所になる。
+   */
+  listSessionsOfUser(workspaceId: string, userId: string): Promise<SessionSummaryRecord[]>;
+  /**
+   * 利用者の特定のセッションを 1 件失効させる。
+   *
+   * 失効させたら true。他人のセッション、他のワークスペースのセッション、
+   * すでに失効しているセッションはいずれも false を返す。
+   * 「無い」と「自分のものではない」を呼び出し側から区別できないようにする。
+   */
+  revokeSessionOfUser(input: {
+    workspaceId: string;
+    userId: string;
+    sessionId: string;
+    revokedAt: Date;
+  }): Promise<boolean>;
   /**
    * トークンのハッシュから、認証に要る一式をまとめて引く。
    * セッション・ワークスペース・利用者・ロール・従業員・閲覧範囲はすべて
@@ -85,14 +127,14 @@ export interface IdentityRepository {
   /**
    * 利用者のセッションをまとめて失効させる。
    *
-   * `exceptTokenHash` を渡すと、そのセッションだけ残す。
-   * パスワードを変えた本人を、その場でログアウトさせないため。
+   * `exceptSessionId` を渡すと、そのセッションだけ残す。
+   * パスワードを変えた本人や、他の端末を切った本人を、その場で締め出さないため。
    */
   revokeSessionsOfUser(input: {
     workspaceId: string;
     userId: string;
     revokedAt: Date;
-    exceptTokenHash?: string;
+    exceptSessionId?: string;
   }): Promise<number>;
 }
 
@@ -190,6 +232,23 @@ function toSessionContext(row: SessionContextRow): SessionContextRecord {
   };
 }
 
+interface SessionSummaryRow extends SessionRow {
+  last_seen_at: Date;
+  device_os: DeviceOs | null;
+  device_browser: DeviceBrowser | null;
+  device_kind: DeviceKind | null;
+}
+
+function toSessionSummary(row: SessionSummaryRow): SessionSummaryRecord {
+  // 3 つとも判別できていない行は、端末情報なしとして 1 つの null にまとめる。
+  // 画面が「何も分からない」を 3 回書き分けずに済む。
+  const device =
+    row.device_os === null && row.device_browser === null && row.device_kind === null
+      ? null
+      : { os: row.device_os, browser: row.device_browser, kind: row.device_kind };
+  return { ...toSession(row), lastSeenAt: row.last_seen_at, device };
+}
+
 function toSession(row: SessionRow): SessionRecord {
   return {
     id: row.id,
@@ -276,14 +335,55 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
 
     async createSession(input) {
       const rows = await db.query<SessionRow>(
-        `INSERT INTO sessions (workspace_id, user_id, token_hash, issued_at, expires_at, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, $4)
+        `INSERT INTO sessions
+           (workspace_id, user_id, token_hash, issued_at, expires_at, last_seen_at,
+            device_os, device_browser, device_kind)
+         VALUES ($1, $2, $3, $4, $5, $4, $6, $7, $8)
          RETURNING id, workspace_id, user_id, issued_at, expires_at, revoked_at`,
-        [input.workspaceId, input.userId, input.tokenHash, input.issuedAt, input.expiresAt],
+        [
+          input.workspaceId,
+          input.userId,
+          input.tokenHash,
+          input.issuedAt,
+          input.expiresAt,
+          input.device?.os ?? null,
+          input.device?.browser ?? null,
+          input.device?.kind ?? null,
+        ],
       );
       const row = rows[0];
       if (!row) throw new Error('セッションを作成できませんでした');
       return toSession(row);
+    },
+
+    async listSessionsOfUser(workspaceId, userId) {
+      const rows = await db.query<SessionSummaryRow>(
+        `SELECT id, workspace_id, user_id, issued_at, expires_at, revoked_at, last_seen_at,
+                device_os, device_browser, device_kind
+           FROM sessions
+          WHERE workspace_id = $1
+            AND user_id = $2
+            AND revoked_at IS NULL
+          ORDER BY issued_at DESC`,
+        [workspaceId, userId],
+      );
+      return rows.map(toSessionSummary);
+    },
+
+    async revokeSessionOfUser(input) {
+      // ワークスペースと利用者を条件に含める。識別子を知っているだけでは、
+      // 他人のセッションも他のワークスペースのセッションも終わらせられない。
+      const rows = await db.query<{ id: string }>(
+        `UPDATE sessions
+            SET revoked_at = $4
+          WHERE workspace_id = $1
+            AND user_id = $2
+            AND id = $3
+            AND revoked_at IS NULL
+          RETURNING id`,
+        [input.workspaceId, input.userId, input.sessionId, input.revokedAt],
+      );
+      return rows.length > 0;
     },
 
     async findSessionContextByTokenHash(tokenHash) {
@@ -352,9 +452,9 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
           WHERE workspace_id = $1
             AND user_id = $2
             AND revoked_at IS NULL
-            AND ($4::text IS NULL OR token_hash <> $4)
+            AND ($4::uuid IS NULL OR id <> $4)
           RETURNING id`,
-        [input.workspaceId, input.userId, input.revokedAt, input.exceptTokenHash ?? null],
+        [input.workspaceId, input.userId, input.revokedAt, input.exceptSessionId ?? null],
       );
       return rows.length;
     },

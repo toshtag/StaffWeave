@@ -15,6 +15,9 @@ import type {
   DailyRequestEventType,
   DailyRequestState,
   DayType,
+  DeviceBrowser,
+  DeviceKind,
+  DeviceOs,
   DeviceState,
   Discrepancy,
   Locale,
@@ -71,6 +74,35 @@ export interface SessionResponse {
   user: SessionUser;
   employee: EmployeeSummary | null;
   expiresAt: string;
+}
+
+/**
+ * セッションを開いた端末の系統。
+ * 生の User-Agent と送信元アドレスは保存しないため、ここにも現れない。
+ */
+export interface SessionDevice {
+  os: DeviceOs | null;
+  browser: DeviceBrowser | null;
+  kind: DeviceKind | null;
+}
+
+export interface SessionSummary {
+  id: string;
+  /** いま要求を出しているセッションかどうか。 */
+  current: boolean;
+  /** 端末を判別できなかったセッションは null。 */
+  device: SessionDevice | null;
+  issuedAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+}
+
+export interface SessionList {
+  sessions: SessionSummary[];
+}
+
+export interface RevokedSessions {
+  revoked: number;
 }
 
 export interface LoginRequest {

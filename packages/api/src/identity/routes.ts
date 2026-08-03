@@ -6,6 +6,7 @@ import type {
 } from '@staffweave/contracts';
 import {
   changePasswordRequestSchema,
+  honoPath,
   loginRequestSchema,
   operations,
   updatePreferencesRequestSchema,
@@ -15,7 +16,7 @@ import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { IdentityService } from './service.js';
 import { toSessionResponse } from './service.js';
 
@@ -62,9 +63,12 @@ export function createIdentityRoutes(deps: IdentityRouteDependencies): Hono<AppE
   app.post(operations.login.path, async (c) => {
     const body = await readBody<LoginRequest>(c, loginRequestSchema);
     const source = clientAddress(c, deps.trustProxyForClientAddress);
+    // 名乗りはここから先へ生のまま渡すが、保存する前に系統へ落とす。
+    const userAgent = c.req.header('user-agent');
     const result = await deps.service.login({
       ...body,
       ...(source === undefined ? {} : { source }),
+      ...(userAgent === undefined ? {} : { userAgent }),
     });
 
     // Cookie の保持期間は絶対期限に合わせる。
@@ -94,8 +98,24 @@ export function createIdentityRoutes(deps: IdentityRouteDependencies): Hono<AppE
     const auth = currentAuth(c);
     const body = await readBody<ChangePasswordRequest>(c, changePasswordRequestSchema);
     // 手元のセッションだけ残す。変更した本人をその場で締め出さない。
-    await deps.service.changePassword(auth, getCookie(c, SESSION_COOKIE_NAME), body);
+    await deps.service.changePassword(auth, body);
     return c.body(null, 204);
+  });
+
+  app.get(operations.listSessions.path, async (c) => {
+    const sessions = await deps.service.listSessions(currentAuth(c));
+    return c.json({ sessions }, 200);
+  });
+
+  app.delete(honoPath(operations.revokeSession), async (c) => {
+    const auth = currentAuth(c);
+    await deps.service.revokeSession(auth, pathParam(c, 'sessionId'));
+    return c.body(null, 204);
+  });
+
+  app.post(operations.revokeOtherSessions.path, async (c) => {
+    const revoked = await deps.service.revokeOtherSessions(currentAuth(c));
+    return c.json({ revoked }, 200);
   });
 
   app.patch(operations.updatePreferences.path, async (c) => {
