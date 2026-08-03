@@ -3,6 +3,29 @@
 # 別のネットワークとボリュームが増える。名前は staffweave と staffweave-* で揃える。
 name: staffweave
 
+# app とワーカーは同じイメージで、同じ接続先を見る。違うのは入口と、
+# それぞれにだけ効く設定だけなので、共通の部分はここへ一度だけ書く。
+# 二か所へ書くと、片方だけ古い値が残っている状態を作れてしまう。
+x-app-base: &app-base
+  profiles: ['app']
+  build:
+    context: .
+    dockerfile: docker/api.Dockerfile
+  # 二つの service が同じ名前を指す。ビルドの定義も同じにすることで、
+  # `docker compose build` が同じイメージを二度作らない。
+  image: staffweave
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+
+x-app-environment: &app-environment
+  # 接続先は db service。資格情報は db と同じ .env の値から組み立てる。
+  DATABASE_URL: postgres://${DB_USER:-staffweave}:${DB_PASSWORD:-staffweave}@db:5432/${DB_NAME:-staffweave}
+  NODE_ENV: production
+  # 送信先の制限は API とワーカーで同じ値にする。片方だけ緩い状態を作らない。
+  WEBHOOK_NETWORK_POLICY: ${WEBHOOK_NETWORK_POLICY:-public-only}
+
 services:
   db:
     image: postgres:18-alpine
@@ -51,33 +74,20 @@ services:
   # アプリケーション本体。`docker compose --profile app up -d` で起動する。
   # 開発中は pnpm dev を使い、この定義はセルフホストの確認と CI のビルド検査に使う。
   app:
-    profiles: ['app']
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-    # ワーカーと同じイメージを使う。同じ名前にすることでビルドは 1 回で済む。
-    image: staffweave
+    <<: *app-base
     container_name: staffweave-app
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    # IC カードの指紋鍵だけは値を書かない形にするため、この service は一覧で指定する。
     environment:
-      # 接続先は db service。資格情報は上と同じ .env の値から組み立てる。
-      - DATABASE_URL=postgres://${DB_USER:-staffweave}:${DB_PASSWORD:-staffweave}@db:5432/${DB_NAME:-staffweave}
-      - API_HOST=0.0.0.0
-      - API_PORT=8787
-      - NODE_ENV=production
-      - DEFAULT_WORKSPACE_SLUG=${DEFAULT_WORKSPACE_SLUG:-default}
-      - WEB_DIST_PATH=/app/packages/web/dist
-      # 送信先の制限は API とワーカーで同じ値にする。片方だけ緩い状態を作らない。
-      - WEBHOOK_NETWORK_POLICY=${WEBHOOK_NETWORK_POLICY:-public-only}
-      - WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS=${WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS:-3000}
-      - MAX_REQUEST_BODY_BYTES=${MAX_REQUEST_BODY_BYTES:-262144}
-      - MAX_BULK_REQUEST_BODY_BYTES=${MAX_BULK_REQUEST_BODY_BYTES:-8388608}
-      # ホスト側に設定があるときだけ渡す。既定値を書くと、空の鍵のまま起動してしまう。
-      - CARD_FINGERPRINT_KEY
+      <<: *app-environment
+      API_HOST: 0.0.0.0
+      API_PORT: 8787
+      DEFAULT_WORKSPACE_SLUG: ${DEFAULT_WORKSPACE_SLUG:-default}
+      WEB_DIST_PATH: /app/packages/web/dist
+      WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS: ${WEBHOOK_TARGET_VALIDATION_TIMEOUT_MS:-3000}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-262144}
+      MAX_BULK_REQUEST_BODY_BYTES: ${MAX_BULK_REQUEST_BODY_BYTES:-8388608}
+      # 値を書かず、ホスト側に設定があるときだけ渡す。
+      # 既定値を書くと、空の鍵のまま起動してしまう。
+      CARD_FINGERPRINT_KEY:
     ports:
       # 既定ではループバックにだけ公開する。HTTPS の終端は前段で行う前提のため、
       # 直接公開する場合だけ APP_HOST_BIND を変える。
@@ -86,23 +96,13 @@ services:
   # Webhook の送信ワーカー。API は送信待ちを記録するだけなので、
   # このプロセスを動かさない限り Webhook は届かない。
   worker:
-    profiles: ['app']
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-    image: staffweave
+    <<: *app-base
     container_name: staffweave-worker
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${DB_USER:-staffweave}:${DB_PASSWORD:-staffweave}@db:5432/${DB_NAME:-staffweave}
-      NODE_ENV: production
+      <<: *app-environment
       WEBHOOK_WORKER_POLL_INTERVAL_MS: ${WEBHOOK_WORKER_POLL_INTERVAL_MS:-5000}
       WEBHOOK_SEND_TIMEOUT_MS: ${WEBHOOK_SEND_TIMEOUT_MS:-10000}
       WEBHOOK_CLAIM_LEASE_MS: ${WEBHOOK_CLAIM_LEASE_MS:-60000}
-      WEBHOOK_NETWORK_POLICY: ${WEBHOOK_NETWORK_POLICY:-public-only}
     # イメージには pnpm を入れていないため、tsx を直接呼ぶ。
     command: ['tsx', '--env-file-if-exists=.env', 'packages/api/src/cli/run-webhook-worker.ts']
 
