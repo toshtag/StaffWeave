@@ -1,7 +1,7 @@
 # ローカルでの起動
 
 手元の環境で API と画面を動かすまでの手順です。
-Docker だけで動かす場合は [deployment.md](../deployment.md) を参照してください。
+Docker だけで動かす場合は [deployment.md](../operations/deployment.md) を参照してください。
 
 ## 必要なもの
 

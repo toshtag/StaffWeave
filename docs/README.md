@@ -13,8 +13,8 @@
 
 | 文書 | 内容 |
 | --- | --- |
-| [deployment.md](deployment.md) | Docker での起動、公開前の設定、ホストへの公開範囲 |
-| [operations.md](operations.md) | バックアップと復元 |
+| [deployment.md](operations/deployment.md) | Docker での起動、公開前の設定、ホストへの公開範囲 |
+| [operations.md](operations/backup.md) | バックアップと復元 |
 | [performance.md](performance.md) | 問い合わせ回数と索引の決めごと |
 
 ## 開発する
