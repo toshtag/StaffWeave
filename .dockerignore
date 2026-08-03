@@ -1,9 +1,22 @@
-node_modules
+# ビルドへ渡すのは、イメージを作るのに要るものだけにする。
+#
+# 既定ですべてを除き、要るものだけを戻す形にする。除く側を書き足す形だと、
+# 後から増えたディレクトリが黙って渡り続け、渡っていることに気付けない。
+# 足りないものがあれば COPY がその場で落ちるため、漏れは黙って通らない。
+*
+
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+!packages
+
+# 依存と成果物は、渡された側で作り直す。手元のものを持ち込むと、
+# 手元の OS 向けに作られたバイナリがそのままイメージへ入る。
 **/node_modules
 **/dist
-.git
-.env
-.env.*
-backups
-playwright-report
-test-results
+
+# テストは動かすのに要らない。イメージから消すのではなく、渡さない。
+# 入れてから消す形だと、消す前の大きさが層として残る。
+**/*.test.ts
+packages/api/test
