@@ -155,7 +155,8 @@ StaffWeave の実装判断で迷ったとき、この文書が優先されます
 - SBOM のジョブが使う Action をコミット SHA で固定しているか
 - 依存の版指定がパッケージ間で揃っているか（`@types/node`・`tsx`・`typescript`・`vitest`）
 - `@types/node` の major と、コンテナの Node の major が `.nvmrc` と一致しているか
-- PostgreSQL の版が `docker-compose.yml` と CI で揃い、tag が major を含む形か
+- PostgreSQL の版が `docker-compose.yml` と CI で揃い、tag が major と基盤を含む形か
+- 照合順序の指定が `docker-compose.yml` と CI で揃い、プロバイダが builtin か
 - PostgreSQL のデータの置き場が、その版の配置に合っているか
 - `docker compose` が作るもの（プロジェクト・ネットワーク・ボリューム）の名前を決めているか
 - コンテナの入口が pnpm を介していないか
@@ -199,6 +200,10 @@ compose が置き場所から作るため、同じものを別の場所へ置い
 正本とし、型定義（`@types/node`）をそこより先へ進めません。先へ進めると、実行環境に無い
 API が型検査だけ通り、実行時に落ちます。データベースは `docker-compose.yml` と CI が
 同じ major であることを見ます。片方だけを上げると、手元で通った SQL が別の版で走ります。
+
+照合順序の検査が守るのは、並びが OS へ引きずられることです。プロバイダを builtin へ
+固定し、compose と CI で同じ指定を使います。libc の照合順序は版で変わることがあり、
+変わると `text` の索引が黙って狂います（[decisions/0003-database-collation.md](decisions/0003-database-collation.md)）。
 
 `pnpm check:audit` は、依存に moderate 以上の既知脆弱性があれば失敗させます。
 すぐに直せないものは `scripts/audit-exceptions.txt` へ、勧告 ID・期限・理由を書いて見送れます。
