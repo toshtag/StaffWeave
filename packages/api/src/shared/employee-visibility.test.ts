@@ -44,6 +44,7 @@ function context(): AuthenticatedContext {
     roles: ['organization_manager'],
     employee: null,
     organizationScopes: [HOST_ORGANIZATION],
+    sessionId: 'session-1',
     sessionExpiresAt: new Date('2026-04-01T12:00:00.000Z'),
   };
 }

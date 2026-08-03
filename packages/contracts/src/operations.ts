@@ -38,6 +38,8 @@ import {
 import {
   changePasswordRequestSchema,
   loginRequestSchema,
+  revokedSessionsSchema,
+  sessionListSchema,
   sessionResponseSchema,
   updatePreferencesRequestSchema,
 } from './schemas/auth.js';
@@ -228,6 +230,46 @@ export const operations = {
     responses: [
       { status: 204, description: '変更済み。他のセッションは失効する' },
       invalidRequest,
+      unauthorized,
+    ],
+  },
+  listSessions: {
+    operationId: 'listSessions',
+    method: 'get',
+    path: '/auth/sessions',
+    summary: '自分の、まだ有効なセッションを一覧する',
+    tags: ['auth'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '自分のセッションの一覧', schema: sessionListSchema },
+      unauthorized,
+    ],
+  },
+  revokeSession: {
+    operationId: 'revokeSession',
+    method: 'delete',
+    path: '/auth/sessions/{sessionId}',
+    summary: '自分のセッションを 1 件失効させる',
+    tags: ['auth'],
+    security: 'session',
+    pathParameters: [{ name: 'sessionId', description: 'セッションの識別子', schema: uuidSchema }],
+    responses: [
+      { status: 204, description: '失効済み' },
+      // いま使っているセッションは、この経路では終わらせない。ログアウトが担う。
+      invalidRequest,
+      unauthorized,
+      { status: 404, description: '自分のセッションに見つからない', schema: errorResponseSchema },
+    ],
+  },
+  revokeOtherSessions: {
+    operationId: 'revokeOtherSessions',
+    method: 'post',
+    path: '/auth/sessions/revoke-others',
+    summary: 'いま使っているセッション以外を、まとめて失効させる',
+    tags: ['auth'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '失効させた件数', schema: revokedSessionsSchema },
       unauthorized,
     ],
   },

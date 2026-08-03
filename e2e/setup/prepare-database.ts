@@ -103,6 +103,19 @@ export const E2E_PASSWORD_EMPLOYEE: SeededAccount = {
   displayName: '検証 十郎',
 };
 
+/**
+ * ログイン中の端末の一覧を確かめるための従業員。
+ *
+ * 検査の中で別のセッションを開いて終わらせるため、他の画面テストと共有しない。
+ * 共有すると、別の検査が開いたセッションが一覧に混ざる。
+ */
+export const E2E_SESSION_EMPLOYEE: SeededAccount = {
+  email: 'session@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E011',
+  displayName: '検証 十一郎',
+};
+
 const SEEDED_ACCOUNTS = [
   E2E_EMPLOYEE,
   E2E_MOBILE_EMPLOYEE,
@@ -114,6 +127,7 @@ const SEEDED_ACCOUNTS = [
   E2E_STORAGE_READ_EMPLOYEE,
   E2E_STORED_PUNCH_EMPLOYEE,
   E2E_PASSWORD_EMPLOYEE,
+  E2E_SESSION_EMPLOYEE,
 ];
 
 export function e2eDatabaseUrl(): string {

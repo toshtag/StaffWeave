@@ -190,11 +190,15 @@ export function sessionCookieOf(response: Response): string {
 
 export async function login(
   app: RequestableApp,
-  input: { email: string; password?: string; workspaceSlug?: string },
+  input: { email: string; password?: string; workspaceSlug?: string; userAgent?: string },
 ): Promise<Response> {
   return app.request('/api/auth/login', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      // 名乗りは省略できる。省略した場合に端末情報なしになることも検査の対象。
+      ...(input.userAgent === undefined ? {} : { 'user-agent': input.userAgent }),
+    },
     body: JSON.stringify({
       email: input.email,
       password: input.password ?? TEST_PASSWORD,
@@ -205,7 +209,7 @@ export async function login(
 
 export async function loginAndGetCookie(
   app: RequestableApp,
-  input: { email: string; password?: string; workspaceSlug?: string },
+  input: { email: string; password?: string; workspaceSlug?: string; userAgent?: string },
 ): Promise<string> {
   const response = await login(app, input);
   if (response.status !== 200) {

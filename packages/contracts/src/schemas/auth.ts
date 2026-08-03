@@ -1,10 +1,17 @@
-import { MAXIMUM_PASSWORD_LENGTH, MINIMUM_PASSWORD_LENGTH } from '@staffweave/domain';
+import {
+  DEVICE_BROWSER_VALUES,
+  DEVICE_KIND_VALUES,
+  DEVICE_OS_VALUES,
+  MAXIMUM_PASSWORD_LENGTH,
+  MINIMUM_PASSWORD_LENGTH,
+} from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
 import {
   localeSchema,
   nameSchema,
   ORGANIZATION_SCOPE_DESCRIPTION,
   roleSchema,
+  timestampSchema,
   uuidSchema,
 } from './common.js';
 
@@ -84,6 +91,53 @@ export const changePasswordRequestSchema = objectSchema({
     },
   },
   required: ['currentPassword', 'newPassword'],
+});
+
+/**
+ * セッションを開いた端末の要約。
+ *
+ * 生の User-Agent と送信元アドレスは保存しないため、ここにも現れない。
+ * 判別できなかった項目は null になる。表示に使う文字列は画面が言語ごとに決める。
+ */
+export const sessionDeviceSchema = objectSchema({
+  description: 'セッションを開いた端末の系統。判別できない項目は null',
+  properties: {
+    os: { oneOf: [{ type: 'string', enum: [...DEVICE_OS_VALUES] }, { type: 'null' }] },
+    browser: { oneOf: [{ type: 'string', enum: [...DEVICE_BROWSER_VALUES] }, { type: 'null' }] },
+    kind: { oneOf: [{ type: 'string', enum: [...DEVICE_KIND_VALUES] }, { type: 'null' }] },
+  },
+  required: ['os', 'browser', 'kind'],
+});
+
+export const sessionSummarySchema = objectSchema({
+  description: '自分のセッション 1 件',
+  properties: {
+    id: uuidSchema,
+    /** いま要求を出しているセッションかどうか。画面が「この端末」を示すために使う。 */
+    current: { type: 'boolean', description: 'いま要求を出しているセッションかどうか' },
+    /** 端末を判別できなかったセッション（この列を持つ前に開いたものを含む）は null。 */
+    device: { oneOf: [sessionDeviceSchema, { type: 'null' }] },
+    issuedAt: timestampSchema,
+    lastSeenAt: timestampSchema,
+    expiresAt: timestampSchema,
+  },
+  required: ['id', 'current', 'device', 'issuedAt', 'lastSeenAt', 'expiresAt'],
+});
+
+export const sessionListSchema = objectSchema({
+  description: '自分の、まだ有効なセッションの一覧',
+  properties: {
+    sessions: arraySchema(sessionSummarySchema),
+  },
+  required: ['sessions'],
+});
+
+export const revokedSessionsSchema = objectSchema({
+  description: '失効させた件数',
+  properties: {
+    revoked: { type: 'integer', minimum: 0, description: 'この操作で失効させたセッションの件数' },
+  },
+  required: ['revoked'],
 });
 
 export const updatePreferencesRequestSchema = objectSchema({

@@ -398,3 +398,13 @@ h3 {
 .anomaly-severity[data-severity="info"] {
   color: var(--muted);
 }
+
+/* いま使っているセッションの行に付ける印。行の意味を色だけに頼らせない。 */
+.badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  white-space: nowrap;
+}

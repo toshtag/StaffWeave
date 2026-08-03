@@ -31,7 +31,7 @@ test.describe('パスワードの変更', () => {
     await page.reload();
     await expect(page.locator('.work-state')).toBeVisible();
 
-    await page.getByRole('button', { name: 'ログアウト' }).click();
+    await page.getByRole('button', { name: 'ログアウト', exact: true }).click();
     await signIn(page, NEW_PASSWORD);
   });
 
@@ -45,7 +45,7 @@ test.describe('パスワードの変更', () => {
     await expect(page.getByRole('alert')).toBeVisible();
 
     // 変更されていないため、そのままのパスワードで入り直せる。
-    await page.getByRole('button', { name: 'ログアウト' }).click();
+    await page.getByRole('button', { name: 'ログアウト', exact: true }).click();
     await signIn(page, NEW_PASSWORD);
   });
 });
