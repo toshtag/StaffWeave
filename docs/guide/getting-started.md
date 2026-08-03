@@ -1,6 +1,8 @@
 # ローカルでの起動
 
 手元の環境で API と画面を動かすまでの手順です。
+最短の 6 コマンドは [README](../../README.md) にあります。ここでは各段階の補足を書きます。
+
 Docker だけで動かす場合は [deployment.md](../operations/deployment.md) を参照してください。
 
 ## 必要なもの

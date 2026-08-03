@@ -10,6 +10,23 @@ PC のログイン・ログオフの記録も取り込めますが、これで�
 打刻した記録は書き換えません。時刻を直すときは、元の記録を残したまま訂正を足します。
 あとから「誰がいつ何を直したか」を辿れます。
 
+## 動かしてみる
+
+Node.js 22.12 以上、pnpm 11、Docker が要ります。
+
+```sh
+pnpm install
+cp .env.example .env
+docker compose up -d db                             # PostgreSQL
+pnpm db:migrate
+pnpm bootstrap --email admin@example.com            # 最初の管理者。パスワードは一度だけ表示
+pnpm dev                                            # API 8787 / 画面 5173
+```
+
+`pnpm seed:demo` で架空のデータが入り、ひととおりの画面を見られます。
+Docker だけで動かす場合や、初期パスワードを自分で決める場合は
+[getting-started.md](docs/guide/getting-started.md) を見てください。
+
 ## ドキュメント
 
 [docs/](docs/README.md) にあります。
