@@ -119,7 +119,7 @@ export interface Messages {
 }
 
 const ja: Messages = {
-  appName: 'staffweave',
+  appName: 'StaffWeave',
   tagline: 'セルフホスト可能な勤怠管理基盤',
   signIn: 'ログイン',
   signOut: 'ログアウト',
@@ -243,7 +243,7 @@ const ja: Messages = {
 };
 
 const en: Messages = {
-  appName: 'staffweave',
+  appName: 'StaffWeave',
   tagline: 'Self-hostable workforce time and attendance platform',
   signIn: 'Sign in',
   signOut: 'Sign out',
