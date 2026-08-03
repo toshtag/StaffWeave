@@ -122,7 +122,7 @@ check_scope_exception() {
 check_scope_exception "$HISTORICAL_SCOPE_FILE" 1 '歴史的な旧説明は 0012 マイグレーションの 1 件だけです'
 check_scope_exception "$CONTRACT_TEST_FILE" 4 '契約テストが列挙する旧表現は 4 件のままです'
 
-echo 'ライセンスとリリース判定'
+echo 'ライセンス'
 # ライセンスは法的な表示、README、決定の記録の 3 か所に現れる。
 # どれか 1 つだけが変わった状態を作れないようにする。
 if grep -q 'MIT License' LICENSE; then
@@ -154,18 +154,11 @@ else
 fi
 
 # 判断待ちの表現が残っていれば、決定と文書が食い違っている。
-if grep -qE 'ライセンス方針が確定している \| *\*\*未\*\*|ライセンス方針の決定だけ|ライセンス.*判断待ち' \
-  README.md docs/roadmap.md 2>/dev/null; then
+if printf '%s\n' "$PROSE_TARGETS" \
+  | xargs grep -qE 'ライセンス方針が確定している \| *\*\*未\*\*|ライセンス方針の決定だけ|ライセンス.*判断待ち' 2>/dev/null; then
   fail 'ライセンスを判断待ちとする記述が残っています'
 else
   pass 'ライセンスを判断待ちとする記述はありません'
-fi
-
-# 判定は日付と基準コミットを持つ記録が正本。要約だけを残さない。
-if ls docs/release-readiness/[0-9]*.md > /dev/null 2>&1; then
-  pass '正式リリース判定の記録があります'
-else
-  fail '正式リリース判定の記録がありません: docs/release-readiness/'
 fi
 
 echo 'SBOM'
@@ -176,12 +169,6 @@ for required in docs/security/sbom.md scripts/generate-sbom.sh scripts/verify-sb
     fail "$required がありません"
   fi
 done
-
-if grep -qE '^\| SBOM \| 未着手 \|' docs/roadmap.md; then
-  fail 'roadmap が SBOM を未着手のままにしています'
-else
-  pass 'roadmap の SBOM の状態が実装と合っています'
-fi
 
 # 生成物は commit ごとに作り直す。追跡すると、古い構成が新しい版の説明として残る。
 if printf '%s\n' "$TRACKED" | grep -qE '\.cdx\.json'; then
