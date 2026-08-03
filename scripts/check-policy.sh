@@ -261,6 +261,45 @@ else
   pass "PostgreSQL のデータの置き場が版に合っています"
 fi
 
+echo '文書'
+# 説明は docs/ を正本とし、文書どうしをリンクで繋いでいる。
+# 移動や改名でリンクが切れると、読む側は正本へ辿り着けないまま README だけを読む。
+BROKEN_LINKS=''
+for doc in $(git ls-files '*.md'); do
+  DOC_DIR=$(dirname "$doc")
+  # 外部 URL と、同じ文書の中の見出しへの参照は対象にしない。
+  LINKS=$(grep -oE '\]\([^)#][^)]*\)' "$doc" \
+    | sed 's/^](//; s/)$//; s/#.*$//' \
+    | grep -vE '^(https?|mailto):' \
+    | sort -u)
+  for target in $LINKS; do
+    [ -e "$DOC_DIR/$target" ] || BROKEN_LINKS="$BROKEN_LINKS
+  $doc -> $target"
+  done
+done
+if [ -n "$BROKEN_LINKS" ]; then
+  printf '%s\n' "$BROKEN_LINKS"
+  fail '文書のリンクに、辿れない先があります'
+else
+  pass '文書のリンクはすべて辿れます'
+fi
+
+# docs/README.md は文書の索引。載っていない文書は、置いてあっても読まれない。
+# 記録（decisions / release-readiness）はディレクトリ単位で載せるため、個別には数えない。
+UNLISTED=''
+for doc in $(git ls-files 'docs/*.md' 'docs/*/*.md'); do
+  case "$doc" in
+    docs/README.md | docs/decisions/* | docs/release-readiness/*) continue ;;
+  esac
+  grep -q "(${doc#docs/})" docs/README.md || UNLISTED="$UNLISTED ${doc#docs/}"
+done
+if [ -n "$UNLISTED" ]; then
+  printf '  索引に無い文書:%s\n' "$UNLISTED"
+  fail 'docs/README.md の索引に載っていない文書があります'
+else
+  pass 'docs/README.md の索引にすべての文書が載っています'
+fi
+
 echo 'マイグレーション'
 DUPLICATES=$(git ls-files 'packages/db/migrations/*.sql' | sed 's#.*/##' | cut -c1-4 | sort | uniq -d)
 if [ -n "$DUPLICATES" ]; then
