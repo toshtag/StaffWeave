@@ -113,7 +113,11 @@ jobs:
         run: pnpm test --testNamePattern '__no_such_test__' --passWithNoTests
 
       - name: 統合テスト
-        run: pnpm test:integration
+        # 記録は次のステップが読む。実行そのものは変わらない。
+        run: pnpm test:integration --reporter=default --reporter=json --outputFile=artifacts/integration-tests.json
+
+      - name: 検証にかかる時間の偏りを確認
+        run: pnpm check:balance
 
   e2e:
     name: 画面テスト
