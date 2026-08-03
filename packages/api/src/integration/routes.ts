@@ -1,4 +1,6 @@
+import type { CreateApiKeyRequest } from '@staffweave/contracts';
 import {
+  createApiKeyRequestSchema,
   exportAttendanceQuerySchema,
   exportPayrollQuerySchema,
   honoPath,
@@ -13,7 +15,7 @@ import type { AppEnv } from '../shared/context.js';
 import { currentAuth, requirePermission } from '../shared/context.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { invalidRequest } from '../shared/errors.js';
-import { pathParam, readQuery } from '../shared/request.js';
+import { pathParam, readBody, readQuery } from '../shared/request.js';
 import type { ExportService } from './export-service.js';
 import type { IntegrationService } from './service.js';
 
@@ -137,15 +139,9 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
 
   app.post(operations.createApiKey.path, async (c) => {
     const auth = requirePermission(c, 'user.manage');
-    const body = (await c.req.json()) as { name?: string; scopes?: string[] };
-    if (typeof body.name !== 'string' || !Array.isArray(body.scopes)) {
-      throw invalidRequest([{ field: 'name', message: '名前とスコープを指定してください' }]);
-    }
-    const result = await deps.integration.createApiKey(auth, {
-      name: body.name,
-      scopes: body.scopes,
-    });
-    return c.json(result, 201);
+    // 契約で検証してから先へ渡す。経路ごとに書き分けると、書いた経路だけが契約どおりになる。
+    const body = await readBody<CreateApiKeyRequest>(c, createApiKeyRequestSchema);
+    return c.json(await deps.integration.createApiKey(auth, body), 201);
   });
 
   app.post(honoPath(operations.revokeApiKey), async (c) => {

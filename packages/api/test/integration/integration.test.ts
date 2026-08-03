@@ -272,6 +272,22 @@ describe('API キー', () => {
     expect(JSON.stringify(body)).not.toContain(created.secret);
   });
 
+  // 検証を経路ごとに書くと、書いた経路だけが契約どおりになる。契約の側で断らせる。
+  it.each([
+    ['名前が無い', { scopes: ['payroll:read'] }],
+    ['スコープが無い', { name: '給与連携' }],
+    ['スコープが配列でない', { name: '給与連携', scopes: 'payroll:read' }],
+    ['契約にないスコープ', { name: '給与連携', scopes: ['payroll:write'] }],
+    ['名前が空', { name: '', scopes: ['payroll:read'] }],
+  ])('契約に合わない作成の要求を断る（%s）', async (_name, body) => {
+    const response = await app().request(
+      '/api/api-keys',
+      authorized(fixture.adminCookie, { method: 'POST', body }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
   it('与えたスコープの出力だけを許す', async () => {
     const instance = app();
     const created = await createKey(instance, ['payroll:read']);
