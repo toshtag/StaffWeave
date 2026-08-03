@@ -56,7 +56,6 @@ interface Fixture {
   adminCookie: string;
   approverCookie: string;
   employeeCookie: string;
-  organizationId: string;
 }
 
 async function setUp(): Promise<Fixture> {
@@ -82,7 +81,6 @@ async function setUp(): Promise<Fixture> {
     adminCookie: await loginAndGetCookie(instance, { email: 'admin@example.com' }),
     approverCookie: await loginAndGetCookie(instance, { email: 'approver@example.com' }),
     employeeCookie: await loginAndGetCookie(instance, { email: 'hanako@example.com' }),
-    organizationId,
   };
 }
 
