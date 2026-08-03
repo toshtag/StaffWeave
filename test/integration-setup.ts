@@ -1,7 +1,7 @@
 /**
  * 統合テストの共通準備。
  *
- * - TEST_DATABASE_URL のデータベースへ接続する（開発用とは必ず分ける）。
+ * - そのワーカー専用のデータベースへ接続する（開発用とは必ず分ける）。
  * - 全マイグレーションを適用する。
  * - 各テストの前にデータを消し、テスト間の依存を作らない。
  *
@@ -11,7 +11,7 @@
 import type { Database } from '@staffweave/db';
 import { createDatabase, migrate } from '@staffweave/db';
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest';
-import { requireTestDatabaseUrl } from './database-url.js';
+import { adminDatabaseUrl, workerDatabaseUrl } from './database-url.js';
 
 let database: Database | undefined;
 
@@ -51,8 +51,30 @@ async function rowCounts(): Promise<string> {
   return JSON.stringify(rows[0] ?? {});
 }
 
+/**
+ * ワーカー専用のデータベースを、無ければ作る。
+ *
+ * ワーカーごとに名前が違うため、同時に走っていても作る対象は重ならない。
+ * 実行のたびには消さない。作り直すより、次の実行で使い回すほうが速い。
+ * 中身はテストごとの消去とマイグレーションで、毎回同じ状態へ揃う。
+ */
+async function ensureDatabase(connectionString: string): Promise<void> {
+  const name = decodeURIComponent(new URL(connectionString).pathname.slice(1));
+  const admin = createDatabase({ connectionString: adminDatabaseUrl(), maxConnections: 1 });
+  try {
+    const rows = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [name]);
+    if (rows.length === 0) {
+      await admin.query(`CREATE DATABASE "${name}"`);
+    }
+  } finally {
+    await admin.close();
+  }
+}
+
 beforeAll(async () => {
-  database = createDatabase({ connectionString: requireTestDatabaseUrl() });
+  const connectionString = workerDatabaseUrl();
+  await ensureDatabase(connectionString);
+  database = createDatabase({ connectionString });
   await migrate(database);
 });
 
