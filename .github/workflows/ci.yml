@@ -161,7 +161,12 @@ jobs:
 
       - name: イメージをビルド
         # 公開する成果物ではないため、ここではビルドが通ることだけを確かめる。
-        run: docker build -f docker/api.Dockerfile -t staffweave-app:ci .
+        run: docker build -f docker/api.Dockerfile -t staffweave:ci .
+
+      - name: 通信できない状態で入口が動くことを確認
+        # 実行段へ pnpm を置くと、corepack が起動のたびに取り寄せに行き、
+        # 通信できない環境ではそこで落ちる。落ちないことを実際に通信を切って確かめる。
+        run: docker run --rm --network none staffweave:ci tsx --version
 
   sbom:
     name: SBOM の生成と検証
