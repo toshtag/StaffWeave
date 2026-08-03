@@ -7,19 +7,11 @@
 
 ## ドキュメント
 
-説明はすべて [docs/](docs/README.md) にあります。README には写しません。
+説明はすべて **[docs/](docs/README.md)** にあります。README には写しません。
+索引を二か所に置くと、文書を足したときに片方が古くなります。
 
-| 目的 | 文書 |
-| --- | --- |
-| 何が動くのか知る | [docs/features.md](docs/features.md) |
-| 手元で起動する | [docs/getting-started.md](docs/getting-started.md) |
-| 打刻端末と IC カードを試す | [docs/device-agent.md](docs/device-agent.md) |
-| API キー・CSV・Webhook を使う | [docs/integrations.md](docs/integrations.md) |
-| Docker で配置する | [docs/deployment.md](docs/deployment.md) |
-| バックアップと復元を行う | [docs/operations.md](docs/operations.md) |
-| 変更を検証する | [docs/testing.md](docs/testing.md) |
-| 実装の決めごとを知る | [docs/development-policy.md](docs/development-policy.md) |
-| 全文書を一覧する | [docs/README.md](docs/README.md) |
+まず読むなら [何が動くのか](docs/features.md) と
+[手元での起動](docs/getting-started.md) です。
 
 ## 免責
 
