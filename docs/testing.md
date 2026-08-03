@@ -1,40 +1,50 @@
 # 検証
 
 `pnpm verify` は CI が実行する検証と同じ内容です。
-手元で通れば CI でも通る状態にするため、片方だけに項目を足しません。
-CI 側の一覧は [development-policy.md](development-policy.md) の「自動検証」にあります。
+手元で通れば CI でも通る状態にするため、片方だけへ項目を足しません。
 
 ```sh
-pnpm verify            # 下の 7 つをこの順で実行する（DB 必要）
-pnpm lint              # 書式と静的検査
-pnpm typecheck         # 型検査
-pnpm test              # 単体 + 統合（DB 必要）
-pnpm test:e2e          # ブラウザによる E2E（DB 必要）
-pnpm db:verify         # マイグレーションの適用漏れと内容の変更を検査
-pnpm check:policy      # リポジトリの決めごと（名称・秘密情報・ライセンス・SBOM・認可契約・依存の版・コンテナ・マイグレーション・依存方向）を検査
-pnpm check:audit       # 依存の既知脆弱性（moderate 以上があれば失敗）
-
-pnpm test:unit         # 単体テストのみ（DB 不要）
-pnpm test:integration  # 統合テストのみ（DB 必要）
-
-pnpm sbom:generate     # 配布物の構成一覧を書き出す（Docker 必要）
-pnpm sbom:verify       # 書き出した構成一覧を検証する（Docker 必要）
+pnpm verify   # 「含む」の 7 つを、この順で実行する（DB 必要）
 ```
 
-コンテナのビルドだけは CI で行います（`docker build -f docker/api.Dockerfile`）。
-ビルドに続けて、通信を切った状態で入口が動くことも確かめます。
+| 検証 | コマンド | `pnpm verify` |
+| --- | --- | --- |
+| 書式と静的検査 | `pnpm lint` | 含む |
+| 型検査 | `pnpm typecheck` | 含む |
+| 単体 + 統合テスト | `pnpm test`（`test:unit` / `test:integration` で分けられる） | 含む |
+| 画面テスト | `pnpm test:e2e` | 含む |
+| マイグレーションの適用漏れと内容の変更 | `pnpm db:verify` | 含む |
+| リポジトリの決めごと | `pnpm check:policy` | 含む |
+| 依存の既知脆弱性 | `pnpm check:audit` | 含む |
+| 依存の再現性 | `pnpm install --frozen-lockfile` | CI のみ |
+| 二度目の適用で何も起きないこと | `pnpm db:migrate` を二度 | CI のみ |
+| コンテナのビルドと、通信を切った状態での起動 | `docker build -f docker/api.Dockerfile` | CI のみ |
+| 配布物の構成一覧 | `pnpm sbom:generate`、`pnpm sbom:verify` | 専用ジョブ |
 
-## SBOM
+`pnpm test:unit` だけは DB が要りません。それ以外のテストは DB を使います。
 
-SBOM は `pnpm verify` に含めていません。通常の開発で Docker と外部の道具を
-必須にすると、オフラインで検証できなくなるためです。専用の CI ジョブで実行します。
-対象と読み方は [security/sbom.md](security/sbom.md) を参照してください。
+## `pnpm check:policy`
+
+レビューで見落としやすく、後から直すと影響が大きいものだけを見ます。
+名称、秘密情報、ライセンス、認可契約の旧説明、SBOM、依存の版、コンテナ、
+マイグレーションの規約、文書のリンクと索引、パッケージの依存方向が対象です。
+
+何をどう見ているか、なぜその検査があるかは `scripts/check-policy.sh` のコメントが正本です。
+検査の一覧を文書へ書き写すと、検査を足すたびに二か所を直すことになります。
 
 ## 依存の脆弱性
 
 `pnpm check:audit` はレジストリへ問い合わせるため、ネットワークが要ります。
-すぐに直せない勧告は `scripts/audit-exceptions.txt` へ、勧告 ID・期限・理由を書いて見送れます。
+moderate 以上の勧告があれば失敗します。すぐに直せないものは
+`scripts/audit-exceptions.txt` へ、勧告 ID・期限・理由を書いて見送れます。
 期限を過ぎた見送りは、勧告が残っているかどうかに関わらず失敗します。
+期限のない見送りを作らないためです。
+
+## SBOM
+
+`pnpm verify` には含めません。Docker と外部の道具が要るため、
+通常の開発でオフライン検証ができなくなり、変更の確認も遅くなります。
+専用の CI ジョブで実行します。対象と読み方は [security/sbom.md](security/sbom.md)。
 
 ## テスト用のデータベース
 
