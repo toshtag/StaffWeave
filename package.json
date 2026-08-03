@@ -31,6 +31,7 @@
     "backup": "./scripts/backup.sh",
     "restore": "./scripts/restore.sh",
     "check:policy": "./scripts/check-policy.sh",
+    "check:balance": "node scripts/check-test-balance.mjs",
     "check:audit": "./scripts/check-audit.sh",
     "sbom:generate": "./scripts/generate-sbom.sh",
     "sbom:validate": "./scripts/validate-sbom.sh",

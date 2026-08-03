@@ -200,14 +200,41 @@ echo 'ワークフロー'
 #   ci.yml       どの変更でも走らせる静的検証
 #   runtime.yml  データベース・ブラウザ・Docker を動かす検証
 #   sbom.yml     配布物の構成一覧
+ALWAYS_WORKFLOW='.github/workflows/ci.yml'
 RUNTIME_WORKFLOW='.github/workflows/runtime.yml'
-for required in .github/workflows/ci.yml "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW"; do
+for required in "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW"; do
   if [ -f "$required" ]; then
     pass "$required があります"
   else
     fail "$required がありません"
   fi
 done
+
+# 4 つ目が増えると、この節の検査はその中身を何も見ないまま通る。
+# 分けた意味を保つため、置く場所は 3 つに固定する。
+EXTRA=$(git ls-files '.github/workflows/*' \
+  | grep -vxF "$ALWAYS_WORKFLOW" | grep -vxF "$RUNTIME_WORKFLOW" | grep -vxF "$SBOM_WORKFLOW" || true)
+if [ -n "$EXTRA" ]; then
+  printf '  %s\n' "$(printf '%s ' $EXTRA)"
+  fail 'ワークフローが 3 つより多くあります'
+else
+  pass 'ワークフローは 3 つだけです'
+fi
+
+# `paths` を持たない pull_request は、変更の内容によらず必ず走る。
+# それが 2 つ以上あると、片方を軽く保っても待ち時間は縮まない。
+ALWAYS_RUNNING=''
+for workflow in $(git ls-files '.github/workflows/*'); do
+  grep -q '^  pull_request:' "$workflow" || continue
+  sed -n '/^  pull_request:/,/^  [^ ]/p' "$workflow" | grep -q '^    paths:' && continue
+  ALWAYS_RUNNING="$ALWAYS_RUNNING $workflow"
+done
+if [ "$ALWAYS_RUNNING" = " $ALWAYS_WORKFLOW" ]; then
+  pass "どの PR でも走るワークフローは $ALWAYS_WORKFLOW だけです"
+else
+  printf '  どの PR でも走るもの:%s\n' "$ALWAYS_RUNNING"
+  fail "どの PR でも走るワークフローが $ALWAYS_WORKFLOW 以外にあります"
+fi
 
 # runtime.yml は push と pull_request で同じ paths を持つ。
 # GitHub Actions は YAML の別名を読まないため一覧を二度書いており、
@@ -233,6 +260,46 @@ if [ -f "$RUNTIME_WORKFLOW" ]; then
     fail 'runtime.yml の対象が push と pull_request で食い違っています'
   else
     pass "runtime.yml の対象が push と pull_request で揃っています（$(printf '%s\n' "$PUSH_PATHS" | grep -c .) 件）"
+  fi
+
+  # 文書を対象へ入れると、文書だけの PR でもデータベースとブラウザが立ち上がる。
+  # 合否は変わらないまま待ち時間だけが増える。
+  DOC_TARGETS=$(printf '%s\n' "$PUSH_PATHS" | grep -E '(^|/)docs?/|\.md$' || true)
+  if [ -n "$DOC_TARGETS" ]; then
+    printf '  文書を指すもの: %s\n' "$(printf '%s ' $DOC_TARGETS)"
+    fail 'runtime.yml の対象に文書が入っています'
+  else
+    pass 'runtime.yml の対象に文書は入っていません'
+  fi
+fi
+
+# ここから下は「どの PR でも走る側」を軽いまま保つための検査。
+# 待ち時間はここで決まる。重い検証は runtime.yml へ置く。
+if [ -f "$ALWAYS_WORKFLOW" ]; then
+  # サービスを持つと、使う使わないに関わらず起動を待つ。いまは 1 つあたり 15 秒。
+  if grep -q '^ *services:' "$ALWAYS_WORKFLOW"; then
+    fail "$ALWAYS_WORKFLOW が services を持っています（データベースなどは runtime.yml へ）"
+  else
+    pass "$ALWAYS_WORKFLOW は何も立ち上げません"
+  fi
+
+  # 走らせてよいものを、ここで一覧にして固定する。
+  # この一覧へ 1 行足すことが、すべての PR の待ち時間を延ばす判断そのものになる。
+  # 判断した結果として足すのは構わない。黙って増えないようにする。
+  ALLOWED_COMMANDS='pnpm check:audit
+pnpm check:policy
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm test:unit
+pnpm typecheck'
+  ACTUAL_COMMANDS=$(sed -n 's/^ *run: //p' "$ALWAYS_WORKFLOW" | sort -u)
+  UNLISTED=$(printf '%s\n' "$ACTUAL_COMMANDS" | grep -vxF "$ALLOWED_COMMANDS" || true)
+  if [ -n "$UNLISTED" ]; then
+    printf '  一覧に無いもの:\n'
+    printf '    %s\n' "$UNLISTED"
+    fail "$ALWAYS_WORKFLOW が、決めた一覧に無いものを走らせています"
+  else
+    pass "$ALWAYS_WORKFLOW が走らせるのは、決めた $(printf '%s\n' "$ACTUAL_COMMANDS" | grep -c .) つだけです"
   fi
 fi
 
