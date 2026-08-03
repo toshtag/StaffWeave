@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     container_name: staffweave-db
     restart: unless-stopped
     # 資格情報はここへ書かず、.env から与える。
@@ -21,7 +21,11 @@ services:
       # 変更する場合は .env の DATABASE_URL / TEST_DATABASE_URL も合わせること。
       - '${DB_HOST_BIND:-127.0.0.1}:${DB_HOST_PORT:-5433}:5432'
     volumes:
-      - staffweave-db-data:/var/lib/postgresql/data
+      # 18 以降の公式イメージは、データを major ごとの下位ディレクトリ
+      # （/var/lib/postgresql/18/docker）へ置く。/var/lib/postgresql/data を
+      # そのまま結び付けると、使われない場所へ結び付けたまま起動しなくなる。
+      # 親を結び付けておくと、将来 pg_upgrade --link を同じ結び付けの中で実行できる。
+      - staffweave-db-data:/var/lib/postgresql
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
