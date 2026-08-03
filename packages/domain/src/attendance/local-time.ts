@@ -20,7 +20,6 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
   });
   formatterCache.set(timeZone, formatter);
   return formatter;
@@ -32,7 +31,6 @@ interface LocalParts {
   day: number;
   hour: number;
   minute: number;
-  second: number;
 }
 
 function partsOf(instant: Date, timeZone: string): LocalParts {
@@ -49,7 +47,6 @@ function partsOf(instant: Date, timeZone: string): LocalParts {
     day: value('day'),
     hour,
     minute: value('minute'),
-    second: value('second'),
   };
 }
 
