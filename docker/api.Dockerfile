@@ -6,7 +6,7 @@
 # 段は 4 つに分ける。前の段ほど変わりにくいものを置き、後ろの段ほど頻繁に
 # 変わるものを置く。ソースを 1 行変えたときに作り直す範囲を、最後の数段に留める。
 #
-#   base       実行環境と pnpm 本体
+#   base       実行環境
 #   manifests  依存の宣言だけ
 #   build      画面のビルド
 #   runtime    動かすのに要るものだけ。配る対象はこの段
@@ -17,14 +17,11 @@
 FROM node:24-alpine AS base
 WORKDIR /app
 
-# corepack が取り寄せた pnpm の置き場を、利用者の家の外に決める。
-# 既定は家の下（~/.cache）にあり、家ごと消す書き方をすると pnpm 本体も消える。
+# corepack が取り寄せた pnpm の置き場。既定は利用者の家の下にある。
+# 実行段ではここを cache mount で渡し、イメージへは残さない。
 ENV COREPACK_HOME=/opt/corepack
 
-# package.json の packageManager が指す版を、ここで取り寄せる。
-# base へ置くことで、以降のすべての段が同じ 1 つを使い回す。
 COPY package.json ./
-RUN corepack enable && corepack install
 
 # 依存の宣言だけを置く段。ソースを変えてもここは作り直しにならないため、
 # 一番重い pnpm install の結果がそのまま使い回せる。
@@ -37,13 +34,15 @@ COPY packages/domain/package.json packages/domain/
 COPY packages/web/package.json packages/web/
 
 FROM base AS build
+# package.json の packageManager が指す版を取り寄せる。この段は配らないため、
+# 置き場をそのまま持たせてよい。
+RUN corepack enable && corepack install
+
 COPY --from=manifests /app /app
 
 # 画面のビルドに要る分だけを入れる。API 側の依存はここでは要らない。
 #
-# 取得の控えは cache mount へ置く。層へ入れてから消す形だと、消す前の大きさが
-# 毎回の書き出しに乗り、消し忘れればそのままイメージへ残る。
-# cache mount はビルドの間だけ見えるため、どちらも起きない。
+# この段は配らないため、置き場ごと cache mount で渡す。二度目からは取りに行かない。
 RUN --mount=type=cache,target=/pnpm/store \
   --mount=type=cache,target=/root/.cache \
   pnpm install --frozen-lockfile --store-dir=/pnpm/store --filter "@staffweave/web..."
@@ -55,12 +54,30 @@ RUN pnpm --filter "@staffweave/web" build
 
 FROM base AS runtime
 ENV NODE_ENV=production
+# tsx は @staffweave/api の実行時の依存として入る。ここを通して名前で呼べるようにする。
+ENV PATH=/app/packages/api/node_modules/.bin:$PATH
+
 COPY --from=manifests /app /app
 
 # 実行に要る依存だけを入れる。--prod は devDependencies を入れない。
-RUN --mount=type=cache,target=/pnpm/store \
-  --mount=type=cache,target=/root/.cache \
-  pnpm install --frozen-lockfile --prod --store-dir=/pnpm/store --filter "@staffweave/api..."
+#
+# 取得はこの段で行う。別の段で入れて写す形にすると、pnpm が同じ中身へ張った
+# 硬いリンクが写す時にほどけ、10MB のバイナリが二重にイメージへ残る。
+# 置き場も同じ理由で層の中に置き、リンク元だけを同じ層のうちに消す。
+#
+# 取り寄せの控えと pnpm 本体は cache mount で渡す。控えが残っていれば、
+# 置き場を作り直す時も取りに行かずに済む。どちらも層へは残らない。
+#
+# 動かすのに使うのは tsx だけで、間に pnpm を立てる必要がない。
+# 実行段へ pnpm を置くと、要らない 37MB を配ったうえ、置き場を消した形では
+# コンテナを起動するたびに取り寄せ直し、通信できない環境では起動に失敗する。
+RUN --mount=type=cache,target=/root/.cache \
+  --mount=type=cache,target=/opt/corepack \
+  corepack enable \
+  && corepack install \
+  && pnpm install --frozen-lockfile --prod --filter "@staffweave/api..." \
+  && rm -rf "$(pnpm store path)" \
+  && corepack disable
 
 # 動かすのに要るソースと成果物だけを置く。
 # テストはここで消すのではなく、そもそも渡していない（.dockerignore）。
@@ -71,11 +88,11 @@ COPY packages/db/migrations packages/db/migrations
 COPY packages/api/src packages/api/src
 COPY --from=build /app/packages/web/dist packages/web/dist
 
-# pnpm が書き込み先を必要とするため、非 root の利用者の家を明示する。
+# 非 root の利用者の家を明示する。指定しないと / を家として扱う。
 ENV HOME=/home/node
 
 # 権限昇格の余地を残さないため、非 root で動かす。node は公式イメージが用意する利用者。
 USER node
 
 EXPOSE 8787
-CMD ["pnpm", "--filter", "@staffweave/api", "start"]
+CMD ["tsx", "--env-file-if-exists=.env", "packages/api/src/server.ts"]
