@@ -67,7 +67,7 @@ openssl rand -hex 32   # CARD_FINGERPRINT_KEY へ設定する値を作る
 
 `CARD_FINGERPRINT_KEY` が未設定なら、IC カードの経路は 404 で断ります。
 鍵の要件、鍵を変えたときに何が起きるか、どこに含まれてどこに含まれないかは
-[security/card-fingerprint-key.md](../security/card-fingerprint-key.md) を正本とします。
+[card-fingerprint-key.md](../security/card-fingerprint-key.md) にあります。
 
 ## 資格情報の保存
 

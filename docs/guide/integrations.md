@@ -1,9 +1,11 @@
 # 外部連携
 
-API キー、CSV の入出力、Webhook の扱いをまとめます。
-CSV の無害化は [security/csv-output.md](../security/csv-output.md)、
-Webhook の署名鍵は [security/webhook-signing.md](../security/webhook-signing.md)、
-送信先の方針は [security/webhook-target-policy.md](../security/webhook-target-policy.md) を正本とします。
+API キー、CSV の入出力、Webhook の使い方をまとめます。
+
+細かい仕様は別の文書にあります。CSV の無害化は
+[csv-output.md](../security/csv-output.md)、Webhook の署名鍵は
+[webhook-signing.md](../security/webhook-signing.md)、送信先の制限は
+[webhook-target-policy.md](../security/webhook-target-policy.md) を見てください。
 
 ## API キー
 
@@ -90,8 +92,7 @@ HTTP 要求を出す道具になります。そこで、送信先のアドレス
 公開ネットワークとして扱えるアドレスだけを許し、`allow-local` は私設ネットワークを追加で許します。
 この値は API とワーカーの**両方**へ設定します。片方だけ緩めた状態は作れません。
 
-許す宛先の範囲、`http` を認める条件、検査の手順、応答と上限時間の扱いは
-[security/webhook-target-policy.md](../security/webhook-target-policy.md) を正本とします。
-ここへは写しません。
+許す宛先の範囲、`http` を認める条件、検査の手順、応答と上限時間は
+[webhook-target-policy.md](../security/webhook-target-policy.md) にあります。
 
 送信先を検査していても、受け取り側の認証、署名検証、`eventId` による重複排除は引き続き必要です。

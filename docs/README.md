@@ -1,14 +1,12 @@
 # ドキュメント
 
-ディレクトリは読み手で分けています。`guide/` は使う人、`operations/` は動かし続ける人、
-`development/` は手を入れる人、`security/` は前提を確かめる人、`decisions/` は
-「なぜそうなっているのか」を辿る人へ向けたものです。
+読み手ごとにディレクトリを分けています。
 
 ## guide/ — 使う
 
 | 文書 | 内容 |
 | --- | --- |
-| [features.md](guide/features.md) | 実際に動作する機能と、まだ無いもの |
+| [features.md](guide/features.md) | いま動くものと、まだ無いもの |
 | [getting-started.md](guide/getting-started.md) | ローカルでの起動、初期化、稼働確認、デモ用データ |
 | [device-agent.md](guide/device-agent.md) | 打刻端末・IC カード・Agent の資格情報の扱い |
 | [integrations.md](guide/integrations.md) | API キー、CSV の入出力、Webhook |
@@ -45,8 +43,7 @@
 
 ## decisions/ — 判断を辿る
 
-[decisions/](decisions/) には、実装からは読み取れない判断だけを残します。
-ライセンス、著作権表示の名義、データベースの並びの 3 件です。
+コードを読んでも分からない判断の記録です。ライセンスや、データベースの並びをどう決めたかなど。
+一覧は [decisions/](decisions/) にあります。
 
-実装の進行状態はここに書きません。要求と完了条件は GitHub Issue、
-実装差分と検証結果は Pull Request、機械的な合否は CI を正本とします。
+いま何を作っているかは、GitHub の Issue と Pull Request を見てください。
