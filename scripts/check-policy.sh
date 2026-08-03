@@ -22,8 +22,10 @@ pass() {
 TRACKED=$(git ls-files | grep -v '^scripts/check-policy.sh$')
 
 echo '名称の一貫性'
-# 開発方針の文書は「使わない」という規則の説明として、使わない形そのものを含むため対象から外す。
-NAME_TARGETS=$(printf '%s\n' "$TRACKED" | grep -v '^docs/development/policy.md$')
+# 名前は 2 つだけ。人が読む `StaffWeave` と、機械が読む小文字の `staffweave`。
+# `staff-weave` は npm のスコープ、コンテナ名、DB 名、HTTP ヘッダーのどれとも一致しない。
+# 一度でも混ざると、どちらが正しいのかを毎回確かめることになる。
+NAME_TARGETS="$TRACKED"
 if printf '%s\n' "$NAME_TARGETS" | xargs grep -l 'staff-weave' 2>/dev/null | grep . > /dev/null; then
   printf '%s\n' "$NAME_TARGETS" | xargs grep -n 'staff-weave' 2>/dev/null | head -20
   fail '名称に staff-weave の形が使われています'
