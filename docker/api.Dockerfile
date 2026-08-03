@@ -95,4 +95,6 @@ ENV HOME=/home/node
 USER node
 
 EXPOSE 8787
-CMD ["tsx", "--env-file-if-exists=.env", "packages/api/src/server.ts"]
+# 設定は compose の environment から渡す。イメージへ .env は入れないため、
+# --env-file-if-exists を付けても「見つからない」と毎回二行書くだけになる。
+CMD ["tsx", "packages/api/src/server.ts"]
