@@ -59,6 +59,7 @@ P15（公開前の品質ゲート）と、公開前に必要と判断した P16 
 
 - CSV の入出力、給与連携向けの汎用出力、Webhook、API キーとスコープ
 - 外部連携を作るための connector SDK
+- API キーの作成・一覧・失効の管理画面（日本語・英語）
 - バックアップと復元、デモ用データ
 
 詳細は [integrations.md](integrations.md) と [operations.md](operations.md)。
