@@ -1,3 +1,8 @@
+# 一覧へ並ぶ名前を、置き場所ではなくここで決める。
+# 決めないと clone 先のディレクトリ名から作られ、同じものを別の場所へ置いただけで
+# 別のネットワークとボリュームが増える。名前は staffweave と staffweave-* で揃える。
+name: staffweave
+
 services:
   db:
     image: postgres:18-alpine
@@ -26,7 +31,7 @@ services:
       # （/var/lib/postgresql/18/docker）へ置く。/var/lib/postgresql/data を
       # そのまま結び付けると、使われない場所へ結び付けたまま起動しなくなる。
       # 親を結び付けておくと、将来 pg_upgrade --link を同じ結び付けの中で実行できる。
-      - staffweave-db-data:/var/lib/postgresql
+      - db-data:/var/lib/postgresql
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
@@ -46,7 +51,7 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     # ワーカーと同じイメージを使う。同じ名前にすることでビルドは 1 回で済む。
-    image: staffweave-app
+    image: staffweave
     container_name: staffweave-app
     restart: unless-stopped
     depends_on:
@@ -75,13 +80,13 @@ services:
 
   # Webhook の送信ワーカー。API は送信待ちを記録するだけなので、
   # このプロセスを動かさない限り Webhook は届かない。
-  webhook-worker:
+  worker:
     profiles: ['app']
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-    image: staffweave-app
-    container_name: staffweave-webhook-worker
+    image: staffweave
+    container_name: staffweave-worker
     restart: unless-stopped
     depends_on:
       db:
@@ -97,4 +102,12 @@ services:
     command: ['tsx', '--env-file-if-exists=.env', 'packages/api/src/cli/run-webhook-worker.ts']
 
 volumes:
-  staffweave-db-data:
+  db-data:
+    # 名前を明示する。決めないと、プロジェクト名を前に付けた
+    # staffweave_staffweave-db-data のように、同じ語が重なった名前で並ぶ。
+    name: staffweave-db-data
+
+networks:
+  default:
+    # 既定のままだと staffweave_default になる。付ける意味のない接尾辞を外す。
+    name: staffweave
