@@ -24,17 +24,21 @@ pnpm も入れていません。動かすのに使うのは tsx だけで、間�
 
 ## 一覧に並ぶもの
 
-`docker compose` が作るものの名前は、置き場所ではなく `docker-compose.yml` で決めています。
-clone 先のディレクトリ名から作らせると、同じものを別の場所へ置いただけで、
-別のネットワークとボリュームが増えます。
+プロジェクト名を `docker-compose.yml` で決めています。決めないと clone 先の
+ディレクトリ名から作られ、同じものを別の場所へ置いただけで、別のネットワークと
+ボリュームが増えます。
 
-| 種類 | 名前 |
-| --- | --- |
-| プロジェクト | `staffweave` |
-| コンテナ | `staffweave-db`、`staffweave-app`、`staffweave-worker` |
-| イメージ | `staffweave`（`app` と `worker` で共有。ビルドは 1 回） |
-| ボリューム | `staffweave-db-data` |
-| ネットワーク | `staffweave` |
+| 種類 | 名前 | 決め方 |
+| --- | --- | --- |
+| プロジェクト | `staffweave` | `name:` |
+| コンテナ | `staffweave-db`、`staffweave-app`、`staffweave-worker` | `container_name:` |
+| イメージ | `staffweave`（`app` と `worker` で共有。ビルドは 1 回） | `image:` |
+| ボリューム | `staffweave_db_data` | compose が `<プロジェクト>_<キー>` で付ける |
+| ネットワーク | `staffweave` | `name:` |
+
+ボリュームの名前は compose に付けさせ、キー（`db_data`）だけを決めています。
+プロジェクト名を前に付けるのは compose の仕事で、キーの側にも書くと
+`staffweave_staffweave-db-data` のように同じ語が重なります。
 
 ## 以前の名前からの移行
 
@@ -44,11 +48,13 @@ clone 先のディレクトリ名から作らせると、同じものを別の�
 
 ```sh
 docker compose --profile app down --remove-orphans
-docker volume create staffweave-db-data
-docker run --rm -v staffweave_staffweave-db-data:/from:ro -v staffweave-db-data:/to \
+docker volume create staffweave_db_data
+docker run --rm -v staffweave_staffweave-db-data:/from:ro -v staffweave_db_data:/to \
   alpine sh -c 'cd /from && cp -a . /to/'
 docker compose --profile app up -d
 ```
+
+一度 `staffweave-db-data` へ移してある場合は、移し元をその名前に読み替えてください。
 
 移した後も元のボリュームはそのまま残るため、問題があれば戻せます。
 中身を確かめたうえで、使われなくなったものを消してください。

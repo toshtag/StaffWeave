@@ -324,17 +324,31 @@ compose_block() {
   ' docker-compose.yml
 }
 
-# 名前を決めずに置くと、compose は clone 先のディレクトリ名から作る。
+# プロジェクト名を決めずに置くと、compose は clone 先のディレクトリ名から作る。
 # 同じものを別の場所へ置いただけで、別のネットワークとボリュームが増える。
 NAMELESS=''
 grep -qE '^name: [a-z0-9-]+$' docker-compose.yml || NAMELESS="$NAMELESS プロジェクト"
 compose_block networks | grep -qE '^ +name: ' || NAMELESS="$NAMELESS ネットワーク"
-compose_block volumes | grep -qE '^ +name: ' || NAMELESS="$NAMELESS ボリューム"
 if [ -n "$NAMELESS" ]; then
   printf '  名前を決めていないもの:%s\n' "$NAMELESS"
   fail 'compose が作るものの名前を決めていません'
 else
   pass 'compose が作るものの名前を決めています'
+fi
+
+# ボリュームの名前は compose に付けさせる。プロジェクト名を前に付けるのは
+# compose の仕事で、キーの側にも書くと同じ語が重なった名前で並ぶ。
+PROJECT_NAME=$(sed -n 's/^name: \(.*\)$/\1/p' docker-compose.yml | head -1)
+VOLUME_KEYS=$(compose_block volumes | sed -n 's/^  \([A-Za-z0-9_.-]*\):.*$/\1/p')
+REDUNDANT=$(printf '%s\n' "$VOLUME_KEYS" | grep "^${PROJECT_NAME}" || true)
+if [ -n "$REDUNDANT" ]; then
+  printf '  プロジェクト名で始まるキー: %s\n' "$(printf '%s ' $REDUNDANT)"
+  fail 'ボリュームのキーがプロジェクト名を重ねています'
+elif compose_block volumes | grep -qE '^ +name: '; then
+  compose_block volumes | grep -nE '^ +name: '
+  fail 'ボリュームの名前を手で固定しています'
+else
+  pass 'ボリュームの名前は compose が付けています'
 fi
 
 # 実行段には pnpm を入れていない。入れると、動かすのに要らない容量を配るうえ、

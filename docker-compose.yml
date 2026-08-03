@@ -65,7 +65,7 @@ services:
       # （/var/lib/postgresql/18/docker）へ置く。/var/lib/postgresql/data を
       # そのまま結び付けると、使われない場所へ結び付けたまま起動しなくなる。
       # 親を結び付けておくと、将来 pg_upgrade --link を同じ結び付けの中で実行できる。
-      - db-data:/var/lib/postgresql
+      - db_data:/var/lib/postgresql
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
@@ -118,10 +118,13 @@ services:
     command: ['tsx', 'packages/api/src/cli/run-webhook-worker.ts']
 
 volumes:
-  db-data:
-    # 名前を明示する。決めないと、プロジェクト名を前に付けた
-    # staffweave_staffweave-db-data のように、同じ語が重なった名前で並ぶ。
-    name: staffweave-db-data
+  # 名前は compose に付けさせ、ここではキーだけを決める（staffweave_db_data）。
+  # プロジェクト名を前に付けるのは compose の仕事で、キーの側にも書くと
+  # staffweave_staffweave-db-data のように同じ語が重なる。
+  #
+  # 上の name: staffweave を決めてあるため、compose に任せても名前は
+  # 置き場所に依存しない。手で固定する理由がない。
+  db_data:
 
 networks:
   default:
