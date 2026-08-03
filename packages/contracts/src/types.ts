@@ -1,7 +1,7 @@
 /**
  * API の要求・応答を表す TypeScript 型。
  *
- * JSON Schema と手作業で対応させ、`types.test.ts` で実データが両方を満たすことを検証する。
+ * JSON Schema と手作業で対応させ、`contracts.test.ts` で実データが両方を満たすことを検証する。
  * 生成器を挟まないぶん、追加・変更時は必ず両方を更新すること。
  */
 import type {
