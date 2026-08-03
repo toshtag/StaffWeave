@@ -45,8 +45,12 @@ describe('同時に走らせたマイグレーション', () => {
   });
 
   it('適用のあとにロックが残らない', async () => {
+    // pg_locks はサーバー全体を映す。データベースで絞らないと、
+    // 並列に流している別の検査が取っているロックまで数えてしまう。
     const rows = await first.query<{ count: number }>(
-      "SELECT count(*)::int AS count FROM pg_locks WHERE locktype = 'advisory'",
+      `SELECT count(*)::int AS count FROM pg_locks
+        WHERE locktype = 'advisory'
+          AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
     );
 
     expect(rows[0]?.count).toBe(0);
