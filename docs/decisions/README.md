@@ -37,3 +37,4 @@
 | 番号 | 決定 |
 | --- | --- |
 | [0001](0001-mit-license.md) | MIT License を StaffWeave 全体のライセンスとする |
+| [0002](0002-copyright-holder.md) | 著作権表示の名義を権利者の個人名にする |
