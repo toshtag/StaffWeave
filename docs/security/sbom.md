@@ -30,7 +30,7 @@ workspace の SBOM を production の構成として扱わないでください�
 
 ```sh
 pnpm sbom:generate   # 二つの SBOM とチェックサムを書き出す
-pnpm sbom:verify     # CycloneDX の形式と、staffweave 固有の契約を確かめる
+pnpm sbom:verify     # CycloneDX の形式と、StaffWeave 固有の契約を確かめる
 pnpm sbom:validate   # 形式の検証だけを行う
 ```
 

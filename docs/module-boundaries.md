@@ -1,6 +1,6 @@
 # モジュール境界
 
-staffweave は pnpm workspace 上のモジュラーモノリスです。
+StaffWeave は pnpm workspace 上のモジュラーモノリスです。
 パッケージは必要になったフェーズで追加します。将来用の空パッケージは作りません。
 
 ## 依存方向

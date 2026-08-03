@@ -36,4 +36,4 @@
 
 | 番号 | 決定 |
 | --- | --- |
-| [0001](0001-mit-license.md) | MIT License を staffweave 全体のライセンスとする |
+| [0001](0001-mit-license.md) | MIT License を StaffWeave 全体のライセンスとする |

@@ -1,6 +1,6 @@
 # Webhook 送信先のネットワーク方針
 
-Webhook の送信先は利用者が登録します。何の制限も置かなければ、staffweave 自身が
+Webhook の送信先は利用者が登録します。何の制限も置かなければ、StaffWeave 自身が
 内部ネットワークへ HTTP 要求を出す道具になります。ここでは何をどこまで守るのかを固定します。
 
 実装は `packages/api/src/integration/webhook-network-policy.ts` と
