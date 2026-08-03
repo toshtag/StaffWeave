@@ -45,7 +45,7 @@ openssl rand -hex 32
 | --- | --- |
 | `GET /api/card-credentials` | 404 `IC カード機能は設定されていません` |
 | `POST /api/card-credentials/registrations` | 同上 |
-| `POST /api/card-credentials/{id}/revoke` | 同上 |
+| `POST /api/card-credentials/{cardCredentialId}/revoke` | 同上 |
 | `POST /api/device-agent/card-credentials` | 同上 |
 | `POST /api/device-agent/card-events` | 同上 |
 
