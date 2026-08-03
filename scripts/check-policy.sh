@@ -22,13 +22,29 @@ pass() {
 TRACKED=$(git ls-files | grep -v '^scripts/check-policy.sh$')
 
 echo '名称の一貫性'
-# 開発方針の文書は「変形しない」という規則の説明として変形例を含むため、対象から外す。
+# 開発方針の文書は「使わない」という規則の説明として、使わない形そのものを含むため対象から外す。
 NAME_TARGETS=$(printf '%s\n' "$TRACKED" | grep -v '^docs/development-policy.md$')
-if printf '%s\n' "$NAME_TARGETS" | xargs grep -l -e 'staff-weave' -e 'StaffWeave' 2>/dev/null | grep . > /dev/null; then
-  printf '%s\n' "$NAME_TARGETS" | xargs grep -n -e 'staff-weave' -e 'StaffWeave' 2>/dev/null | head -20
-  fail '正式名称 staffweave が変形しています'
+if printf '%s\n' "$NAME_TARGETS" | xargs grep -l 'staff-weave' 2>/dev/null | grep . > /dev/null; then
+  printf '%s\n' "$NAME_TARGETS" | xargs grep -n 'staff-weave' 2>/dev/null | head -20
+  fail '名称に staff-weave の形が使われています'
 else
-  pass '正式名称が staffweave で統一されています'
+  pass '名称に staff-weave の形はありません'
+fi
+
+# 読ませる名前は StaffWeave、機械が読む名前は staffweave。
+# 見るのは文書の本文だけにする。設定と実行用のコードには、接続情報やコンテナの名前として
+# 小文字がそのまま並ぶため、同じ規則では区別できない。
+#
+# 識別子は必ず何かと繋がった形で現れる（`@staffweave/*`、`staffweave-db`、`x-staffweave-`、
+# `staffweave_e2e`、`staffweave.example.com`、コード表記の前後の `` ` ``）。
+# 前後に繋がりを持たない出現だけを、本文へ書いた名前として拾う。
+PROSE_NAME='(^|[^`@/_a-zA-Z-])staffweave([^`@a-zA-Z0-9/_.:-]|$)'
+PROSE_TARGETS=$(printf '%s\n' "$NAME_TARGETS" | grep '\.md$')
+if printf '%s\n' "$PROSE_TARGETS" | xargs grep -lE "$PROSE_NAME" 2>/dev/null | grep . > /dev/null; then
+  printf '%s\n' "$PROSE_TARGETS" | xargs grep -nE "$PROSE_NAME" 2>/dev/null | head -20
+  fail '文書の本文の名前が StaffWeave になっていません'
+else
+  pass '文書の本文の名前は StaffWeave で揃っています'
 fi
 
 echo '秘密情報'
@@ -113,6 +129,15 @@ if grep -q 'MIT License' LICENSE; then
   pass 'LICENSE が MIT License です'
 else
   fail 'LICENSE が MIT License ではありません'
+fi
+
+# 名義は決定 0002 で実在の権利者へ改めた。いない集団を指す形へ戻ると、
+# 再配布を受け取った側が、誰の許諾で使っているのかを辿れなくなる。
+if grep -qE '^Copyright \(c\) [0-9]{4} Pocket \(@toshtag\)$' LICENSE; then
+  pass 'LICENSE の著作権表示が権利者の名義です'
+else
+  grep -n 'Copyright' LICENSE
+  fail 'LICENSE の著作権表示が権利者の名義ではありません'
 fi
 
 if grep -q 'MIT License' README.md; then

@@ -114,7 +114,7 @@ export function buildOpenApiDocument(version: string): Record<string, unknown> {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'staffweave API',
+      title: 'StaffWeave API',
       version,
       description:
         'セルフホスト可能な勤怠管理基盤の API。すべての業務データはワークスペースに属する。',

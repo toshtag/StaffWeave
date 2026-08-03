@@ -22,7 +22,7 @@ export class ConnectorError extends Error {
 
 export interface ConnectorOptions {
   /**
-   * staffweave の接続先。
+   * StaffWeave の接続先。
    *
    * ループバック以外には https を指定する。API キーと取り出すデータが
    * 暗号化されていない接続を通らないようにするため。
@@ -43,7 +43,7 @@ export interface StaffweaveConnector {
 
 export function createConnector(options: ConnectorOptions): StaffweaveConnector {
   // API キーを送る前に確かめる。要求を出してからでは遅い。
-  const base = requireSecureBaseUrl(options.baseUrl, 'staffweave の接続先');
+  const base = requireSecureBaseUrl(options.baseUrl, 'StaffWeave の接続先');
 
   async function request(path: string): Promise<Response> {
     const response = await fetch(`${base}/api${path}`, {
