@@ -421,6 +421,22 @@ export function createIdentityService(deps: IdentityServiceDependencies): Identi
 
     async resetUserPassword(context, userId, newPassword) {
       if (!hasPermission(context.roles, 'user.manage')) throw forbidden();
+
+      /*
+       * 自分のパスワードは、この経路では変えられない。
+       *
+       * 本人が変えるときは現在のパスワードを確かめる（changePassword）。
+       * 確かめるのは、Cookie だけを盗んだ相手にパスワードごと乗っ取られないため。
+       *
+       * この経路で自分を対象にできると、その守りが管理者にだけ効かなくなる。
+       */
+      if (userId === context.user.id) {
+        throw new ApiError(
+          'forbidden',
+          '自分のパスワードは、現在のパスワードを確かめる経路から変えてください',
+        );
+      }
+
       const target = await repository.findUserById(context.workspace.id, userId);
       if (!target) throw new ApiError('not_found', '利用者が見つかりません');
 

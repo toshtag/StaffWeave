@@ -497,6 +497,23 @@ describe('管理者による復旧', () => {
     expect(response.status).toBe(400);
   });
 
+  it('管理者でも、自分のパスワードはこの経路から変えられない', async () => {
+    const users = await testDatabase().query<{ id: string }>(
+      "SELECT id FROM users WHERE email = 'admin@example.com'",
+    );
+    const adminUserId = users[0]?.id;
+    if (adminUserId === undefined) throw new Error('管理者が見つかりません');
+
+    const response = await createTestApp().request(
+      `/api/users/${adminUserId}/password`,
+      authorized(adminCookie, { method: 'POST', body: { newPassword: 'staffweave other pass' } }),
+    );
+
+    // 本人が変えるときは現在のパスワードを確かめる。
+    // ここで自分を対象にできると、その守りが管理者にだけ効かなくなる。
+    expect(response.status).toBe(403);
+  });
+
   it('従業員は、他の利用者のセッションを終わらせられない', async () => {
     const response = await createTestApp().request(
       `/api/users/${memberUserId}/sessions/revoke`,
