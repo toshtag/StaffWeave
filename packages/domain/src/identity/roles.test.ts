@@ -41,6 +41,15 @@ describe('permissionsOf', () => {
     expect(hasPermission(['organization_manager'], 'audit.read')).toBe(false);
     expect(hasPermission(['employee'], 'audit.read')).toBe(false);
   });
+
+  // 休暇の残数と申請種別は、承認の可否そのものを左右する。
+  // 承認できることと、その前提を書き換えられることは別に扱う。
+  it('休暇の付与と申請種別の定義は、承認権限では行えない', () => {
+    expect(hasPermission(['workspace_admin'], 'leave.manage')).toBe(true);
+    expect(hasPermission(['workspace_admin'], 'request.manage')).toBe(true);
+    expect(hasPermission(['organization_manager'], 'leave.manage')).toBe(false);
+    expect(hasPermission(['organization_manager'], 'request.manage')).toBe(false);
+  });
 });
 
 describe('isRole', () => {

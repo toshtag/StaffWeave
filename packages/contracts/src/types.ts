@@ -941,3 +941,205 @@ export interface EndLaborSystemAssignmentRequest {
 export interface LaborSystemAssignmentList {
   laborSystemAssignments: LaborSystemAssignmentRecord[];
 }
+
+/** 休暇台帳へ積める記録の種類。 */
+export type LeaveEntryTypeValue = 'grant' | 'consume' | 'expire' | 'adjust' | 'reverse';
+
+/** 休暇台帳の 1 行。追記のみで、あとから書き換えない。 */
+export interface LeaveLedgerEntryRecord {
+  id: string;
+  employeeId: string;
+  leaveTypeId: string;
+  entryType: LeaveEntryTypeValue;
+  /** 増える記録は正、減る記録は負。 */
+  minutes: number;
+  effectiveOn: string;
+  expiresOn: string | null;
+  reversesEntryId: string | null;
+  requestId: string | null;
+  reason: string | null;
+  createdAt: string;
+  createdByUserId: string | null;
+}
+
+export interface LeaveLedgerList {
+  entries: LeaveLedgerEntryRecord[];
+}
+
+/** 台帳から組み立てた、ある日の残数。 */
+export interface LeaveBalanceRecord {
+  employeeId: string;
+  leaveTypeId: string;
+  asOf: string;
+  availableMinutes: number;
+  expiredMinutes: number;
+  remaining: { entryId: string; minutes: number; expiresOn: string | null }[];
+}
+
+export interface LeaveBalanceList {
+  balances: LeaveBalanceRecord[];
+}
+
+export interface GrantLeaveRequest {
+  employeeId: string;
+  leaveTypeId: string;
+  minutes: number;
+  effectiveOn: string;
+  expiresOn?: string;
+  reason?: string;
+}
+
+export interface AdjustLeaveRequest {
+  employeeId: string;
+  leaveTypeId: string;
+  minutes: number;
+  effectiveOn: string;
+  reason: string;
+}
+
+export interface ReverseLeaveEntryRequest {
+  reason: string;
+}
+
+/** 取得の単位と失効を持つ休暇種別。設定しないかぎり、どちらも適用しない。 */
+export interface LeaveTypeSettingsRecord {
+  id: string;
+  code: string;
+  name: string;
+  paid: boolean;
+  unitMinutes: number | null;
+  dayMinutes: number | null;
+  expiresAfterMonths: number | null;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface LeaveTypeSettingsList {
+  leaveTypes: LeaveTypeSettingsRecord[];
+}
+
+export interface UpdateLeaveTypeRequest {
+  name?: string;
+  paid?: boolean;
+  unitMinutes?: number | null;
+  dayMinutes?: number | null;
+  expiresAfterMonths?: number | null;
+  active?: boolean;
+}
+
+/** 申請が何について出されたか。承認後の反映先が変わる。 */
+export type RequestCategory =
+  | 'leave'
+  | 'overtime'
+  | 'holiday_work'
+  | 'attendance_correction'
+  | 'other';
+
+export type RequestDecision = 'approved' | 'returned';
+
+/** 組織が定義する申請種別。 */
+export interface RequestTypeRecord {
+  id: string;
+  code: string;
+  name: string;
+  category: RequestCategory;
+  approvalSteps: number;
+  requiresReason: boolean;
+  requiresLeaveType: boolean;
+  requiresTimeRange: boolean;
+  requiresOvertimeLimit: boolean;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface RequestTypeList {
+  requestTypes: RequestTypeRecord[];
+}
+
+export interface CreateRequestTypeRequest {
+  code: string;
+  name: string;
+  category: RequestCategory;
+  approvalSteps: number;
+  requiresReason?: boolean;
+  requiresLeaveType?: boolean;
+  requiresTimeRange?: boolean;
+  requiresOvertimeLimit?: boolean;
+}
+
+export interface UpdateRequestTypeRequest {
+  name?: string;
+  approvalSteps?: number;
+  requiresReason?: boolean;
+  requiresLeaveType?: boolean;
+  requiresTimeRange?: boolean;
+  requiresOvertimeLimit?: boolean;
+  active?: boolean;
+}
+
+/** 段ごとの決裁。追記のみ。 */
+export interface RequestApprovalRecord {
+  id: string;
+  step: number;
+  submission: number;
+  decision: RequestDecision;
+  decidedByUserId: string | null;
+  onBehalfOfUserId: string | null;
+  comment: string | null;
+  decidedAt: string;
+}
+
+/** 従業員が出した申請。 */
+export interface EmployeeRequestRecord {
+  id: string;
+  requestTypeId: string;
+  employeeId: string;
+  state: 'submitted' | 'approved' | 'returned' | 'cancelled';
+  /** 提出時に写した段数。定義を変えても、この申請では動かない。 */
+  totalSteps: number;
+  currentStep: number;
+  submissions: number;
+  businessDate: string;
+  endsOn: string | null;
+  leaveTypeId: string | null;
+  startMinutes: number | null;
+  endMinutes: number | null;
+  overtimeLimitMinutes: number | null;
+  reason: string | null;
+  submittedAt: string;
+  decidedAt: string | null;
+  approvals: RequestApprovalRecord[];
+}
+
+export interface EmployeeRequestList {
+  requests: EmployeeRequestRecord[];
+}
+
+export interface SubmitEmployeeRequestRequest {
+  requestTypeId: string;
+  employeeId: string;
+  businessDate: string;
+  endsOn?: string;
+  leaveTypeId?: string;
+  startMinutes?: number;
+  endMinutes?: number;
+  overtimeLimitMinutes?: number;
+  reason?: string;
+}
+
+export interface DecideEmployeeRequestRequest {
+  decision: RequestDecision;
+  step: number;
+  submission: number;
+  onBehalfOfUserId?: string;
+  comment?: string;
+}
+
+export interface ResubmitEmployeeRequestRequest {
+  endsOn?: string;
+  leaveTypeId?: string;
+  startMinutes?: number;
+  endMinutes?: number;
+  overtimeLimitMinutes?: number;
+  reason?: string;
+}

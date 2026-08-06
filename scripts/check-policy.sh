@@ -467,7 +467,7 @@ declared_ranges() {
 for dep in '@types/node' tsx typescript vitest; do
   RANGES=$(declared_ranges "$dep")
   if [ "$(printf '%s\n' "$RANGES" | grep -c .)" -eq 1 ]; then
-    pass "$dep の版指定はパッケージ間で揃っています（$RANGES）"
+    pass "$dep の版指定はパッケージ間で揃っています（${RANGES}）"
   else
     printf '  %s: %s\n' "$dep" "$(printf '%s ' $RANGES)"
     fail "$dep の版指定がパッケージ間で食い違っています"
@@ -499,7 +499,7 @@ elif ! printf '%s' "$PG_TAGS" | grep -qE '^[0-9]+(\.[0-9]+)?-[a-z][a-z0-9]*$'; t
   printf '  postgres: %s\n' "$PG_TAGS"
   fail 'PostgreSQL の tag が「版-基盤」の形になっていません'
 else
-  pass "PostgreSQL の版が compose と CI で揃っています（$PG_TAGS）"
+  pass "PostgreSQL の版が compose と CI で揃っています（${PG_TAGS}）"
 fi
 
 # 並びは libc ではなく builtin プロバイダで決める。ここが抜けたまま初期化すると、

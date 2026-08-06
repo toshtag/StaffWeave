@@ -40,7 +40,7 @@ if [ "$CONNECTIONS" -gt 0 ]; then
 fi
 
 # 復元先を取り違えないよう、名前を打ち込ませる。y の一文字では実行しない。
-echo "復元先: $DATABASE（コンテナ $CONTAINER）"
+echo "復元先: ${DATABASE}（コンテナ ${CONTAINER}）"
 echo "復元元: $INPUT"
 echo "$DATABASE のデータはすべて置き換わります。"
 printf '続けるにはデータベース名を入力してください: '

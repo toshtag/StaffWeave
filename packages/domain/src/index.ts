@@ -31,6 +31,21 @@ export {
   MONTHLY_CLOSING_EVENTS,
   MONTHLY_CLOSING_STATES,
 } from './approval/monthly-closing.js';
+export type {
+  StagedRequest,
+  StagedRequestEvent,
+  StagedRequestProblem,
+  StagedRequestState,
+  StagedRequestTransition,
+} from './approval/staged-request.js';
+export {
+  allowsRequestEditing,
+  applyStagedRequestEvent,
+  isRequestEffective,
+  isStagedRequestState,
+  STAGED_REQUEST_STATES,
+  submitStagedRequest,
+} from './approval/staged-request.js';
 export type { BusinessDate } from './attendance/business-date.js';
 export {
   addDaysToBusinessDate,
@@ -227,6 +242,13 @@ export {
   WEBHOOK_SIGNATURE_SCHEME,
   WEBHOOK_SIGNING_KEY_DERIVATION,
 } from './integration/webhook.js';
+export type {
+  LeaveBalance,
+  LeaveConsumeProblem,
+  LeaveEntryType,
+  LeaveLedgerEntry,
+} from './leave/ledger.js';
+export { buildLeaveBalance, UNALLOCATED, validateLeaveConsumption } from './leave/ledger.js';
 export type {
   AccessPeriod,
   AssignmentContract,
