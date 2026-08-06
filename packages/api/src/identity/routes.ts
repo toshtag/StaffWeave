@@ -2,6 +2,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import type {
   ChangePasswordRequest,
   LoginRequest,
+  ResetUserPasswordRequest,
   UpdatePreferencesRequest,
 } from '@staffweave/contracts';
 import {
@@ -9,6 +10,7 @@ import {
   honoPath,
   loginRequestSchema,
   operations,
+  resetUserPasswordRequestSchema,
   updatePreferencesRequestSchema,
 } from '@staffweave/contracts';
 import type { Context } from 'hono';
@@ -111,6 +113,23 @@ export function createIdentityRoutes(deps: IdentityRouteDependencies): Hono<AppE
     const auth = currentAuth(c);
     await deps.service.revokeSession(auth, pathParam(c, 'sessionId'));
     return c.body(null, 204);
+  });
+
+  app.post(honoPath(operations.revokeUserSessions), async (c) => {
+    const auth = currentAuth(c);
+    const revoked = await deps.service.revokeSessionsOfUser(auth, pathParam(c, 'userId'));
+    return c.json({ revoked }, 200);
+  });
+
+  app.post(honoPath(operations.resetUserPassword), async (c) => {
+    const auth = currentAuth(c);
+    const body = await readBody<ResetUserPasswordRequest>(c, resetUserPasswordRequestSchema);
+    const revoked = await deps.service.resetUserPassword(
+      auth,
+      pathParam(c, 'userId'),
+      body.newPassword,
+    );
+    return c.json({ revoked }, 200);
   });
 
   app.post(operations.revokeOtherSessions.path, async (c) => {

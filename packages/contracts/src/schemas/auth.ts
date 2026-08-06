@@ -147,3 +147,19 @@ export const updatePreferencesRequestSchema = objectSchema({
   },
   required: ['locale'],
 });
+
+export const resetUserPasswordRequestSchema = objectSchema({
+  description:
+    '管理者が利用者のパスワードを再設定する。' +
+    '再設定した時点で、その利用者のセッションはすべて終わる',
+  properties: {
+    newPassword: { type: 'string', minLength: 12, maxLength: 200 },
+  },
+  required: ['newPassword'],
+});
+
+export const revokedUserSessionsSchema = objectSchema({
+  description: '終わらせたセッションの数',
+  properties: { revoked: { type: 'integer' } },
+  required: ['revoked'],
+});

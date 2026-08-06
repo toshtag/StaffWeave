@@ -1258,3 +1258,11 @@ export interface AbandonedDeliveryRecord {
 export interface AbandonedDeliveryList {
   deliveries: AbandonedDeliveryRecord[];
 }
+
+export interface ResetUserPasswordRequest {
+  newPassword: string;
+}
+
+export interface RevokedUserSessions {
+  revoked: number;
+}
