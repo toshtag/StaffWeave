@@ -56,8 +56,8 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 複数の固定休憩 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `migration:0026_create_work_categories_and_rule_versions.sql` | 実績と重なる分は二度引かない |
 | 自動休憩（労働時間の閾値で足す） | implemented | `test:packages/domain/src/attendance/breaks.test.ts` | 閾値と追加分数を持つ。段階が複数でも足し合わせない |
 | みなし労働時間 | implemented | `op:createWorkCategory` `op:assignLaborSystem` | 勤務区分と労働形態の両方に持てる。実績とは別に出す |
-| シフト属性と表示色 | implemented | `op:createWorkCategory` | 勤務区分が持つ。画面での使い方は P22 |
-| マスターの改定・無効化・コピー | partial | `op:createWorkCategory` `op:updateLeaveType` `op:updateRequestType` | 勤務区分は版を重ねて改定でき、休暇種別と申請種別は無効化できる。勤務周期は作成と一覧のまま（P22） |
+| シフト属性と表示色 | implemented | `op:createWorkCategory` `ui:packages/web/src/admin/sections/WorkCategorySettings.tsx` | 勤務区分が持ち、設定の画面から入れられる |
+| マスターの改定・無効化・コピー | partial | `op:createWorkCategory` `op:updateLeaveType` `op:updateRequestType` | 勤務区分は版を重ねて改定でき、休暇種別と申請種別は無効化できる。勤務周期は作成と一覧のまま |
 
 ## 勤務時間の計算
 
@@ -74,17 +74,17 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 法定内時間外・法定時間外 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 1 日の閾値は事業者が設定する。未設定なら計算せず未設定として示す |
 | 深夜時間外・深夜休日 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 深夜帯は勤務区分で上書きできる |
 | 遅刻・早退・始業前・終業後 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯との差から出す |
-| 週・月の集計 | planned | - | 集計の境界は計算規則の版が持つ。集計そのものは P23 |
-| 認定時間（申請した残業上限の反映） | partial | `op:submitEmployeeRequest` | 申請へ上限時刻を持てる。日次の計算へ効かせるのは P23 |
+| 週・月の集計 | partial | `op:listMonthlySummaries` `test:packages/domain/src/attendance/monthly.test.ts` | 月の集計は出る。週の集計は未実装（境界は計算規則の版が持つ） |
+| 認定時間（申請した残業上限の反映） | partial | `op:submitEmployeeRequest` | 申請へ上限時刻を持てる。日次の計算へ効かせるのは未実装 |
 
 ## 労働形態
 
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | 一般勤務（固定・時短・シフト） | implemented | `op:createWorkCategory` `op:assignLaborSystem` | 勤務区分と労働形態の割当で表す |
-| フレックスタイム制 | partial | `op:assignLaborSystem` `migration:0027_create_labor_system_assignments.sql` | 清算期間・総枠・コアタイムを期間つきで持つ。清算期間の集計は P23 |
+| フレックスタイム制 | partial | `op:assignLaborSystem` `migration:0027_create_labor_system_assignments.sql` | 清算期間・総枠・コアタイムを期間つきで持つ。清算期間をまたぐ集計は未実装（月次までは出る） |
 | 裁量労働制 | implemented | `op:assignLaborSystem` | みなし分数を割当が持ち、実績とは別に出す |
-| 変形労働時間制 | partial | `op:assignLaborSystem` | 対象期間と総枠を期間つきで持つ。期間の集計は P23 |
+| 変形労働時間制 | partial | `op:assignLaborSystem` | 対象期間と総枠を期間つきで持つ。対象期間をまたぐ集計は未実装（月次までは出る） |
 
 ## 休暇
 
@@ -94,10 +94,10 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 休暇種別 | implemented | `op:listLeaveTypeSettings` `op:updateLeaveType` `migration:0029_create_leave_ledger.sql` | code・名称・有給無給に加え、取得の単位・1 日ぶんの分数・失効までの月数を持つ。既定値は置かない |
 | 残数の台帳（付与・消化・失効・調整・取消） | implemented | `op:grantLeave` `op:adjustLeave` `op:reverseLeaveEntry` `op:listLeaveLedger` `test:packages/domain/src/leave/ledger.test.ts` `test:packages/api/test/integration/leave-ledger.test.ts` | 追記のみ。残数は保存せず、任意の時点の値を台帳から組み立てる |
 | 残数の再構築と失効の反映 | implemented | `op:listLeaveBalances` `test:packages/domain/src/leave/ledger.test.ts` | 期限の近い付与から先に消化する。期限を過ぎた分は残数から外れる |
-| 自動付与・一斉付与・CSV 取込 | planned | - | 手動の付与だけがある。一括の手段は管理画面と同時に作る（P22） |
+| 自動付与・一斉付与・CSV 取込 | planned | - | 手動の付与だけがある。一括の手段は未実装 |
 | 半日・時間単位の取得 | implemented | `op:updateLeaveType` `test:packages/domain/src/leave/ledger.test.ts` | 取得の単位を分で設定し、その倍数だけを受け付ける |
 | 申請と残数の原子的な予約・消化・返却 | implemented | `op:decideEmployeeRequest` `migration:0029_create_leave_ledger.sql` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった時点で同じトランザクションで消化する。残数不足は承認ごと断る。二重反映は一意制約が止める |
-| 休暇管理簿と失効予定の出力 | planned | - | 台帳のあとに作る（P23） |
+| 休暇管理簿と失効予定の出力 | planned | - | 台帳から作れるが、帳票としては未実装 |
 
 ## 申請と承認
 
@@ -106,14 +106,14 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 日次勤怠の申請・承認・差し戻し・取消 | implemented | `op:submitDailyRequest` `op:approveDailyRequest` `op:returnDailyRequest` `op:cancelDailyRequest` `test:packages/domain/src/approval/daily-request.test.ts` | 遷移の履歴を追記で残す |
 | 自己承認の禁止 | implemented | `test:packages/domain/src/identity/roles.test.ts` | 承認者と対象者が同じなら断る |
 | 申請区分（休暇・残業・休日出勤・打刻修正など） | implemented | `op:createRequestType` `op:listRequestTypes` `op:submitEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 組織が定義する。従業員と日付ごとに 1 件という制限は無い |
-| 区分ごとの入力項目と必須の設定 | partial | `op:createRequestType` `op:updateRequestType` | 理由・休暇種別・時間帯・残業の上限時刻の要否を区分ごとに決められる。添付は P24 |
+| 区分ごとの入力項目と必須の設定 | partial | `op:createRequestType` `op:updateRequestType` | 理由・休暇種別・時間帯・残業の上限時刻の要否を区分ごとに決められる。添付は未実装 |
 | 1〜4 段階の承認と申請時点の経路の固定 | implemented | `op:decideEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` `test:packages/api/test/integration/employee-request.test.ts` | 段数は提出時に写す。あとで定義を変えても進行中の申請の経路は変わらない |
 | 決裁の再送で段が進まないこと | implemented | `migration:0030_create_request_types_and_approvals.sql` `test:packages/api/test/integration/employee-request.test.ts` | 何段目・何回目の提出かを添えさせ、同じ組み合わせの二度目は一意制約が断る |
 | 代理承認・不在対応 | partial | `op:decideEmployeeRequest` | 本来の承認者を決裁へ残せる。不在時の自動委任は無い |
 | 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
 | 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった休暇の申請だけを、同じトランザクションで消化する |
-| 承認結果の勤怠への反映 | planned | - | 残業・休日出勤・打刻修正の申請は、まだ日次の計算へ効かない（P23） |
-| 利用者への通知 | planned | - | Webhook は外部システム向けで、利用者通知の代わりにはならない（P25 以降） |
+| 承認結果の勤怠への反映 | planned | - | 残業・休日出勤・打刻修正の申請は、まだ日次の計算へ効かない |
+| 利用者への通知 | planned | - | Webhook は外部システム向けで、利用者通知の代わりにはならない |
 
 ## 締めと監査
 
@@ -164,8 +164,10 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 一覧・写して作る・CSV を同じ形にする | implemented | `ui:packages/web/src/admin/SettingsSection.tsx` `test:packages/web/src/admin/resource.test.ts` | CSV の列は画面の表と同じ定義から作る |
 | 権限と組織の範囲で設定画面の表示を変える | implemented | `ui:packages/web/src/admin/AdminConsole.tsx` `test:e2e/admin-console.spec.ts` | 見られない設定は節ごと出さない。入口も出さない |
 | 設定の一括取り込み（CSV での投入） | partial | `op:importEmployeesCsv` | 従業員だけ。他の設定は 1 件ずつ |
-| 日次・月次の一覧とレポート | partial | `ui:packages/web/src/admin/sections/MonthlySummarySettings.tsx` `ui:packages/web/src/admin/sections/ClosingReadinessSettings.tsx` | 月次の合計と締め前の確認を出す。長時間労働の警告は上限の設定が決まってから（P25 以降） |
-| WCAG 2.2 AA | partial | `test:e2e/admin-console.spec.ts` | 見出し・ラベル・焦点・キーボード操作・狭い画面での横はみ出しを画面テストで見る。自動の適合検査と視覚回帰は無い |
+| 日次・月次の一覧とレポート | partial | `ui:packages/web/src/admin/sections/MonthlySummarySettings.tsx` `ui:packages/web/src/admin/sections/ClosingReadinessSettings.tsx` | 月次の合計と締め前の確認を出す。長時間労働の警告は、上限の設定をどこに持つかが決まってから |
+| WCAG 2.2 AA | partial | `test:e2e/accessibility.spec.ts` | axe で AA まで機械的に見る（違反 0 件）。色の意味・読み上げの分かりやすさ・操作の順序は人が確かめる必要がある |
+| 主要な系統での動作 | implemented | `test:e2e/cross-browser.spec.ts` | Chromium・Firefox・WebKit の 3 系統。系統差が出る操作に絞って流す |
+| 見た目の回帰 | partial | `test:e2e/cross-browser.spec.ts` | 読み上げの木を文字として比べる。画像は差分で中身を読めないため追跡しない |
 
 ## 外部連携と出力
 
@@ -201,7 +203,8 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | バックアップと復元 | implemented | `script:scripts/backup.sh` `script:scripts/restore.sh` | 手順と脚本がある |
 | SBOM の生成と検証 | implemented | `script:scripts/generate-sbom.sh` `script:scripts/verify-sbom.mjs` | 配布物の構成を出せる |
 | マイグレーションの検証 | implemented | `test:packages/db/src/migrator.test.ts` `test:packages/api/test/integration/migration-concurrency.test.ts` | 二重適用・内容変更・DB 名の誤指定を止める |
-| 定期的な復元の演習 | planned | - | 手順はあるが、実施の証跡を検証に含めていない（P25） |
+| 書き出しと復元の突き合わせ | implemented | `test:scripts/verify-restore.sh` | 46 テーブルの行数と中身の要約が一致することを CI で見る |
+| 定期的な復元の演習（実運用のデータでの） | planned | - | 自動の突き合わせはあるが、実運用のデータでの演習は別に要る |
 | 構造化ログ・相関 ID・メトリクス・アラート | planned | - | 運用の可観測性として別に判断する（P25） |
 | Row-Level Security | planned | - | アプリ側の認可が正本。採否を決める（P25） |
 | データの保持・アーカイブ・削除の取り決め | planned | - | 個人データの扱いとして要る（P25） |
