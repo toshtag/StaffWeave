@@ -18,11 +18,14 @@ export interface LeaveLedgerEntry {
   /** 増える記録は正、減る記録は負。 */
   minutes: number;
   effectiveOn: string;
-  /** 付与の失効日。失効しないなら null。 */
+  /** 付与を使える最後の日。この日までは使える。失効しないなら null。 */
   expiresOn: string | null;
   /** 取消が打ち消す相手。 */
   reversesEntryId: string | null;
 }
+
+/** どの付与からも引けなかった減算。残数を負として見せるための置き場。 */
+export const UNALLOCATED = 'unallocated';
 
 export interface LeaveBalance {
   /** その時点で使える残数。 */
@@ -66,48 +69,67 @@ export function buildLeaveBalance(
 
   // 付与を、期限の近い順に並べた箱として持つ。
   // 期限が無いものは最後にする。期限のあるものから先に使わないと、使える分が失効する。
-  const buckets = effective
-    .filter((entry) => entry.entryType === 'grant')
-    .map((entry) => ({ entryId: entry.id, minutes: entry.minutes, expiresOn: entry.expiresOn }))
-    .sort((left, right) => {
+  const buckets: { entryId: string; minutes: number; expiresOn: string | null }[] = [];
+  const put = (entryId: string, minutes: number, expiresOn: string | null): void => {
+    buckets.push({ entryId, minutes, expiresOn });
+    buckets.sort((left, right) => {
       if (left.expiresOn === right.expiresOn) return left.entryId.localeCompare(right.entryId);
       if (left.expiresOn === null) return 1;
       if (right.expiresOn === null) return -1;
       return left.expiresOn.localeCompare(right.expiresOn);
     });
+  };
 
   let expiredMinutes = 0;
+
+  /** その日にはもう使えなくなっている付与を、失効として残数から外す。 */
+  const lapseBefore = (date: string): void => {
+    for (const bucket of buckets) {
+      if (bucket.expiresOn !== null && bucket.expiresOn < date && bucket.minutes > 0) {
+        expiredMinutes += bucket.minutes;
+        bucket.minutes = 0;
+      }
+    }
+  };
 
   /** 古い（期限の近い）箱から減らす。 */
   const take = (amount: number): void => {
     let remaining = amount;
     for (const bucket of buckets) {
       if (remaining <= 0) break;
+      if (bucket.minutes <= 0) continue;
       const taken = Math.min(bucket.minutes, remaining);
       bucket.minutes -= taken;
       remaining -= taken;
     }
     // 箱に収まらなかった分は、付与を伴わない減算として残数から引く。
     // 台帳は追記のみなので、ここで捨てず負の残数として見せる。
-    if (remaining > 0)
-      buckets.push({ entryId: 'unallocated', minutes: -remaining, expiresOn: null });
+    if (remaining > 0) put(UNALLOCATED, -remaining, null);
   };
 
   for (const entry of effective) {
     switch (entry.entryType) {
       case 'grant':
+        // 付与は、その日が来てから箱へ入れる。先に入れると、
+        // それより前の取得が、まだ効いていない付与から引けてしまう。
+        put(entry.id, entry.minutes, entry.expiresOn);
         break;
       case 'consume':
+        // 取得の前に、その日までに期限の切れた付与を外す。
+        // 外さずに引くと、もう使えない付与から引いたことになる。
+        lapseBefore(entry.effectiveOn);
         take(-entry.minutes);
         break;
       case 'expire':
-        expiredMinutes += -entry.minutes;
+        // 失効を明示した記録は、期限の切れた付与から引く。ここでは外さない。
         take(-entry.minutes);
+        expiredMinutes += -entry.minutes;
         break;
       case 'adjust':
         if (entry.minutes > 0) {
-          buckets.push({ entryId: entry.id, minutes: entry.minutes, expiresOn: null });
+          put(entry.id, entry.minutes, null);
         } else {
+          lapseBefore(entry.effectiveOn);
           take(-entry.minutes);
         }
         break;
@@ -116,13 +138,7 @@ export function buildLeaveBalance(
     }
   }
 
-  // その日を過ぎた付与は、失効として残数から外す。
-  for (const bucket of buckets) {
-    if (bucket.expiresOn !== null && bucket.expiresOn < asOf && bucket.minutes > 0) {
-      expiredMinutes += bucket.minutes;
-      bucket.minutes = 0;
-    }
-  }
+  lapseBefore(asOf);
 
   const remaining = buckets.filter((bucket) => bucket.minutes !== 0);
   return {
@@ -138,17 +154,45 @@ export type LeaveConsumeProblem = 'insufficient' | 'not_a_multiple';
  * その消化を受け付けてよいかを判断する。
  *
  * 残数が足りない消化は断る。負の残数を作れると、あとから帳尻を合わせる作業が要る。
+ *
+ * 判断は消化日の残数だけでは足りない。日付をさかのぼって消化を積むと、
+ * その日には足りていても、あとの日の消化と合わせて足りなくなることがある。
+ * 台帳へ積んだ形にしてから、その日以降のどの時点でも負にならないことを確かめる。
+ *
  * 取得の単位は事業者が決める。単位が決まっていれば、その倍数だけを受け付ける。
  */
 export function validateLeaveConsumption(input: {
-  balance: LeaveBalance;
+  entries: readonly LeaveLedgerEntry[];
   minutes: number;
+  effectiveOn: string;
   unitMinutes: number | null;
 }): LeaveConsumeProblem[] {
   const problems: LeaveConsumeProblem[] = [];
-  if (input.minutes > input.balance.availableMinutes) problems.push('insufficient');
+
+  const proposed: LeaveLedgerEntry = {
+    // 実際に積む前の判断なので、まだ識別子が無い。並びの末尾へ来る値を置く。
+    id: PROPOSED,
+    entryType: 'consume',
+    minutes: -input.minutes,
+    effectiveOn: input.effectiveOn,
+    expiresOn: null,
+    reversesEntryId: null,
+  };
+  const withProposed = [...input.entries, proposed];
+
+  // 確かめる時点は、台帳に現れる日付だけでよい。
+  // 残数が動くのは記録のある日だけで、その間では変わらない。
+  const dates = new Set([input.effectiveOn, ...withProposed.map((entry) => entry.effectiveOn)]);
+  const negative = [...dates]
+    .filter((date) => date >= input.effectiveOn)
+    .some((date) => buildLeaveBalance(withProposed, date).availableMinutes < 0);
+  if (negative) problems.push('insufficient');
+
   if (input.unitMinutes !== null && input.minutes % input.unitMinutes !== 0) {
     problems.push('not_a_multiple');
   }
   return problems;
 }
+
+/** まだ積んでいない消化を表す識別子。並びの末尾へ来るよう、他より大きい値にする。 */
+const PROPOSED = '~proposed';

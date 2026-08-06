@@ -248,7 +248,7 @@ export type {
   LeaveEntryType,
   LeaveLedgerEntry,
 } from './leave/ledger.js';
-export { buildLeaveBalance, validateLeaveConsumption } from './leave/ledger.js';
+export { buildLeaveBalance, UNALLOCATED, validateLeaveConsumption } from './leave/ledger.js';
 export type {
   AccessPeriod,
   AssignmentContract,

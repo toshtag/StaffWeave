@@ -7,7 +7,12 @@ import type {
   ReverseLeaveEntryRequest,
   UpdateLeaveTypeRequest,
 } from '@staffweave/contracts';
-import { buildLeaveBalance, businessDateOf, hasPermission } from '@staffweave/domain';
+import {
+  buildLeaveBalance,
+  businessDateOf,
+  hasPermission,
+  validateLeaveConsumption,
+} from '@staffweave/domain';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
@@ -205,8 +210,14 @@ export function createLeaveService(deps: LeaveServiceDependencies): LeaveService
             employeeId: input.employeeId,
             leaveTypeId: input.leaveTypeId,
           });
-          const balance = buildLeaveBalance(entries, input.effectiveOn);
-          if (-input.minutes > balance.availableMinutes) {
+          const problems = validateLeaveConsumption({
+            entries,
+            minutes: -input.minutes,
+            effectiveOn: input.effectiveOn,
+            unitMinutes: null,
+          });
+          if (problems.includes('insufficient')) {
+            const balance = buildLeaveBalance(entries, input.effectiveOn);
             throw new ApiError(
               'conflict',
               `残数が足りません（残り ${balance.availableMinutes} 分）`,

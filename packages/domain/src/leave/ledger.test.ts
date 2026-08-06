@@ -87,6 +87,47 @@ describe('残数の組み立て', () => {
     expect(balance.expiredMinutes).toBe(2 * DAY);
   });
 
+  it('期限の切れた付与からは消化しない', () => {
+    const balance = buildLeaveBalance(
+      [
+        entry({ id: 'lapsed', minutes: 2 * DAY, expiresOn: '2026-09-30' }),
+        entry({ id: 'live', minutes: 2 * DAY, expiresOn: '2027-03-31' }),
+        // 期限の切れたあとの消化。切れた付与から引いてはいけない。
+        entry({ id: 'used', entryType: 'consume', minutes: -DAY, effectiveOn: '2026-12-01' }),
+      ],
+      '2026-12-31',
+    );
+
+    expect(balance.remaining).toEqual([{ entryId: 'live', minutes: DAY, expiresOn: '2027-03-31' }]);
+    expect(balance.expiredMinutes).toBe(2 * DAY);
+  });
+
+  it('付与の日より前の消化は、その付与から引かない', () => {
+    const balance = buildLeaveBalance(
+      [
+        entry({ id: 'later', minutes: 5 * DAY, effectiveOn: '2026-10-01' }),
+        entry({ id: 'used', entryType: 'consume', minutes: -DAY, effectiveOn: '2026-05-01' }),
+      ],
+      '2026-12-31',
+    );
+
+    // 5 日ぶんは残ったまま、引き当てられなかった 1 日ぶんが残数を押し下げる。
+    expect(balance.availableMinutes).toBe(4 * DAY);
+    expect(balance.remaining).toEqual([
+      { entryId: 'later', minutes: 5 * DAY, expiresOn: null },
+      { entryId: 'unallocated', minutes: -DAY, expiresOn: null },
+    ]);
+  });
+
+  it('期限の日そのものは、まだ使える', () => {
+    const balance = buildLeaveBalance(
+      [entry({ id: 'a', minutes: 2 * DAY, expiresOn: '2026-09-30' })],
+      '2026-09-30',
+    );
+
+    expect(balance.availableMinutes).toBe(2 * DAY);
+  });
+
   it('取消された記録は、取消も相手も数えない', () => {
     const balance = buildLeaveBalance(
       [
@@ -159,28 +200,51 @@ describe('残数の組み立て', () => {
 });
 
 describe('消化の検査', () => {
-  const balance = buildLeaveBalance([entry({ id: 'a', minutes: 2 * DAY })], '2026-04-30');
+  const granted = [entry({ id: 'a', minutes: 2 * DAY })];
+  const check = (input: {
+    entries?: LeaveLedgerEntry[];
+    minutes: number;
+    effectiveOn?: string;
+    unitMinutes?: number | null;
+  }) =>
+    validateLeaveConsumption({
+      entries: input.entries ?? granted,
+      minutes: input.minutes,
+      effectiveOn: input.effectiveOn ?? '2026-04-10',
+      unitMinutes: input.unitMinutes ?? null,
+    });
 
   it('残数を超える消化は断る', () => {
-    expect(validateLeaveConsumption({ balance, minutes: 3 * DAY, unitMinutes: null })).toEqual([
-      'insufficient',
-    ]);
+    expect(check({ minutes: 3 * DAY })).toEqual(['insufficient']);
   });
 
   it('残数ちょうどは受け付ける', () => {
-    expect(validateLeaveConsumption({ balance, minutes: 2 * DAY, unitMinutes: null })).toEqual([]);
+    expect(check({ minutes: 2 * DAY })).toEqual([]);
+  });
+
+  // 日付をさかのぼって消化を積むと、その日には足りていても、
+  // あとの日の消化と合わせて足りなくなる。
+  it('その日には足りていても、あとの消化と合わせて足りなければ断る', () => {
+    const entries = [
+      ...granted,
+      entry({ id: 'later', entryType: 'consume', minutes: -2 * DAY, effectiveOn: '2026-04-20' }),
+    ];
+
+    expect(check({ entries, minutes: DAY, effectiveOn: '2026-04-10' })).toEqual(['insufficient']);
+  });
+
+  it('まだ効いていない付与を当てにしない', () => {
+    const entries = [entry({ id: 'later', minutes: 5 * DAY, effectiveOn: '2026-10-01' })];
+
+    expect(check({ entries, minutes: DAY, effectiveOn: '2026-04-10' })).toEqual(['insufficient']);
   });
 
   it('取得の単位が決まっていれば、その倍数だけを受け付ける', () => {
-    expect(validateLeaveConsumption({ balance, minutes: 4 * HOUR, unitMinutes: 4 * HOUR })).toEqual(
-      [],
-    );
-    expect(validateLeaveConsumption({ balance, minutes: 3 * HOUR, unitMinutes: 4 * HOUR })).toEqual(
-      ['not_a_multiple'],
-    );
+    expect(check({ minutes: 4 * HOUR, unitMinutes: 4 * HOUR })).toEqual([]);
+    expect(check({ minutes: 3 * HOUR, unitMinutes: 4 * HOUR })).toEqual(['not_a_multiple']);
   });
 
   it('単位が決まっていなければ、倍数は見ない', () => {
-    expect(validateLeaveConsumption({ balance, minutes: 3 * HOUR, unitMinutes: null })).toEqual([]);
+    expect(check({ minutes: 3 * HOUR })).toEqual([]);
   });
 });

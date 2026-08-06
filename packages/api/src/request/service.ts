@@ -10,7 +10,6 @@ import type {
 import type { StagedRequest, StagedRequestProblem } from '@staffweave/domain';
 import {
   applyStagedRequestEvent,
-  buildLeaveBalance,
   hasPermission,
   validateLeaveConsumption,
 } from '@staffweave/domain';
@@ -188,8 +187,9 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
       leaveTypeId: request.leaveTypeId,
     });
     const problems = validateLeaveConsumption({
-      balance: buildLeaveBalance(entries, request.businessDate),
+      entries,
       minutes,
+      effectiveOn: request.businessDate,
       unitMinutes: leaveType.unitMinutes,
     });
     if (problems.includes('insufficient')) {
