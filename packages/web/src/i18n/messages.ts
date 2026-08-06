@@ -96,6 +96,9 @@ export interface Messages {
   addPunch: string;
   correctionReason: string;
   correctionTime: string;
+  correctionTimeNonexistent: string;
+  correctionTimeMalformed: string;
+  timeZoneNotice: string;
   correctionType: string;
   save: string;
   cancel: string;
@@ -272,6 +275,10 @@ const ja: Messages = {
   addPunch: '打刻を追加',
   correctionReason: '修正理由',
   correctionTime: '修正後の時刻',
+  correctionTimeNonexistent:
+    'その時刻は夏時間の切り替わりで存在しません。前後の時刻を指定してください。',
+  correctionTimeMalformed: '日時として読み取れません。',
+  timeZoneNotice: '時刻の基準',
   correctionType: '打刻の種別',
   save: '保存',
   cancel: 'やめる',
@@ -459,6 +466,10 @@ const en: Messages = {
   addPunch: 'Add a punch',
   correctionReason: 'Reason',
   correctionTime: 'Corrected time',
+  correctionTimeNonexistent:
+    'That local time does not exist because of a daylight saving change. Pick a time before or after it.',
+  correctionTimeMalformed: 'This is not a valid date and time.',
+  timeZoneNotice: 'Times shown in',
   correctionType: 'Punch type',
   save: 'Save',
   cancel: 'Cancel',
