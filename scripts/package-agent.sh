@@ -1,38 +1,125 @@
 #!/bin/sh
-# 打刻端末の Agent を、配布できる形にまとめる。
+# 打刻端末の Agent を、そのまま動かせる形にまとめる。
 #
 #   ./scripts/package-agent.sh [出力先]
 #
-# 作るのは、Node.js を同梱しない素の配布物と、Windows のサービスとして
-# 登録・削除するための手順書き。実行ファイルは作らない。
-# 作ると、署名と配布の方式が決まっていない今、署名なしの実行ファイルが出回る。
+# TypeScript のまま配らない。Node は .ts を読めず、置いただけでは起動しない。
+# ここでコンパイルし、出来上がった JS だけを配る。
 #
-# ここで作るものは、Windows が無くても作れる。実機での登録と再起動の確認だけを
-# docs/operations/device-agent-service.md のチェックリストへ残す。
+# 動かすのに要る他所の部品は、まとめる時点で取り寄せて同梱する。
+# 現場の端末は通信できないことがあり、置いてから取り寄せる形にはできない。
+#
+# 実行ファイルは作らない。署名と配布の方式が決まっていない今、
+# 署名なしの実行ファイルが出回る。
 set -eu
 
 OUTPUT="${1:-artifacts/agent}"
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+BUNDLE="$OUTPUT/staffweave-agent"
 
-rm -rf "${OUTPUT}"
-mkdir -p "${OUTPUT}/staffweave-agent"
+# 同梱する他所の部品。版はリポジトリの lockfile と合わせる。
+# ずれると、確かめた組み合わせと配るものが別になる。
+FSMXJS_VERSION="1.5.0"
+AJV_VERSION="8.20.0"
+AJV_FORMATS_VERSION="3.0.1"
 
-# 動かすのに要るものだけを入れる。テストと型定義は入れない。
-for package in agent contracts domain; do
-  mkdir -p "${OUTPUT}/staffweave-agent/packages/${package}"
-  cp "${ROOT}/packages/${package}/package.json" \
-     "${OUTPUT}/staffweave-agent/packages/${package}/package.json"
-  mkdir -p "${OUTPUT}/staffweave-agent/packages/${package}/src"
-  (cd "${ROOT}/packages/${package}/src" && find . -name '*.ts' ! -name '*.test.ts' -print) \
-    | while read -r file; do
-        mkdir -p "$(dirname "${OUTPUT}/staffweave-agent/packages/${package}/src/${file}")"
-        cp "${ROOT}/packages/${package}/src/${file}" \
-           "${OUTPUT}/staffweave-agent/packages/${package}/src/${file}"
-      done
+rm -rf "$OUTPUT"
+mkdir -p "$BUNDLE"
+
+WORK=$(mktemp -d)
+
+echo 'TypeScript をコンパイルします'
+
+# 3 つのパッケージをまとめて 1 回で組む。
+# 別々に組むと、パッケージ間の参照を組んだ後で繋ぎ直すことになる。
+#
+# 設定はリポジトリの中へ置く。外に置くと、型定義も他所の部品も
+# リポジトリの node_modules から辿れなくなる。
+CONFIG="$ROOT/.package-agent.tsconfig.json"
+cleanup() {
+  rm -rf "$WORK"
+  rm -f "$CONFIG"
+}
+trap cleanup EXIT INT TERM
+
+cat > "$CONFIG" <<JSON
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "outDir": "$WORK/out",
+    "rootDir": "./packages",
+    "paths": {
+      "@staffweave/contracts": ["./packages/contracts/src/index.ts"],
+      "@staffweave/domain": ["./packages/domain/src/index.ts"]
+    }
+  },
+  "include": [
+    "./packages/agent/src/**/*.ts",
+    "./packages/contracts/src/**/*.ts",
+    "./packages/domain/src/**/*.ts"
+  ],
+  "exclude": ["./packages/*/src/**/*.test.ts"]
+}
+JSON
+
+(cd "$ROOT" && pnpm exec tsc -p "$CONFIG")
+
+echo '起動できる形へ並べます'
+
+# 入口は agent。他の 2 つは、Node が名前で辿れる場所へ置く。
+mkdir -p "$BUNDLE/agent"
+cp -R "$WORK/out/agent/src/." "$BUNDLE/agent/"
+
+# 配布物そのものの package.json。要る部品だけを並べる。
+cat > "$BUNDLE/package.json" <<JSON
+{
+  "name": "staffweave-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "staffweave-agent": "./agent/cli.js" },
+  "dependencies": {
+    "ajv": "$AJV_VERSION",
+    "ajv-formats": "$AJV_FORMATS_VERSION",
+    "fsmxjs": "$FSMXJS_VERSION"
+  }
+}
+JSON
+
+echo '要る部品を取り寄せます'
+# 取り寄せはここで済ませる。現場の端末は通信できないことがある。
+# 版は上で固定しているため、取り寄せるたびに中身が変わることはない。
+(cd "$BUNDLE" && npm install --omit=dev --no-audit --no-fund --loglevel=error > /dev/null)
+# 取り寄せの記録は配らない。中身は package.json と同梱の node_modules が示す。
+rm -f "$BUNDLE/package-lock.json"
+
+# 自分たちのパッケージは、取り寄せのあとに置く。
+# 先に置くと、npm が「依存に無いもの」として取り除く。
+mkdir -p "$BUNDLE/node_modules/@staffweave"
+for package in contracts domain; do
+  target="$BUNDLE/node_modules/@staffweave/$package"
+  mkdir -p "$target"
+  cp -R "$WORK/out/$package/src/." "$target/"
+  cat > "$target/package.json" <<JSON
+{
+  "name": "@staffweave/$package",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": { ".": "./index.js" }
+}
+JSON
 done
 
 # サービスとして登録する手順。実行はしない。実行すると、この場の権限で登録される。
-cat > "${OUTPUT}/staffweave-agent/install-service.ps1" <<'PS1'
+cat > "$BUNDLE/install-service.ps1" <<'PS1'
 # StaffWeave の打刻 Agent を Windows サービスとして登録する。
 #
 # 管理者として実行すること。登録の前に、この端末で enroll を済ませておく。
@@ -49,7 +136,10 @@ $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $NodePath)) { throw "Node.js が見つかりません: $NodePath" }
 if (-not (Test-Path $AgentRoot)) { throw "配布物が見つかりません: $AgentRoot" }
 
-$cli = Join-Path $AgentRoot 'packages/agent/src/cli.ts'
+# 起動するのはコンパイル済みの JS。Node は .ts を読めない。
+$cli = Join-Path $AgentRoot 'agent/cli.js'
+if (-not (Test-Path $cli)) { throw "配布物が壊れています。agent/cli.js がありません: $cli" }
+
 $binaryPath = "`"$NodePath`" `"$cli`" serve --store `"$Store`""
 
 sc.exe create $ServiceName binPath= $binaryPath start= auto | Out-Null
@@ -61,11 +151,11 @@ Write-Host "登録しました: $ServiceName"
 Write-Host "開始するには: sc.exe start $ServiceName"
 PS1
 
-cat > "${OUTPUT}/staffweave-agent/uninstall-service.ps1" <<'PS1'
+cat > "$BUNDLE/uninstall-service.ps1" <<'PS1'
 # StaffWeave の打刻 Agent のサービス登録を外す。
 #
 # 資格情報と送信待ちのファイルは消さない。送れていない打刻が残っている可能性があるため、
-# 消すかどうかは docs/operations/device-agent-service.md の手順で確かめてから決める。
+# 消すかどうかは README の手順で確かめてから決める。
 param([string] $ServiceName = 'StaffWeaveAgent')
 
 $ErrorActionPreference = 'Stop'
@@ -77,6 +167,6 @@ Write-Host "登録を外しました: $ServiceName"
 Write-Host "資格情報と送信待ちのファイルは残しています。"
 PS1
 
-cp "${ROOT}/docs/operations/device-agent-service.md" "${OUTPUT}/staffweave-agent/README.md"
+cp "$ROOT/docs/operations/device-agent-service.md" "$BUNDLE/README.md"
 
-echo "作成しました: ${OUTPUT}/staffweave-agent"
+echo "作成しました: $BUNDLE"
