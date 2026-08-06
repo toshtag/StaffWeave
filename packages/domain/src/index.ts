@@ -1,4 +1,15 @@
 export type {
+  ClosingDayState,
+  ClosingFinding,
+  ClosingFindingKind,
+  ClosingSeverity,
+} from './approval/closing-readiness.js';
+export {
+  CLOSING_FINDING_KINDS,
+  findClosingBlockers,
+  hasBlockingFindings,
+} from './approval/closing-readiness.js';
+export type {
   DailyRequestContext,
   DailyRequestEvent,
   DailyRequestEventType,
@@ -102,6 +113,8 @@ export {
   summarizeWorkDay,
 } from './attendance/events.js';
 export { instantFromLocal, localMinutesOfDay, MINUTES_PER_DAY } from './attendance/local-time.js';
+export type { DailyTotals, MonthlySummary } from './attendance/monthly.js';
+export { periodOf, summarizeMonth } from './attendance/monthly.js';
 export type { OccurredAtProblem } from './attendance/occurred-at.js';
 export {
   FUTURE_TOLERANCE_MINUTES,
