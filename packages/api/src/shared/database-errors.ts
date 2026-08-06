@@ -35,3 +35,14 @@ export function isExclusionViolation(error: unknown, constraint?: string): boole
   if (errorCodeOf(error) !== '23P01') return false;
   return constraint === undefined || constraintOf(error) === constraint;
 }
+
+/**
+ * 検査制約違反（23514）。
+ *
+ * 制度ごとに必要な値がそろっていない割当のように、行の中身どうしの関係を
+ * 禁じる制約で起きる。要求の作り方の問題なので、上位では衝突として返す。
+ */
+export function isCheckViolation(error: unknown, constraint?: string): boolean {
+  if (errorCodeOf(error) !== '23514') return false;
+  return constraint === undefined || constraintOf(error) === constraint;
+}

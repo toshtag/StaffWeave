@@ -160,8 +160,8 @@ describe('勤務予定の生成にかかる問い合わせ', () => {
     expect(long.result.created).toBe(54);
     expect(long.result.skipped).toBe(7);
 
-    expect(matching(short.queries, /calculation_rule_sets/)).toBe(1);
-    expect(matching(long.queries, /calculation_rule_sets/)).toBe(1);
+    expect(matching(short.queries, /calculation_rule_versions/)).toBe(1);
+    expect(matching(long.queries, /calculation_rule_versions/)).toBe(1);
   });
 
   it('既存の予定は期間分をまとめて 1 回で確かめる', async () => {
@@ -177,7 +177,7 @@ describe('勤務予定の生成にかかる問い合わせ', () => {
     const long = await generate('2026-04-14');
 
     const fixedCost = (queries: string[]): number =>
-      matching(queries, /calculation_rule_sets/) +
+      matching(queries, /calculation_rule_versions/) +
       matching(queries, /FROM employees[\s\S]*JOIN workspaces/) +
       matching(queries, /FROM employee_work_cycles/);
 

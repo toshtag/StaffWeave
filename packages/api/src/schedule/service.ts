@@ -1,14 +1,20 @@
 import type {
   AssignWorkCycleRequest,
+  CalculationRuleVersionRecord,
+  CreateCalculationRuleVersionRequest,
+  CreateLaborSystemAssignmentRequest,
   CreateLeaveTypeRequest,
+  CreateWorkCategoryRequest,
   CreateWorkCycleRequest,
   CreateWorkPatternRequest,
   EmployeeWorkCycleRecord,
   EndWorkCycleAssignmentRequest,
   GenerateWorkSchedulesRequest,
   GenerateWorkSchedulesResponse,
+  LaborSystemAssignmentRecord,
   LeaveTypeRecord,
   UpsertWorkScheduleRequest,
+  WorkCategoryRecord,
   WorkCycleRecord,
   WorkPattern,
   WorkScheduleRecord,
@@ -29,6 +35,7 @@ import type { AttendanceRepository } from '../attendance/repository.js';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import {
+  isCheckViolation,
   isExclusionViolation,
   isForeignKeyViolation,
   isUniqueViolation,
@@ -36,6 +43,9 @@ import {
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { conflict, invalidRequest, notFound } from '../shared/errors.js';
 import type { WorkCycleRepository } from './cycle-repository.js';
+import type { LaborSystemRepository } from './labor-system-repository.js';
+import { rulesFor } from './repository.js';
+import type { WorkCategoryRepository } from './work-category-repository.js';
 
 export interface ScheduleRepositories extends DayRepositories {
   audit: AuditRepository;
@@ -44,11 +54,38 @@ export interface ScheduleRepositories extends DayRepositories {
 export interface ScheduleServiceDependencies {
   repositories: DayRepositories;
   cycles: WorkCycleRepository;
+  categories: WorkCategoryRepository;
+  laborSystems: LaborSystemRepository;
   visibility: EmployeeVisibilityGuard;
   transaction<T>(fn: (repositories: ScheduleRepositories) => Promise<T>): Promise<T>;
 }
 
 export interface ScheduleService {
+  listWorkCategories(workspaceId: string): Promise<WorkCategoryRecord[]>;
+  createWorkCategory(
+    workspaceId: string,
+    input: CreateWorkCategoryRequest,
+  ): Promise<WorkCategoryRecord>;
+  listCalculationRuleVersions(workspaceId: string): Promise<CalculationRuleVersionRecord[]>;
+  createCalculationRuleVersion(
+    workspaceId: string,
+    input: CreateCalculationRuleVersionRequest,
+  ): Promise<CalculationRuleVersionRecord>;
+
+  listLaborSystemAssignments(
+    context: AuthenticatedContext,
+    employeeId: string,
+  ): Promise<LaborSystemAssignmentRecord[]>;
+  assignLaborSystem(
+    context: AuthenticatedContext,
+    input: CreateLaborSystemAssignmentRequest,
+  ): Promise<LaborSystemAssignmentRecord>;
+  endLaborSystemAssignment(
+    context: AuthenticatedContext,
+    assignmentId: string,
+    effectiveTo: string,
+  ): Promise<LaborSystemAssignmentRecord>;
+
   listWorkPatterns(workspaceId: string): Promise<WorkPattern[]>;
   createWorkPattern(workspaceId: string, input: CreateWorkPatternRequest): Promise<WorkPattern>;
   listWorkSchedules(
@@ -109,6 +146,79 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
   const { schedule } = deps.repositories;
 
   return {
+    listWorkCategories: (workspaceId) => deps.categories.listWorkCategories(workspaceId),
+
+    async createWorkCategory(workspaceId, input) {
+      // 所定の時刻は、片方だけでは意味が決まらない。
+      if (
+        (input.scheduledStartMinutes === undefined) !==
+        (input.scheduledEndMinutes === undefined)
+      ) {
+        throw invalidRequest([
+          { field: 'scheduledEndMinutes', message: '所定の開始と終了は両方を指定してください' },
+        ]);
+      }
+      if ((input.nightStartMinutes === undefined) !== (input.nightEndMinutes === undefined)) {
+        throw invalidRequest([
+          { field: 'nightEndMinutes', message: '深夜帯の開始と終了は両方を指定してください' },
+        ]);
+      }
+      try {
+        return await deps.categories.createWorkCategory(workspaceId, input);
+      } catch (error) {
+        if (isExclusionViolation(error)) {
+          throw conflict(
+            '同じコードで期間が重なる勤務区分があります。前の版へ終了日を設定してください',
+          );
+        }
+        if (isCheckViolation(error)) throw conflict('勤務区分の設定に矛盾があります');
+        throw error;
+      }
+    },
+
+    listCalculationRuleVersions: (workspaceId) =>
+      deps.categories.listCalculationRuleVersions(workspaceId),
+
+    async createCalculationRuleVersion(workspaceId, input) {
+      try {
+        return await deps.categories.createCalculationRuleVersion(workspaceId, input);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw conflict('同じ適用開始日の計算規則がすでにあります');
+        }
+        throw error;
+      }
+    },
+
+    async listLaborSystemAssignments(context, employeeId) {
+      await deps.visibility.requireVisibleEmployee(context, employeeId);
+      return deps.laborSystems.list(context.workspace.id, employeeId);
+    },
+
+    async assignLaborSystem(context, input) {
+      await deps.visibility.requireVisibleEmployee(context, input.employeeId);
+      try {
+        return await deps.laborSystems.create(context.workspace.id, {
+          ...input,
+          createdByUserId: context.user.id,
+        });
+      } catch (error) {
+        if (isExclusionViolation(error)) throw conflict(OVERLAPPING_ASSIGNMENT_MESSAGE);
+        // 制度ごとに必要な値がそろっていない。製品は既定値を持たないため、ここで断る。
+        if (isCheckViolation(error)) {
+          throw conflict('この労働形態に必要な設定がそろっていません');
+        }
+        throw error;
+      }
+    },
+
+    async endLaborSystemAssignment(context, assignmentId, effectiveTo) {
+      const updated = await deps.laborSystems.end(context.workspace.id, assignmentId, effectiveTo);
+      if (!updated) throw notFound('労働形態の割当');
+      await deps.visibility.requireVisibleEmployee(context, updated.employeeId);
+      return updated;
+    },
+
     listWorkPatterns: (workspaceId) => schedule.listWorkPatterns(workspaceId),
 
     async createWorkPattern(workspaceId, input) {
@@ -373,8 +483,9 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
           workspaceId,
           input.employeeId,
         );
-        // 日ごとに読み直しても同じ値になるものは、繰り返しへ入れない。
-        const rules = await repositories.schedule.findCalculationRules(workspaceId);
+        // 版の一覧は 1 回だけ読む。日ごとにどの版を使うかは、そのあと選ぶ。
+        // 計算規則は適用開始日で切り替わるため、期間の途中で変わることがある。
+        const ruleVersions = await repositories.schedule.findCalculationRuleVersions(workspaceId);
         const existingDates = input.overwrite
           ? new Set<string>()
           : new Set(
@@ -461,7 +572,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
             input.employeeId,
             businessDate,
             timeZone,
-            rules,
+            rulesFor(ruleVersions, businessDate),
           );
           created += 1;
         }
