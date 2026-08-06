@@ -16,7 +16,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const run = promisify(execFile);
 
@@ -37,13 +37,20 @@ async function filesUnder(root: string): Promise<string[]> {
   return files;
 }
 
-beforeEach(async () => {
+/*
+ * 配布物は 1 度だけ作る。
+ *
+ * 作るのに、コンパイルと他所の部品の取り寄せが要る。検査ごとに作り直すと、
+ * この 1 ファイルだけで統合テスト全体の 2 割近くを使う。
+ * 検査は配布物を読むだけで、書き換えない。作り直す必要は無い。
+ */
+beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'staffweave-agent-package-'));
   bundle = join(directory, 'staffweave-agent');
   await run(PACKAGE_AGENT, [directory], { cwd: REPOSITORY_ROOT });
-});
+}, 300_000);
 
-afterEach(async () => {
+afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
