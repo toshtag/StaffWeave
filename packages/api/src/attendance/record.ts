@@ -39,7 +39,6 @@ export interface AttendanceActor {
 export const PUNCH_REJECTION_MESSAGES = {
   already_working: 'すでに出勤済みです',
   not_working: '勤務中ではないため、この打刻はできません',
-  already_finished: 'すでに退勤済みです。同じ業務日の再出勤はできません',
   already_on_break: 'すでに休憩中です',
   not_on_break: '休憩中ではないため、休憩終了は記録できません',
   still_on_break: '休憩中です。先に休憩終了を記録してください',

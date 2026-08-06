@@ -38,7 +38,6 @@ export type WorkDayState = 'not_started' | 'working' | 'on_break' | 'finished';
 export type PunchRejection =
   | 'already_working'
   | 'not_working'
-  | 'already_finished'
   | 'already_on_break'
   | 'not_on_break'
   | 'still_on_break';
@@ -56,14 +55,18 @@ function reject(state: WorkDayState, rejection: PunchRejection): PunchDecision {
 /**
  * 現在の状態でその打刻を受け付けてよいかを判断する。
  *
- * 退勤後の再出勤は、同じ業務日のうちは受け付けない。
- * 休憩中の退勤も受け付けない。休憩終了を先に記録させ、休憩時間を欠落させないため。
+ * 退勤後の再出勤を受け付ける。中抜け、分割シフト、一日に複数の現場、
+ * 呼び出し勤務は、同じ業務日のうちに出勤と退勤を繰り返す。
+ * 受け付けないと、実際に働いた時間を記録できない。
+ *
+ * 休憩中の退勤は受け付けない。休憩終了を先に記録させ、休憩時間を欠落させないため。
  */
 export function decidePunch(state: WorkDayState, eventType: AttendanceEventType): PunchDecision {
   switch (eventType) {
     case 'clock_in':
-      if (state === 'not_started') return { accepted: true, nextState: 'working' };
-      if (state === 'finished') return reject(state, 'already_finished');
+      if (state === 'not_started' || state === 'finished') {
+        return { accepted: true, nextState: 'working' };
+      }
       return reject(state, 'already_working');
 
     case 'clock_out':
@@ -88,11 +91,27 @@ export interface BreakPeriod {
   endedAt: Date | null;
 }
 
+/** 出勤から退勤までのひと続き。同じ業務日に複数あってよい。 */
+export interface WorkSession {
+  startedAt: Date;
+  /** まだ退勤していない場合は null。 */
+  endedAt: Date | null;
+}
+
 export interface WorkDaySummary {
   businessDate: BusinessDate;
   state: WorkDayState;
   firstClockInAt: Date | null;
   lastClockOutAt: Date | null;
+  /**
+   * 勤務の区間。
+   *
+   * 区間と区間の間は、いまは勤務時間に数えない。
+   * 中抜けを休憩として扱うか、非勤務として扱うかは勤務区分の設定になる（P18）。
+   * それまでは数えない側を既定とする。数えてしまうと、
+   * 実際には働いていない時間が実労働に入り、あとから減らせない。
+   */
+  sessions: WorkSession[];
   breaks: BreakPeriod[];
 }
 
@@ -107,6 +126,7 @@ export function summarizeWorkDay(
   let state: WorkDayState = 'not_started';
   let firstClockInAt: Date | null = null;
   let lastClockOutAt: Date | null = null;
+  const sessions: WorkSession[] = [];
   const breaks: BreakPeriod[] = [];
 
   const ordered = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
@@ -119,10 +139,14 @@ export function summarizeWorkDay(
     switch (event.eventType) {
       case 'clock_in':
         if (firstClockInAt === null) firstClockInAt = event.occurredAt;
+        sessions.push({ startedAt: event.occurredAt, endedAt: null });
         break;
-      case 'clock_out':
+      case 'clock_out': {
         lastClockOutAt = event.occurredAt;
+        const open = sessions[sessions.length - 1];
+        if (open) open.endedAt = event.occurredAt;
         break;
+      }
       case 'break_start':
         breaks.push({ startedAt: event.occurredAt, endedAt: null });
         break;
@@ -134,26 +158,27 @@ export function summarizeWorkDay(
     }
   }
 
-  return { businessDate, state, firstClockInAt, lastClockOutAt, breaks };
+  return { businessDate, state, firstClockInAt, lastClockOutAt, sessions, breaks };
 }
 
 /**
  * IC カードのように操作が 1 種類しかない入力で、次に記録すべき打刻を決める。
  *
- * 出勤前なら出勤、勤務中なら退勤、休憩中なら休憩終了。
+ * 出勤前と退勤済みなら出勤、勤務中なら退勤、休憩中なら休憩終了。
+ * 退勤済みから出勤へ戻すのは、中抜けのあとに同じカードで戻れるようにするため。
+ *
  * 休憩の開始は種別を選べる入力からのみ行う。カードのひと触りで
  * 休憩に入るのか退勤するのかを取り違えないようにするため。
  */
 export function nextCardPunch(state: WorkDayState): AttendanceEventType | null {
   switch (state) {
     case 'not_started':
+    case 'finished':
       return 'clock_in';
     case 'working':
       return 'clock_out';
     case 'on_break':
       return 'break_end';
-    case 'finished':
-      return null;
   }
 }
 
