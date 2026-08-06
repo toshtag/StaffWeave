@@ -51,15 +51,19 @@ async function rowCounts(): Promise<string> {
   return JSON.stringify(rows[0] ?? {});
 }
 
+/** 接続文字列からデータベース名を取り出す。 */
+function databaseNameOf(connectionString: string): string {
+  return decodeURIComponent(new URL(connectionString).pathname.slice(1));
+}
+
 /**
  * ワーカー専用のデータベースを、無ければ作る。
  *
- * ワーカーごとに名前が違うため、同時に走っていても作る対象は重ならない。
- * 実行のたびには消さない。作り直すより、次の実行で使い回すほうが速い。
- * 中身はテストごとの消去とマイグレーションで、毎回同じ状態へ揃う。
+ * 名前はワーカーごとに違う（`database-url.ts`）。同時に生きているワーカーの間で
+ * 重ならないため、作る対象も書き込む先も重ならない。
  */
 async function ensureDatabase(connectionString: string): Promise<void> {
-  const name = decodeURIComponent(new URL(connectionString).pathname.slice(1));
+  const name = databaseNameOf(connectionString);
   const admin = createDatabase({ connectionString: adminDatabaseUrl(), maxConnections: 1 });
   try {
     const rows = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [name]);
@@ -71,10 +75,31 @@ async function ensureDatabase(connectionString: string): Promise<void> {
   }
 }
 
+/**
+ * 使い終わったワーカー専用のデータベースを消す。
+ *
+ * ワーカーの番号は実行のたびに変わるため、残すと数だけが増えていく。
+ * 消せなくても検査は落とさない。接続が残っているなど、後片付けの失敗が
+ * テストの結果を書き換えると、何が壊れたのか読めなくなる。
+ */
+async function dropDatabase(connectionString: string): Promise<void> {
+  const name = databaseNameOf(connectionString);
+  const admin = createDatabase({ connectionString: adminDatabaseUrl(), maxConnections: 1 });
+  try {
+    await admin.query(`DROP DATABASE IF EXISTS "${name}"`);
+  } catch {
+    // 残っても次の実行で作り直せる。
+  } finally {
+    await admin.close();
+  }
+}
+
+let workerDatabase = '';
+
 beforeAll(async () => {
-  const connectionString = workerDatabaseUrl();
-  await ensureDatabase(connectionString);
-  database = createDatabase({ connectionString });
+  workerDatabase = workerDatabaseUrl();
+  await ensureDatabase(workerDatabase);
+  database = createDatabase({ connectionString: workerDatabase });
   await migrate(database);
 });
 
@@ -86,6 +111,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await database?.close();
   database = undefined;
+  if (workerDatabase) await dropDatabase(workerDatabase);
 });
 
 /**
