@@ -31,7 +31,8 @@ import {
  *
  * API は送信待ちを業務データと同じトランザクションで記録するだけで、HTTP 送信は行わない。
  * 送信はワーカーが別に行う。ワーカーは送信の直前に 1 件だけ取り出し、未送信の行を先取りしない。
- * HTTP の失敗は自動再送しないため、到達は保証しない。
+ * 送れなかったものは間を空けて送り直し、決めた回数を超えたら諦める。
+ * 諦めた行は残し、人が中身を確かめてから手で送り直せる。
  */
 
 const CLOCK_OUT_AT = '2026-04-01T09:00:00.000Z';
@@ -77,6 +78,7 @@ async function countOf(table: string): Promise<number> {
 }
 
 interface Fixture {
+  adminCookie: string;
   employeeCookie: string;
   approverCookie: string;
   endpoints: CreateWebhookEndpointResponse[];
@@ -120,10 +122,18 @@ async function setUp(options: { endpoints?: number } = {}): Promise<Fixture> {
   }
 
   return {
+    adminCookie,
     approverCookie: await loginAndGetCookie(instance, { email: 'approver@example.com' }),
     employeeCookie: await loginAndGetCookie(instance, { email: 'hanako@example.com' }),
     endpoints,
   };
+}
+
+/** 送信待ちが 1 件ある状態を作る。再試行の検査はここから始める。 */
+async function setUpApprovedRequest(): Promise<Fixture> {
+  const fixture = await setUp();
+  await submitAndApprove(fixture);
+  return fixture;
 }
 
 /** 日次申請を提出し、承認する。承認の応答を返す。 */
@@ -543,5 +553,144 @@ describe('送信待ちの取得と回復', () => {
     );
     expect(stored[0]?.occurred_at.getTime()).toBe(tomorrow.getTime());
     expect(stored[0]?.available_at.getTime()).toBeLessThan(tomorrow.getTime());
+  });
+});
+
+describe('送れなかった通知の再試行と、諦めた行の扱い', () => {
+  /** すぐ諦める方針。検査を待たせないため、回数を小さく取る。 */
+  const impatient = {
+    initialDelayMs: 1,
+    multiplier: 1,
+    maximumDelayMs: 1,
+    maximumAttempts: 2,
+  };
+
+  /** 送信待ちの行の状態。完了した行も残るため、完了かどうかも一緒に返す。 */
+  async function outboxRow(
+    db: Database,
+  ): Promise<{ attempts: number; abandoned: boolean; completed: boolean } | undefined> {
+    const rows = await db.query<{
+      attempts: number;
+      abandoned_at: Date | null;
+      completed_at: Date | null;
+    }>('SELECT attempts, abandoned_at, completed_at FROM webhook_outbox LIMIT 1');
+    const row = rows[0];
+    return row === undefined
+      ? undefined
+      : {
+          attempts: row.attempts,
+          abandoned: row.abandoned_at !== null,
+          completed: row.completed_at !== null,
+        };
+  }
+
+  it('相手側が失敗したら、完了させずに送り直す予定を入れる', async () => {
+    const fixture = await setUpApprovedRequest();
+    const sent: SentWebhook[] = [];
+    const processor = createTestDeliveryProcessor(testDatabase(), {
+      now: NOW,
+      transport: recordingTransport(sent, () => 503),
+      retryPolicy: impatient,
+    });
+
+    expect(await processor.processNext()).toBe(true);
+
+    expect(await outboxRow(testDatabase())).toEqual({
+      attempts: 1,
+      abandoned: false,
+      completed: false,
+    });
+    expect(fixture).toBeDefined();
+  });
+
+  it('決めた回数を超えたら諦め、行は残す', async () => {
+    await setUpApprovedRequest();
+    const sent: SentWebhook[] = [];
+    const processor = createTestDeliveryProcessor(testDatabase(), {
+      now: NOW,
+      transport: recordingTransport(sent, () => 503),
+      retryPolicy: impatient,
+    });
+
+    await processor.processNext();
+    await processor.processNext();
+
+    expect(await outboxRow(testDatabase())).toEqual({
+      attempts: 2,
+      abandoned: true,
+      completed: false,
+    });
+    // 諦めた行は、次の走査で取り出されない。
+    expect(await processor.processNext()).toBe(false);
+  });
+
+  it('諦めた通知を一覧でき、手で送り直せる', async () => {
+    const fixture = await setUpApprovedRequest();
+    const sent: SentWebhook[] = [];
+    const failing = createTestDeliveryProcessor(testDatabase(), {
+      now: NOW,
+      transport: recordingTransport(sent, () => 503),
+      retryPolicy: impatient,
+    });
+    await failing.processNext();
+    await failing.processNext();
+
+    const instance = app();
+    const listed = await instance.request(
+      '/api/webhook-deliveries/abandoned',
+      authorized(fixture.adminCookie),
+    );
+    const { deliveries } = (await listed.json()) as { deliveries: { id: string }[] };
+    expect(deliveries).toHaveLength(1);
+
+    const requeued = await instance.request(
+      `/api/webhook-deliveries/abandoned/${deliveries[0]?.id}/requeue`,
+      authorized(fixture.adminCookie, { method: 'POST' }),
+    );
+    expect(requeued.status).toBe(204);
+
+    // 戻した行は、また送られる。今度は通す。
+    const succeeding = createTestDeliveryProcessor(testDatabase(), {
+      now: NOW,
+      transport: recordingTransport(sent, () => 204),
+    });
+    expect(await succeeding.processNext()).toBe(true);
+    expect(await outboxRow(testDatabase())).toMatchObject({ abandoned: false, completed: true });
+  });
+
+  it('要求そのものを断られたら、送り直さず完了させる', async () => {
+    await setUpApprovedRequest();
+    const sent: SentWebhook[] = [];
+    const processor = createTestDeliveryProcessor(testDatabase(), {
+      now: NOW,
+      transport: recordingTransport(sent, () => 400),
+      retryPolicy: impatient,
+    });
+
+    await processor.processNext();
+
+    // 同じ要求を送り直しても、同じ答えしか返らない。
+    expect(await outboxRow(testDatabase())).toMatchObject({ abandoned: false, completed: true });
+    expect(await processor.processNext()).toBe(false);
+  });
+
+  it('何回目の試行だったかが履歴に残る', async () => {
+    const fixture = await setUpApprovedRequest();
+    const sent: SentWebhook[] = [];
+    const processor = createTestDeliveryProcessor(testDatabase(), {
+      now: NOW,
+      transport: recordingTransport(sent, (request) => (request.body.length > 0 ? 503 : 204)),
+      retryPolicy: impatient,
+    });
+    await processor.processNext();
+    await processor.processNext();
+
+    const response = await app().request(
+      '/api/webhook-deliveries',
+      authorized(fixture.adminCookie),
+    );
+    const { deliveries } = (await response.json()) as { deliveries: { attempt: number }[] };
+
+    expect(deliveries.map((delivery) => delivery.attempt).sort()).toEqual([1, 2]);
   });
 });

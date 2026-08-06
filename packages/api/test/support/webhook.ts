@@ -1,4 +1,5 @@
 import type { Database } from '@staffweave/db';
+import type { RetryPolicy } from '@staffweave/domain';
 import type { WebhookDeliveryProcessor } from '../../src/integration/delivery-processor.js';
 import { createWebhookDeliveryProcessor } from '../../src/integration/delivery-processor.js';
 import { createWebhookOutboxRepository } from '../../src/integration/outbox-repository.js';
@@ -66,6 +67,8 @@ export interface TestDeliveryOptions {
   claimLeaseMs?: number;
   sendTimeoutMs?: number;
   resolver?: WebhookHostResolver;
+  /** 再試行の方針。省略すると既定値。 */
+  retryPolicy?: RetryPolicy;
 }
 
 export function createTestDeliveryProcessor(
@@ -83,6 +86,9 @@ export function createTestDeliveryProcessor(
     }),
     now: () => options.now,
     claimLeaseMs: options.claimLeaseMs ?? 60_000,
+    ...(options.retryPolicy === undefined ? {} : { retryPolicy: options.retryPolicy }),
+    // 間隔をずらす値は固定にする。検査のたびに待ち時間が変わらないようにする。
+    jitter: () => 0,
   });
 }
 

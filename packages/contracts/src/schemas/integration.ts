@@ -37,6 +37,7 @@ export const webhookDeliverySchema = objectSchema({
     statusCode: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
     outcome: { type: 'string', enum: ['delivered', 'failed', 'skipped'] },
     errorMessage: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+    attempt: { type: 'integer', description: '何回目の試行だったか' },
   },
   required: [
     'id',
@@ -47,6 +48,7 @@ export const webhookDeliverySchema = objectSchema({
     'statusCode',
     'outcome',
     'errorMessage',
+    'attempt',
   ],
 });
 
@@ -159,4 +161,33 @@ export const exportPayrollQuerySchema = objectSchema({
     period: { type: 'string', pattern: '^\\d{4}-\\d{2}-01$', description: '対象月の 1 日' },
   },
   required: ['period'],
+});
+
+export const abandonedDeliverySchema = objectSchema({
+  description: '決めた回数だけ試しても送れず、諦めた通知。行は残る',
+  properties: {
+    id: uuidSchema,
+    endpointId: uuidSchema,
+    eventType: { type: 'string', enum: [...WEBHOOK_EVENT_TYPES] },
+    eventId: uuidSchema,
+    occurredAt: timestampSchema,
+    attempts: { type: 'integer' },
+    abandonedAt: timestampSchema,
+    lastError: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+  },
+  required: [
+    'id',
+    'endpointId',
+    'eventType',
+    'eventId',
+    'occurredAt',
+    'attempts',
+    'abandonedAt',
+    'lastError',
+  ],
+});
+
+export const abandonedDeliveryListSchema = objectSchema({
+  properties: { deliveries: arraySchema(abandonedDeliverySchema) },
+  required: ['deliveries'],
 });

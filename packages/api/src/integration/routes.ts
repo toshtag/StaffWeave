@@ -14,7 +14,7 @@ import type { OrganizationService } from '../organization/service.js';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth, requirePermission } from '../shared/context.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
-import { invalidRequest } from '../shared/errors.js';
+import { invalidRequest, notFound } from '../shared/errors.js';
 import { pathParam, readBody, readQuery } from '../shared/request.js';
 import type { ExportService } from './export-service.js';
 import type { IntegrationService } from './service.js';
@@ -175,6 +175,24 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
       eventTypes: body.eventTypes,
     });
     return c.json(result, 201);
+  });
+
+  app.get(operations.listAbandonedDeliveries.path, async (c) => {
+    const auth = requirePermission(c, 'user.manage');
+    return c.json(
+      { deliveries: await deps.integration.listAbandonedDeliveries(auth.workspace.id) },
+      200,
+    );
+  });
+
+  app.post(honoPath(operations.requeueAbandonedDelivery), async (c) => {
+    const auth = requirePermission(c, 'user.manage');
+    const requeued = await deps.integration.requeueAbandonedDelivery(
+      auth.workspace.id,
+      pathParam(c, 'outboxId'),
+    );
+    if (!requeued) throw notFound('諦めた通知');
+    return c.body(null, 204);
   });
 
   app.get(honoPath(operations.listWebhookDeliveries), async (c) => {

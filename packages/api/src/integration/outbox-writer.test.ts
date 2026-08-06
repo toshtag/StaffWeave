@@ -20,6 +20,10 @@ function writerOver(endpoints: Endpoint[]): {
     },
     claimNext: async () => null,
     complete: async () => true,
+    scheduleRetry: async () => true,
+    abandon: async () => true,
+    listAbandoned: async () => [],
+    requeue: async () => true,
   };
 
   let counter = 0;

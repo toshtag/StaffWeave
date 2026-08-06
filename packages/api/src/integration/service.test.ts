@@ -26,6 +26,15 @@ function principalRow(lastUsedAt: Date | null): Record<string, unknown> {
 function service(db: Queryable) {
   return createIntegrationService({
     repository: createIntegrationRepository(db),
+    outbox: {
+      enqueue: async () => {},
+      claimNext: async () => null,
+      complete: async () => true,
+      scheduleRetry: async () => true,
+      abandon: async () => true,
+      listAbandoned: async () => [],
+      requeue: async () => true,
+    },
     now: () => NOW,
     webhookTarget: async (url) => ({ canonicalUrl: url }),
     apiKeyUsageIntervalMs: INTERVAL_MS,
