@@ -131,8 +131,6 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         <OrganizationTable session={session} />
 
         <ApiKeys session={session} />
-
-        <p className="notice">{messages.unimplementedNotice}</p>
       </main>
     </>
   );

@@ -24,7 +24,6 @@ export interface Messages {
   organizationCode: string;
   organizationName: string;
   noOrganizations: string;
-  unimplementedNotice: string;
   sessionExpiresAt: string;
   changePassword: string;
   currentPassword: string;
@@ -179,7 +178,6 @@ const ja: Messages = {
   organizationCode: 'コード',
   organizationName: '名称',
   noOrganizations: '組織はまだ登録されていません',
-  unimplementedNotice: '休憩、勤務時間の計算、申請・承認はまだ実装されていません。',
   sessionExpiresAt: 'セッション有効期限',
   changePassword: 'パスワードの変更',
   currentPassword: '現在のパスワード',
@@ -366,7 +364,6 @@ const en: Messages = {
   organizationCode: 'Code',
   organizationName: 'Name',
   noOrganizations: 'No organizations have been registered yet',
-  unimplementedNotice: 'Breaks, worked-time calculation, and approvals are not implemented yet.',
   sessionExpiresAt: 'Session expires at',
   changePassword: 'Change password',
   currentPassword: 'Current password',
