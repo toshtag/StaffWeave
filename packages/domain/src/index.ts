@@ -91,6 +91,7 @@ export type { OccurredAtProblem } from './attendance/occurred-at.js';
 export {
   FUTURE_TOLERANCE_MINUTES,
   PAST_TOLERANCE_MINUTES,
+  validateCorrectionOccurredAt,
   validateOccurredAt,
 } from './attendance/occurred-at.js';
 export type {

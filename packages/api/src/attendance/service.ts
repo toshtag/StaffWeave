@@ -12,6 +12,7 @@ import {
   businessDateOf,
   isBusinessDate,
   isOpenWorkDay,
+  validateCorrectionOccurredAt,
   validateOccurredAt,
 } from '@staffweave/domain';
 import type { AuthenticatedContext } from '../identity/service.js';
@@ -74,18 +75,54 @@ export async function resolveTimeZoneForEmployee(
 }
 
 export function createAttendanceService(deps: AttendanceServiceDependencies): AttendanceService {
+  /**
+   * 打刻そのものの時刻。オフラインの再送を見込んで 24 時間だけ遡れる。
+   */
   function requireValidOccurredAt(value: string | undefined, now: Date, field: string): Date {
+    return requireOccurredAtWithin(value, now, field, {
+      validate: validateOccurredAt,
+      tooFarPast: '24 時間より前の時刻は指定できません',
+    });
+  }
+
+  /**
+   * 訂正で指定する時刻。人が後から直すため、打刻より広く遡れる。
+   *
+   * 打刻と同じ 24 時間を当てていたので、前月の打刻漏れも、
+   * 月次の確認で見つけた誤りも直せなかった。
+   * 遡れる範囲を広げても、締め済みの期間は `requireEditableDay` が断る。
+   */
+  function requireValidCorrectionOccurredAt(
+    value: string | undefined,
+    now: Date,
+    field: string,
+  ): Date {
+    return requireOccurredAtWithin(value, now, field, {
+      validate: validateCorrectionOccurredAt,
+      tooFarPast: '訂正できる範囲より前の時刻です',
+    });
+  }
+
+  function requireOccurredAtWithin(
+    value: string | undefined,
+    now: Date,
+    field: string,
+    rule: {
+      validate: (occurredAt: Date, now: Date) => readonly string[];
+      tooFarPast: string;
+    },
+  ): Date {
     if (value === undefined) return now;
     const occurredAt = new Date(value);
     if (Number.isNaN(occurredAt.getTime())) {
       throw invalidRequest([{ field, message: '日時として解釈できません' }]);
     }
-    const problems = validateOccurredAt(occurredAt, now);
+    const problems = rule.validate(occurredAt, now);
     if (problems.includes('too_far_future')) {
       throw invalidRequest([{ field, message: '未来の時刻は指定できません' }]);
     }
     if (problems.includes('too_far_past')) {
-      throw invalidRequest([{ field, message: '24 時間より前の時刻は指定できません' }]);
+      throw invalidRequest([{ field, message: rule.tooFarPast }]);
     }
     return occurredAt;
   }
@@ -197,7 +234,7 @@ export function createAttendanceService(deps: AttendanceServiceDependencies): At
             ? target === null
               ? now
               : new Date(target.occurredAt)
-            : requireValidOccurredAt(input.occurredAt, now, 'occurredAt');
+            : requireValidCorrectionOccurredAt(input.occurredAt, now, 'occurredAt');
 
         // 修正は対象と同じ業務日に属させる。追加のみ、指定または打刻時刻から決める。
         const businessDate =
