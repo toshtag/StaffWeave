@@ -41,6 +41,9 @@ import {
 import { createLeaveRepository } from './leave/repository.js';
 import { createLeaveRoutes } from './leave/routes.js';
 import { createLeaveService } from './leave/service.js';
+import { createMonthlyRepository } from './monthly/repository.js';
+import { createMonthlyRoutes } from './monthly/routes.js';
+import { createMonthlyService } from './monthly/service.js';
 import { createAssignmentRepository } from './organization/assignment-repository.js';
 import { createAssignmentRoutes } from './organization/assignment-routes.js';
 import { createAssignmentService } from './organization/assignment-service.js';
@@ -182,6 +185,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       schedule: ReturnType<typeof createScheduleRepository>;
       calculations: ReturnType<typeof createCalculationRepository>;
       approval: ReturnType<typeof createApprovalRepository>;
+      monthly: ReturnType<typeof createMonthlyRepository>;
       leave: ReturnType<typeof createLeaveRepository>;
       requests: ReturnType<typeof createRequestRepository>;
       devices: ReturnType<typeof createDeviceRepository>;
@@ -197,6 +201,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         schedule: createScheduleRepository(tx),
         calculations: createCalculationRepository(tx),
         approval: createApprovalRepository(tx),
+        monthly: createMonthlyRepository(tx),
         leave: createLeaveRepository(tx),
         requests: createRequestRepository(tx),
         devices: createDeviceRepository(tx),
@@ -266,6 +271,13 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     transaction: withTransaction,
   });
 
+  const monthlyService = createMonthlyService({
+    repository: createMonthlyRepository(deps.db),
+    attendance: dayRepositories.attendance,
+    visibility,
+    transaction: withTransaction,
+  });
+
   const requestService = createRequestService({
     repository: createRequestRepository(deps.db),
     visibility,
@@ -320,6 +332,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));
+  api.route('/', createMonthlyRoutes({ service: monthlyService }));
   api.route('/', createLeaveRoutes({ service: leaveService }));
   api.route('/', createRequestRoutes({ service: requestService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));

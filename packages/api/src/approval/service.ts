@@ -17,9 +17,11 @@ import {
   INITIAL_MONTHLY_CLOSING,
   isBusinessDate,
   isDailyRequestState,
+  summarizeMonth,
 } from '@staffweave/domain';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
+import type { MonthlyRepository } from '../monthly/repository.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.js';
 import type { NotificationOutbox } from '../shared/notification-outbox.js';
@@ -27,6 +29,8 @@ import type { ApprovalRepository } from './repository.js';
 
 export interface ApprovalRepositories {
   approval: ApprovalRepository;
+  /** 締めた時点の集計を固めるために使う。 */
+  monthly: MonthlyRepository;
   audit: AuditRepository;
   /**
    * 承認や締めの結果を外部へ知らせるための送信待ち。
@@ -338,7 +342,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
       await requireEmployeeInScope(context, input.employeeId, monthPeriodOf(input.period));
       const workspaceId = context.workspace.id;
 
-      return deps.transaction(async ({ approval, audit, outbox }) => {
+      return deps.transaction(async ({ approval, monthly, audit, outbox }) => {
         const existing = await approval.findClosing(workspaceId, input.employeeId, input.period);
         const current =
           existing === null
@@ -373,6 +377,24 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
           reopenReason: null,
         });
 
+        // 締めた時点の集計を、その場で固める。
+        // 締めたあとに打刻を直すと日次は新しい版になるが、給与へ渡した値は変わらない。
+        // 固めておかないと、あとから画面に出る値と給与の値が食い違ったときに、
+        // どちらが正しいのかを人が説明することになる。
+        const { totals, versions } = await monthly.listDailyTotals(
+          workspaceId,
+          input.employeeId,
+          input.period,
+        );
+        const snapshot = await monthly.insertSnapshot(workspaceId, {
+          employeeId: input.employeeId,
+          period: input.period,
+          sequence: await monthly.nextSnapshotSequence(workspaceId, input.employeeId, input.period),
+          closedByUserId: context.user.id,
+          dayVersions: versions,
+          summary: summarizeMonth(input.period, totals),
+        });
+
         await audit.record(workspaceId, {
           actorKind: 'user',
           actorUserId: context.user.id,
@@ -380,7 +402,13 @@ export function createApprovalService(deps: ApprovalServiceDependencies): Approv
           targetType: 'monthly_closing',
           targetId: null,
           summary: `${input.period} の勤怠を締めました`,
-          detail: { employeeId: input.employeeId, period: input.period },
+          detail: {
+            employeeId: input.employeeId,
+            period: input.period,
+            sequence: snapshot.sequence,
+            workedMinutes: snapshot.summary.workedMinutes,
+            countedDays: snapshot.summary.countedDays,
+          },
         });
 
         await outbox.enqueue(workspaceId, {

@@ -182,19 +182,34 @@ export function createExportService(db: Queryable): ExportService {
         absence_minutes: number;
         working_days: number;
         closing_state: string | null;
+        snapshot_sequence: number | null;
+        closed_at: Date | null;
       }>(
+        // 締めた月は、締めた時点で固めた値を出す。
+        // いま日次を足し直すと、締めたあとの訂正が混ざり、
+        // すでに給与へ渡した値と食い違う。締めを解除した月は live の値へ戻る。
         `SELECT employees.employee_number,
                 employees.display_name,
-                coalesce(sum(latest.worked_minutes), 0)::int AS worked_minutes,
-                coalesce(sum(latest.outside_schedule_minutes), 0)::int
+                coalesce(snapshot.worked_minutes,
+                         sum(latest.worked_minutes)::int, 0) AS worked_minutes,
+                coalesce(snapshot.outside_schedule_minutes,
+                         sum(latest.outside_schedule_minutes)::int, 0)
                   AS outside_schedule_minutes,
-                coalesce(sum(latest.night_minutes), 0)::int AS night_minutes,
-                coalesce(sum(latest.non_working_day_minutes), 0)::int
+                coalesce(snapshot.night_minutes,
+                         sum(latest.night_minutes)::int, 0) AS night_minutes,
+                coalesce(snapshot.non_working_day_minutes,
+                         sum(latest.non_working_day_minutes)::int, 0)
                   AS non_working_day_minutes,
-                coalesce(sum(latest.leave_minutes), 0)::int AS leave_minutes,
-                coalesce(sum(latest.absence_minutes), 0)::int AS absence_minutes,
-                count(*) FILTER (WHERE latest.worked_minutes > 0)::int AS working_days,
-                max(closings.state) AS closing_state
+                coalesce(snapshot.leave_minutes,
+                         sum(latest.leave_minutes)::int, 0) AS leave_minutes,
+                coalesce(snapshot.absence_minutes,
+                         sum(latest.absence_minutes)::int, 0) AS absence_minutes,
+                coalesce(snapshot.worked_days,
+                         count(*) FILTER (WHERE latest.worked_minutes > 0)::int, 0)
+                  AS working_days,
+                max(closings.state) AS closing_state,
+                snapshot.sequence AS snapshot_sequence,
+                snapshot.closed_at
            FROM employees
            LEFT JOIN LATERAL (
              SELECT DISTINCT ON (calculations.business_date)
@@ -216,9 +231,27 @@ export function createExportService(db: Queryable): ExportService {
              ON closings.workspace_id = employees.workspace_id
             AND closings.employee_id = employees.id
             AND closings.period = $2::date
+           LEFT JOIN LATERAL (
+             SELECT snapshots.sequence, snapshots.closed_at, snapshots.worked_minutes,
+                    snapshots.outside_schedule_minutes, snapshots.night_minutes,
+                    snapshots.non_working_day_minutes, snapshots.leave_minutes,
+                    snapshots.absence_minutes, snapshots.worked_days
+               FROM monthly_closing_snapshots AS snapshots
+              WHERE snapshots.workspace_id = employees.workspace_id
+                AND snapshots.employee_id = employees.id
+                AND snapshots.period = $2::date
+                -- 締めを解除した月は live の値へ戻る。固めた値は残るが、出さない。
+                AND closings.state = 'closed'
+              ORDER BY snapshots.sequence DESC
+              LIMIT 1
+           ) AS snapshot ON true
           WHERE employees.workspace_id = $1
             AND ${visible.sql}
-          GROUP BY employees.employee_number, employees.display_name
+          GROUP BY employees.employee_number, employees.display_name,
+                   snapshot.sequence, snapshot.closed_at, snapshot.worked_minutes,
+                   snapshot.outside_schedule_minutes, snapshot.night_minutes,
+                   snapshot.non_working_day_minutes, snapshot.leave_minutes,
+                   snapshot.absence_minutes, snapshot.worked_days
           ORDER BY employees.employee_number`,
         [workspaceId, period, ...visible.parameters],
       );
@@ -236,6 +269,9 @@ export function createExportService(db: Queryable): ExportService {
           'leave_minutes',
           'absence_minutes',
           'closing_state',
+          // 既にある列の並びは変えない。取り込む側の設定を壊さないよう、後ろへ足す。
+          'snapshot_sequence',
+          'closed_at',
         ],
         rows.map((row) => [
           period,
@@ -249,6 +285,8 @@ export function createExportService(db: Queryable): ExportService {
           row.leave_minutes,
           row.absence_minutes,
           row.closing_state ?? 'open',
+          row.snapshot_sequence ?? '',
+          row.closed_at === null ? '' : row.closed_at.toISOString(),
         ]),
       );
     },
