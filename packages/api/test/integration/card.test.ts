@@ -363,7 +363,8 @@ describe('カードによる打刻', () => {
     expect(((await response.json()) as CardEventResponse).eventType).toBe('break_end');
   });
 
-  it('退勤後のひと触りは受け付けない', async () => {
+  it('退勤後のひと触りは再出勤になる', async () => {
+    // 中抜けのあと、同じカードで戻れるようにする。
     const instance = app();
     await tapCard(instance, fixture, {
       sequence: 1,
@@ -382,7 +383,8 @@ describe('カードによる打刻', () => {
       rawCardId: 'EMPLOYEE-CARD',
     });
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(201);
+    expect(((await response.json()) as CardEventResponse).eventType).toBe('clock_in');
   });
 
   it('同じ冪等キーの再送は 1 件しか記録しない', async () => {
@@ -460,21 +462,21 @@ describe('カードによる打刻', () => {
 
   it('打刻を断った要求も記録に残し、再送へ同じ理由を返す', async () => {
     const instance = app();
-    for (const [index, requestId] of ['card-closed-in', 'card-closed-out'].entries()) {
-      await tapCard(instance, fixture, {
-        sequence: index + 1,
-        requestId,
-        rawCardId: 'EMPLOYEE-CARD',
-      });
-    }
+    // 失効させたカードのひと触りは断られる。断られた要求の記録を確かめる。
+    const listed = await instance.request('/api/card-credentials', authorized(fixture.adminCookie));
+    const credential = ((await listed.json()) as CardCredentialList).cardCredentials[0];
+    await instance.request(
+      `/api/card-credentials/${credential?.id}/revoke`,
+      authorized(fixture.adminCookie, { method: 'POST' }),
+    );
 
-    const input = { sequence: 3, requestId: 'card-closed-again', rawCardId: 'EMPLOYEE-CARD' };
+    const input = { sequence: 1, requestId: 'card-revoked-again', rawCardId: 'EMPLOYEE-CARD' };
     const rejected = await tapCard(instance, fixture, input);
     const reason = ((await rejected.json()) as { error: { message: string } }).error.message;
-    expect(rejected.status).toBe(409);
+    expect(rejected.status).toBe(404);
 
     const resent = await tapCard(instance, fixture, input);
-    expect(resent.status).toBe(409);
+    expect(resent.status).toBe(404);
     expect(((await resent.json()) as { error: { message: string } }).error.message).toBe(reason);
 
     const receipts = await testDatabase().query<{
@@ -489,7 +491,7 @@ describe('カードによる打刻', () => {
     expect(receipts).toHaveLength(1);
     expect(receipts[0]).toMatchObject({
       outcome: 'rejected',
-      rejection_code: 'conflict',
+      rejection_code: 'not_found',
       rejection_message: reason,
     });
   });

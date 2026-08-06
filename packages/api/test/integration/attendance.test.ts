@@ -12,6 +12,11 @@ import {
   type TestApp,
 } from '../support/fixtures.js';
 
+async function today(instance: TestApp, cookie: string): Promise<WorkDay> {
+  const response = await instance.request('/api/attendance/today', authorized(cookie));
+  return (await response.json()) as WorkDay;
+}
+
 async function punch(
   instance: TestApp,
   cookie: string,
@@ -244,15 +249,38 @@ describe('受け付けられない打刻', () => {
     expect(response.status).toBe(409);
   });
 
-  it('退勤後の再出勤は 409 を返す', async () => {
+  it('退勤後に再出勤でき、区間が 2 つになる', async () => {
+    // 中抜け、分割シフト、呼び出し勤務は同じ業務日に出退勤を繰り返す。
     const instance = createTestApp();
     await punch(instance, cookie, { eventType: 'clock_in', requestId: 'day-clock-in' });
     await punch(instance, cookie, { eventType: 'clock_out', requestId: 'day-clock-out' });
+
     const response = await punch(instance, cookie, {
       eventType: 'clock_in',
       requestId: 'day-in-again',
     });
+    expect(response.status).toBe(201);
+
+    const day = await today(instance, cookie);
+    expect(day.state).toBe('working');
+    expect(day.sessions).toHaveLength(2);
+    expect(day.sessions[1]?.endedAt).toBeNull();
+  });
+
+  it('休憩中の退勤は受け付けず、区間も閉じない', async () => {
+    const instance = createTestApp();
+    await punch(instance, cookie, { eventType: 'clock_in', requestId: 'break-in' });
+    await punch(instance, cookie, { eventType: 'break_start', requestId: 'break-start' });
+
+    const response = await punch(instance, cookie, {
+      eventType: 'clock_out',
+      requestId: 'break-out',
+    });
     expect(response.status).toBe(409);
+
+    const day = await today(instance, cookie);
+    expect(day.sessions).toHaveLength(1);
+    expect(day.sessions[0]?.endedAt).toBeNull();
   });
 
   it('未来の時刻は打刻できない', async () => {
