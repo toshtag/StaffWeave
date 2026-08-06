@@ -22,6 +22,7 @@ import type {
   Discrepancy,
   Locale,
   MonthlyClosingState,
+  Permission,
   Role,
   SessionObservationType,
   WebhookEventType,
@@ -61,7 +62,8 @@ export interface SessionUser {
   displayName: string;
   locale: Locale;
   roles: Role[];
-  permissions: string[];
+  /** ロールから導いた権限。画面はこれを見て操作を出し分ける。 */
+  permissions: Permission[];
   /**
    * 閲覧対象として明示的に与えられた組織。
    * 空配列は管理対象の組織がないことを表す。全体の閲覧可否はロールが決める。
@@ -145,6 +147,10 @@ export interface Site {
   createdAt: string;
 }
 
+export interface SiteList {
+  sites: Site[];
+}
+
 export interface CreateSiteRequest {
   organizationId: string;
   code: string;
@@ -159,6 +165,10 @@ export interface Department {
   code: string;
   name: string;
   createdAt: string;
+}
+
+export interface DepartmentList {
+  departments: Department[];
 }
 
 export interface CreateDepartmentRequest {
@@ -709,6 +719,10 @@ export interface UserScopeRecord {
   grantedAt: string;
 }
 
+export interface UserScopeList {
+  scopes: UserScopeRecord[];
+}
+
 export interface GrantUserScopeRequest {
   userId: string;
   organizationId: string;
@@ -875,6 +889,10 @@ export interface CalculationRuleVersionRecord {
   weekStartsOn: number;
   monthStartsOn: number;
   createdAt: string;
+}
+
+export interface CalculationRuleVersionList {
+  calculationRuleVersions: CalculationRuleVersionRecord[];
 }
 
 export interface CreateCalculationRuleVersionRequest {

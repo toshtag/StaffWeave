@@ -1,3 +1,10 @@
+import type {
+  EmployeeStatus,
+  LaborSystemType,
+  LeaveEntryTypeValue,
+  RequestCategory,
+  WorkCategoryType,
+} from '@staffweave/contracts';
 import type { ApiScope, DeviceBrowser, DeviceKind, DeviceOs, Locale } from '@staffweave/domain';
 
 /**
@@ -159,6 +166,169 @@ export interface Messages {
   downloadCsv: string;
   severityWarning: string;
   severityInfo: string;
+  /** 設定の画面。項目が多いため、他と混ぜず 1 つのまとまりとして持つ。 */
+  admin: AdminMessages;
+}
+/** 設定の画面の文言。 */
+export interface AdminMessages {
+  title: string;
+  openConsole: string;
+  backToHome: string;
+  nothingVisible: string;
+  notVisible: string;
+  moduleTablistLabel: string;
+  moduleOrganization: string;
+  moduleEmployee: string;
+  moduleWork: string;
+  moduleLeave: string;
+  moduleRequest: string;
+  sectionOrganizations: string;
+  sectionSites: string;
+  sectionDepartments: string;
+  sectionEmployees: string;
+  sectionUserScopes: string;
+  sectionWorkCategories: string;
+  sectionCalculationRules: string;
+  sectionLaborSystems: string;
+  sectionLeaveTypes: string;
+  sectionLeaveLedger: string;
+  sectionRequestTypes: string;
+  organizationsHint: string;
+  sitesHint: string;
+  departmentsHint: string;
+  employeesHint: string;
+  userScopesHint: string;
+  workCategoriesHint: string;
+  calculationRulesHint: string;
+  laborSystemsHint: string;
+  leaveTypesHint: string;
+  leaveLedgerHint: string;
+  requestTypesHint: string;
+  noRecords: string;
+  noSites: string;
+  noDepartments: string;
+  noEmployees: string;
+  noUserScopes: string;
+  noWorkCategories: string;
+  noCalculationRules: string;
+  noLaborSystems: string;
+  noLeaveTypes: string;
+  noLeaveEntries: string;
+  noRequestTypes: string;
+  loadFailed: string;
+  saveFailed: string;
+  save: string;
+  saving: string;
+  saved: string;
+  addNew: string;
+  editSettings: string;
+  editRow: string;
+  copyToForm: string;
+  rowActions: string;
+  code: string;
+  codeHint: string;
+  name: string;
+  internalName: string;
+  displayName: string;
+  createdAt: string;
+  organization: string;
+  timeZone: string;
+  timeZoneHint: string;
+  parentDepartment: string;
+  noParentDepartment: string;
+  employeeNumber: string;
+  employee: string;
+  status: string;
+  hiredOn: string;
+  account: string;
+  accountNone: string;
+  accountLinked: string;
+  createAccount: string;
+  initialPasswordHint: string;
+  employeeStatus: Record<EmployeeStatus, string>;
+  userId: string;
+  userIdHint: string;
+  grantedAt: string;
+  categoryType: string;
+  workCategoryType: Record<WorkCategoryType, string>;
+  workCategoryCodeHint: string;
+  effectiveFrom: string;
+  effectiveFromHint: string;
+  effectiveTo: string;
+  openEnded: string;
+  scheduledHours: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+  scheduledEndHint: string;
+  clockHint: string;
+  fixedBreaks: string;
+  fixedBreakStart: string;
+  fixedBreakEnd: string;
+  fixedBreakHint: string;
+  shift: string;
+  yes: string;
+  no: string;
+  unconfigured: string;
+  ruleEffectiveFromHint: string;
+  dayStartMinutes: string;
+  dayStartHint: string;
+  nightBand: string;
+  nightStartMinutes: string;
+  nightEndMinutes: string;
+  rounding: string;
+  roundingMinutes: string;
+  roundingModeLabel: string;
+  roundingMode: Record<'none' | 'down' | 'nearest', string>;
+  dailyLegalMinutes: string;
+  weeklyLegalMinutes: string;
+  legalThresholdHint: string;
+  weekStartsOn: string;
+  weekStartsOnHint: string;
+  monthStartsOn: string;
+  laborSystem: string;
+  laborSystemType: Record<LaborSystemType, string>;
+  settlementPeriod: string;
+  settlementMonths: string;
+  settlementStartsOn: string;
+  settlementHint: string;
+  deemedMinutes: string;
+  deemedHint: string;
+  months: string;
+  endAssignment: string;
+  paidLeave: string;
+  unitMinutes: string;
+  unitMinutesHint: string;
+  dayMinutes: string;
+  dayMinutesHint: string;
+  expiresAfterMonths: string;
+  expiresAfterMonthsHint: string;
+  neverExpires: string;
+  activeLabel: string;
+  pickLeaveTypeToEdit: string;
+  leaveType: string;
+  entryType: string;
+  leaveEntryType: Record<LeaveEntryTypeValue, string>;
+  minutes: string;
+  effectiveOn: string;
+  expiresOn: string;
+  reason: string;
+  grantLeave: string;
+  grantMinutesHint: string;
+  grantEffectiveOnHint: string;
+  reverseEntry: string;
+  reversedFromConsole: string;
+  noBalance: string;
+  expiredMinutesLabel: string;
+  requestCategory: string;
+  requestCategoryLabel: Record<RequestCategory, string>;
+  requestCategoryHint: string;
+  approvalSteps: string;
+  approvalStepsHint: string;
+  requiredInputs: string;
+  timeRange: string;
+  overtimeLimit: string;
+  editingRequestType: string;
+  stopEditing: string;
 }
 
 const ja: Messages = {
@@ -349,6 +519,199 @@ const ja: Messages = {
   downloadCsv: 'CSV で取り出す',
   severityWarning: '要確認',
   severityInfo: '参考',
+  admin: {
+    title: '設定',
+    openConsole: '設定を開く',
+    backToHome: 'ホームへ戻る',
+    nothingVisible: 'あなたが設定できる項目はありません。',
+    notVisible: 'この設定を見る権限がありません。',
+    moduleTablistLabel: '設定のモジュール',
+    moduleOrganization: '組織',
+    moduleEmployee: '従業員',
+    moduleWork: '勤務',
+    moduleLeave: '休暇',
+    moduleRequest: '申請',
+    sectionOrganizations: '組織',
+    sectionSites: '拠点',
+    sectionDepartments: '部門',
+    sectionEmployees: '従業員',
+    sectionUserScopes: '閲覧範囲',
+    sectionWorkCategories: '勤務区分',
+    sectionCalculationRules: '計算規則の版',
+    sectionLaborSystems: '労働形態',
+    sectionLeaveTypes: '休暇種別',
+    sectionLeaveLedger: '休暇の台帳',
+    sectionRequestTypes: '申請種別と承認経路',
+    organizationsHint: 'ここが空だと、拠点も部門も従業員も置けません。最初に作ります。',
+    sitesHint:
+      '業務日の切り替わりは拠点の時計で決まります。時間帯を間違えると勤怠が 1 日ずれます。',
+    departmentsHint: '上位の部門を指すと階層になります。',
+    employeesHint:
+      'ログイン用の利用者を同時に作れます。カードや端末だけで打刻する働き方では作りません。',
+    userScopesHint:
+      '誰の勤怠を見られるかを組織で決めます。ワークスペース全体を見られるかどうかは、この設定ではなくロールが決めます。',
+    workCategoriesHint:
+      '同じコードで期間を分けて改定します。過去の集計は当時の版のまま残り、改定で書き換わりません。',
+    calculationRulesHint:
+      '労務計算の値は事業者が決めます。製品は既定値を持ちません。設定しないかぎり、法定の区分は計算しません。',
+    laborSystemsHint: '制度ごとに要る値が違います。そろっていない割当は受け付けません。',
+    leaveTypesHint:
+      '取得の単位・1 日ぶんの分数・失効までの月数は事業者が決めます。設定しないかぎり適用しません。',
+    leaveLedgerHint:
+      '残数は保存していません。ここに出るのは台帳から組み立てた値です。記録は書き換えられないため、間違いは打ち消す行で直します。',
+    requestTypesHint:
+      '承認の段数がそのまま経路になります。段数を変えても、すでに提出された申請は提出時の段数のまま進みます。',
+    noRecords: 'まだ登録されていません。',
+    noSites: '拠点はまだありません。組織を作ってから登録します。',
+    noDepartments: '部門はまだありません。',
+    noEmployees: '従業員はまだ登録されていません。',
+    noUserScopes: '閲覧範囲を与えた利用者はいません。',
+    noWorkCategories: '勤務区分はまだありません。',
+    noCalculationRules: '計算規則の版はまだありません。',
+    noLaborSystems: '労働形態の割当はまだありません。',
+    noLeaveTypes: '休暇種別はまだありません。',
+    noLeaveEntries: 'この従業員の台帳に記録はありません。',
+    noRequestTypes: '申請種別はまだありません。',
+    loadFailed: '読み込めませんでした',
+    saveFailed: '保存できませんでした',
+    save: '保存',
+    saving: '保存しています…',
+    saved: '保存しました',
+    addNew: '新しく作る',
+    editSettings: '設定を直す',
+    editRow: 'この行を直す',
+    copyToForm: '写して作る',
+    rowActions: '行の操作',
+    code: 'コード',
+    codeHint: '英数字とハイフン、下線が使えます。あとから変えられません。',
+    name: '名称',
+    internalName: '管理用の名称',
+    displayName: '従業員へ見せる名称',
+    createdAt: '作成日時',
+    organization: '組織',
+    timeZone: '時間帯',
+    timeZoneHint: '空欄なら組織の時間帯を使います。例: Asia/Tokyo',
+    parentDepartment: '上位の部門',
+    noParentDepartment: '（上位なし）',
+    employeeNumber: '従業員番号',
+    employee: '従業員',
+    status: '状態',
+    hiredOn: '入社日',
+    account: 'ログイン',
+    accountNone: 'なし',
+    accountLinked: 'あり',
+    createAccount: 'ログイン用の利用者も作る',
+    initialPasswordHint: '初回のパスワードです。本人に変えてもらってください。',
+    employeeStatus: { active: '在籍', suspended: '休止', retired: '退職' },
+    userId: '利用者の識別子',
+    userIdHint: '利用者一覧の識別子を貼り付けます。',
+    grantedAt: '付与日時',
+    categoryType: '区分の種別',
+    workCategoryType: {
+      working_day: '所定労働日',
+      non_working_day: '法定外休日',
+      legal_holiday: '法定休日',
+      leave: '休暇',
+      absence: '欠勤',
+    },
+    workCategoryCodeHint: '同じコードで期間を分けると、改定として重なります。',
+    effectiveFrom: '適用開始日',
+    effectiveFromHint: '同じコードで期間が重なる版は作れません。',
+    effectiveTo: '適用終了日',
+    openEnded: '（終了日なし）',
+    scheduledHours: '所定の時間帯',
+    scheduledStart: '所定の開始',
+    scheduledEnd: '所定の終了',
+    scheduledEndHint: '日をまたぐ勤務は 26:00 のように 24 時を超えて書きます。',
+    clockHint: '時:分の形で書きます。例: 09:00',
+    fixedBreaks: '固定休憩',
+    fixedBreakStart: '固定休憩の開始',
+    fixedBreakEnd: '固定休憩の終了',
+    fixedBreakHint: '打刻が無くても引く時間帯です。空欄なら引きません。',
+    shift: 'シフト',
+    yes: 'はい',
+    no: 'いいえ',
+    unconfigured: '未設定',
+    ruleEffectiveFromHint: '同じ適用開始日の版は 1 つだけです。',
+    dayStartMinutes: '日の始まり（分）',
+    dayStartHint: '深夜勤務を前日として数えるなら、0 より後ろにします。',
+    nightBand: '深夜帯',
+    nightStartMinutes: '深夜帯の開始（分）',
+    nightEndMinutes: '深夜帯の終了（分）',
+    rounding: '丸め',
+    roundingMinutes: '丸めの単位（分）',
+    roundingModeLabel: '丸め方',
+    roundingMode: { none: '丸めない', down: '切り捨て', nearest: '近い方へ' },
+    dailyLegalMinutes: '1 日の法定の閾値（分）',
+    weeklyLegalMinutes: '1 週の法定の閾値（分）',
+    legalThresholdHint:
+      '空欄なら未設定として扱い、法定内と法定外を分けません。0 と未設定は別のものです。',
+    weekStartsOn: '週の開始曜日',
+    weekStartsOnHint: '0 が日曜、1 が月曜です。',
+    monthStartsOn: '月の集計の開始日',
+    laborSystem: '労働形態',
+    laborSystemType: {
+      normal: '通常',
+      flex: 'フレックス',
+      discretionary: '裁量',
+      variable: '変形',
+    },
+    settlementPeriod: '清算期間',
+    settlementMonths: '清算期間の月数',
+    settlementStartsOn: '清算期間の起算日',
+    settlementHint: 'フレックスと変形では、清算期間がそろっていないと割り当てられません。',
+    deemedMinutes: 'みなし分数',
+    deemedHint: '裁量では、実績にかかわらずこの分数を働いたものとして扱います。',
+    months: 'か月',
+    endAssignment: '終了日を入れる',
+    paidLeave: '有給',
+    unitMinutes: '取得の単位（分）',
+    unitMinutesHint:
+      '480 なら 1 日単位、240 なら半日単位、60 なら時間単位です。空欄なら制限しません。',
+    dayMinutes: '1 日ぶんの分数',
+    dayMinutesHint: '日数へ言い換えるときと、時間帯の指定がない申請で引く量に使います。',
+    expiresAfterMonths: '失効までの月数',
+    expiresAfterMonthsHint: '空欄なら失効しません。',
+    neverExpires: '失効しない',
+    activeLabel: '使える',
+    pickLeaveTypeToEdit: '直したい休暇種別の行から「この行を直す」を押してください。',
+    leaveType: '休暇種別',
+    entryType: '記録の種類',
+    leaveEntryType: {
+      grant: '付与',
+      consume: '取得',
+      expire: '失効',
+      adjust: '手当て',
+      reverse: '取消',
+    },
+    minutes: '分数',
+    effectiveOn: '効力の日',
+    expiresOn: '失効日',
+    reason: '理由',
+    grantLeave: '休暇を付与する',
+    grantMinutesHint: '分で入れます。1 日 8 時間なら 480 です。',
+    grantEffectiveOnHint: 'この日から使えるようになります。失効日は休暇種別の設定から決まります。',
+    reverseEntry: '取り消す',
+    reversedFromConsole: '設定画面からの取消',
+    noBalance: 'この従業員に休暇の残数はありません。',
+    expiredMinutesLabel: '失効',
+    requestCategory: '区分',
+    requestCategoryLabel: {
+      leave: '休暇',
+      overtime: '残業',
+      holiday_work: '休日出勤',
+      attendance_correction: '打刻修正',
+      other: 'その他',
+    },
+    requestCategoryHint: '休暇の区分は、承認しきったときに休暇の台帳へ反映されます。',
+    approvalSteps: '承認の段数',
+    approvalStepsHint: '1 から 4 まで。提出済みの申請の段数は、ここを変えても動きません。',
+    requiredInputs: '入力を求める項目',
+    timeRange: '時間帯',
+    overtimeLimit: '残業の上限時刻',
+    editingRequestType: 'この申請種別を直しています。',
+    stopEditing: 'やめて新しく作る',
+  },
 };
 
 const en: Messages = {
@@ -542,6 +905,201 @@ const en: Messages = {
   downloadCsv: 'Download as CSV',
   severityWarning: 'Needs review',
   severityInfo: 'For reference',
+  admin: {
+    title: 'Settings',
+    openConsole: 'Open settings',
+    backToHome: 'Back to home',
+    nothingVisible: 'There are no settings you can change.',
+    notVisible: 'You do not have permission to view this setting.',
+    moduleTablistLabel: 'Settings modules',
+    moduleOrganization: 'Organization',
+    moduleEmployee: 'People',
+    moduleWork: 'Work',
+    moduleLeave: 'Leave',
+    moduleRequest: 'Requests',
+    sectionOrganizations: 'Organizations',
+    sectionSites: 'Sites',
+    sectionDepartments: 'Departments',
+    sectionEmployees: 'Employees',
+    sectionUserScopes: 'Visibility',
+    sectionWorkCategories: 'Work categories',
+    sectionCalculationRules: 'Calculation rule versions',
+    sectionLaborSystems: 'Labour systems',
+    sectionLeaveTypes: 'Leave types',
+    sectionLeaveLedger: 'Leave ledger',
+    sectionRequestTypes: 'Request types and approval routes',
+    organizationsHint:
+      'Without one, you cannot add sites, departments, or employees. Create this first.',
+    sitesHint:
+      'The business date turns over on the site clock. A wrong time zone shifts that site by a whole day.',
+    departmentsHint: 'Point at a parent department to build a hierarchy.',
+    employeesHint:
+      'A sign-in account can be created at the same time. People who punch only by card or terminal do not need one.',
+    userScopesHint:
+      'Grants decide whose attendance a user can see. Whether they see the whole workspace is decided by their role, not here.',
+    workCategoriesHint:
+      'Revise by adding a version under the same code. Past results keep the version that computed them.',
+    calculationRulesHint:
+      'Labour calculation values are set by the operator. The product ships no defaults, and leaves legal splits uncomputed until set.',
+    laborSystemsHint: 'Each system needs different values. An assignment missing them is rejected.',
+    leaveTypesHint:
+      'Unit of use, minutes per day, and months to expiry are set by the operator, and none apply until set.',
+    leaveLedgerHint:
+      'Balances are not stored; these are built from the ledger. Entries cannot be edited, so mistakes are corrected by adding a reversing entry.',
+    requestTypesHint:
+      'The number of approval steps is the route. Changing it does not move requests that were already submitted.',
+    noRecords: 'Nothing has been registered yet.',
+    noSites: 'No sites yet. Create an organization first.',
+    noDepartments: 'No departments yet.',
+    noEmployees: 'No employees have been registered yet.',
+    noUserScopes: 'No user has been granted visibility.',
+    noWorkCategories: 'No work categories yet.',
+    noCalculationRules: 'No calculation rule versions yet.',
+    noLaborSystems: 'No labour system assignments yet.',
+    noLeaveTypes: 'No leave types yet.',
+    noLeaveEntries: 'This employee has no ledger entries.',
+    noRequestTypes: 'No request types yet.',
+    loadFailed: 'Could not load',
+    saveFailed: 'Could not save',
+    save: 'Save',
+    saving: 'Saving…',
+    saved: 'Saved',
+    addNew: 'Add new',
+    editSettings: 'Edit settings',
+    editRow: 'Edit this row',
+    copyToForm: 'Copy into form',
+    rowActions: 'Row actions',
+    code: 'Code',
+    codeHint: 'Letters, digits, hyphen and underscore. It cannot be changed later.',
+    name: 'Name',
+    internalName: 'Internal name',
+    displayName: 'Name shown to employees',
+    createdAt: 'Created at',
+    organization: 'Organization',
+    timeZone: 'Time zone',
+    timeZoneHint: 'Leave empty to use the organization time zone. Example: Asia/Tokyo',
+    parentDepartment: 'Parent department',
+    noParentDepartment: '(no parent)',
+    employeeNumber: 'Employee number',
+    employee: 'Employee',
+    status: 'Status',
+    hiredOn: 'Hired on',
+    account: 'Sign-in',
+    accountNone: 'None',
+    accountLinked: 'Linked',
+    createAccount: 'Also create a sign-in account',
+    initialPasswordHint: 'The first password. Ask the person to change it.',
+    employeeStatus: { active: 'Active', suspended: 'Suspended', retired: 'Retired' },
+    userId: 'User identifier',
+    userIdHint: 'Paste the identifier from the user list.',
+    grantedAt: 'Granted at',
+    categoryType: 'Category type',
+    workCategoryType: {
+      working_day: 'Working day',
+      non_working_day: 'Non-legal holiday',
+      legal_holiday: 'Legal holiday',
+      leave: 'Leave',
+      absence: 'Absence',
+    },
+    workCategoryCodeHint: 'Splitting periods under one code makes them revisions of each other.',
+    effectiveFrom: 'Effective from',
+    effectiveFromHint: 'Versions under one code may not overlap.',
+    effectiveTo: 'Effective to',
+    openEnded: '(no end date)',
+    scheduledHours: 'Scheduled hours',
+    scheduledStart: 'Scheduled start',
+    scheduledEnd: 'Scheduled end',
+    scheduledEndHint: 'For shifts crossing midnight, write past 24, e.g. 26:00.',
+    clockHint: 'Write as hours:minutes, e.g. 09:00',
+    fixedBreaks: 'Fixed breaks',
+    fixedBreakStart: 'Fixed break start',
+    fixedBreakEnd: 'Fixed break end',
+    fixedBreakHint: 'Deducted even without a punch. Leave empty to deduct nothing.',
+    shift: 'Shift',
+    yes: 'Yes',
+    no: 'No',
+    unconfigured: 'Not set',
+    ruleEffectiveFromHint: 'Only one version per effective date.',
+    dayStartMinutes: 'Day starts at (minutes)',
+    dayStartHint: 'Move past 0 to count overnight work as the previous day.',
+    nightBand: 'Night band',
+    nightStartMinutes: 'Night band starts at (minutes)',
+    nightEndMinutes: 'Night band ends at (minutes)',
+    rounding: 'Rounding',
+    roundingMinutes: 'Rounding unit (minutes)',
+    roundingModeLabel: 'Rounding mode',
+    roundingMode: { none: 'None', down: 'Down', nearest: 'Nearest' },
+    dailyLegalMinutes: 'Daily legal threshold (minutes)',
+    weeklyLegalMinutes: 'Weekly legal threshold (minutes)',
+    legalThresholdHint:
+      'Empty means not set, and legal splits are not computed. Not set is different from zero.',
+    weekStartsOn: 'Week starts on',
+    weekStartsOnHint: '0 is Sunday, 1 is Monday.',
+    monthStartsOn: 'Month starts on day',
+    laborSystem: 'Labour system',
+    laborSystemType: {
+      normal: 'Standard',
+      flex: 'Flexitime',
+      discretionary: 'Discretionary',
+      variable: 'Variable',
+    },
+    settlementPeriod: 'Settlement period',
+    settlementMonths: 'Settlement months',
+    settlementStartsOn: 'Settlement starts on',
+    settlementHint: 'Flexitime and variable systems need a settlement period.',
+    deemedMinutes: 'Deemed minutes',
+    deemedHint: 'Discretionary work counts these minutes regardless of what was recorded.',
+    months: ' months',
+    endAssignment: 'Set an end date',
+    paidLeave: 'Paid',
+    unitMinutes: 'Unit of use (minutes)',
+    unitMinutesHint: '480 for whole days, 240 for half days, 60 for hours. Empty means no limit.',
+    dayMinutes: 'Minutes per day',
+    dayMinutesHint: 'Used to express days, and to deduct requests that name no time range.',
+    expiresAfterMonths: 'Months until expiry',
+    expiresAfterMonthsHint: 'Empty means it never expires.',
+    neverExpires: 'Never expires',
+    activeLabel: 'Available',
+    pickLeaveTypeToEdit: 'Choose "Edit this row" on the leave type you want to change.',
+    leaveType: 'Leave type',
+    entryType: 'Entry type',
+    leaveEntryType: {
+      grant: 'Grant',
+      consume: 'Use',
+      expire: 'Expiry',
+      adjust: 'Adjustment',
+      reverse: 'Reversal',
+    },
+    minutes: 'Minutes',
+    effectiveOn: 'Effective on',
+    expiresOn: 'Expires on',
+    reason: 'Reason',
+    grantLeave: 'Grant leave',
+    grantMinutesHint: 'In minutes. An eight-hour day is 480.',
+    grantEffectiveOnHint:
+      'Usable from this date. The expiry date comes from the leave type settings.',
+    reverseEntry: 'Reverse',
+    reversedFromConsole: 'Reversed from the settings screen',
+    noBalance: 'This employee has no leave balance.',
+    expiredMinutesLabel: 'Expired',
+    requestCategory: 'Category',
+    requestCategoryLabel: {
+      leave: 'Leave',
+      overtime: 'Overtime',
+      holiday_work: 'Holiday work',
+      attendance_correction: 'Attendance correction',
+      other: 'Other',
+    },
+    requestCategoryHint: 'Leave requests post to the leave ledger once fully approved.',
+    approvalSteps: 'Approval steps',
+    approvalStepsHint:
+      'One to four. Requests already submitted keep the count they were sent with.',
+    requiredInputs: 'Required inputs',
+    timeRange: 'Time range',
+    overtimeLimit: 'Overtime limit',
+    editingRequestType: 'Editing this request type.',
+    stopEditing: 'Stop and add a new one',
+  },
 };
 
 export const MESSAGES: Record<Locale, Messages> = { 'ja-JP': ja, en };

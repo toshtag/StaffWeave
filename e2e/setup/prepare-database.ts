@@ -132,6 +132,28 @@ export const E2E_API_KEY_ADMIN: SeededAccount = {
   role: 'workspace_admin',
 };
 
+/**
+ * 設定の画面を確かめるための管理者。
+ *
+ * 検査の中で組織や申請種別を作るため、他の画面テストと共有しない。
+ * 共有すると、別の検査が作った行が一覧に混ざる。
+ */
+export const E2E_ADMIN_CONSOLE_ADMIN: SeededAccount = {
+  email: 'admin-console@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E013',
+  displayName: '検証 十三郎',
+  role: 'workspace_admin',
+};
+
+/** 設定を見られないことを確かめるための従業員。 */
+export const E2E_ADMIN_CONSOLE_EMPLOYEE: SeededAccount = {
+  email: 'admin-console-employee@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E014',
+  displayName: '検証 十四郎',
+};
+
 const SEEDED_ACCOUNTS = [
   E2E_EMPLOYEE,
   E2E_MOBILE_EMPLOYEE,
@@ -145,6 +167,8 @@ const SEEDED_ACCOUNTS = [
   E2E_PASSWORD_EMPLOYEE,
   E2E_SESSION_EMPLOYEE,
   E2E_API_KEY_ADMIN,
+  E2E_ADMIN_CONSOLE_ADMIN,
+  E2E_ADMIN_CONSOLE_EMPLOYEE,
 ];
 
 export function e2eDatabaseUrl(): string {
@@ -206,6 +230,14 @@ export default async function prepareDatabase(): Promise<void> {
       );
       const organizationId = organization[0]?.id;
       if (!organizationId) throw new Error('組織を作成できませんでした');
+
+      // 休暇の設定を確かめるため、種別を 1 つ置く。
+      // 取得の単位も失効も入れないのは、製品が既定値を持たないことを画面で見るため。
+      await tx.query(
+        `INSERT INTO leave_types (workspace_id, code, name, paid)
+         VALUES ($1, 'PAID', '年次有給休暇', true)`,
+        [workspaceId],
+      );
 
       for (const account of SEEDED_ACCOUNTS) {
         const user = await tx.query<{ id: string }>(

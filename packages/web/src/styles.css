@@ -435,3 +435,139 @@ h3 {
   font-weight: 400;
   gap: 0.5rem;
 }
+
+/* 設定の画面。上でモジュール、左でその中の設定を選ぶ。 */
+main.wide {
+  max-width: 72rem;
+}
+
+.header-link {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: CanvasText;
+  display: inline-flex;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.25rem;
+  text-decoration: none;
+}
+
+.header-link:focus-visible,
+.admin a:focus-visible {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
+}
+
+.admin-modules {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.admin-modules a {
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 0.625rem 1rem;
+  text-decoration: none;
+}
+
+/* いま見ているモジュールは、色だけでなく下線と太さでも示す。 */
+.admin-modules a[aria-selected="true"] {
+  border-bottom-color: CanvasText;
+  color: CanvasText;
+  font-weight: 700;
+}
+
+.admin-body {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 12rem 1fr;
+}
+
+.admin-sections ul {
+  display: grid;
+  gap: 0.125rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-sections a {
+  border-radius: 0.5rem;
+  color: CanvasText;
+  display: block;
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+}
+
+.admin-sections a[aria-current="page"] {
+  background: color-mix(in srgb, CanvasText 10%, Canvas);
+  font-weight: 700;
+}
+
+/*
+ * 格子の桁は、既定では中身より狭くならない。
+ * 中の表が広いと、桁ごと広がって本文が画面の外へ出る。
+ * 桁を縮められるようにして、はみ出しは表の中で吸収させる。
+ */
+.admin-content {
+  min-width: 0;
+}
+
+.admin-content .card {
+  margin-bottom: 0;
+}
+
+.admin-toolbar {
+  margin-bottom: 1rem;
+}
+
+/* 列の多い表は、狭い画面では表だけを横に送る。本文ごと横に動かさない。 */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table-scroll table {
+  min-width: 100%;
+  white-space: nowrap;
+}
+
+.row-actions {
+  white-space: nowrap;
+}
+
+.row-actions button {
+  font-size: 0.875rem;
+  margin-left: 0.25rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.75rem;
+}
+
+.row-inline-form {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.row-inline-form input {
+  min-height: 2.25rem;
+}
+
+.balance-row {
+  display: contents;
+}
+
+@media (max-width: 48rem) {
+  /* 狭い画面では左メニューを上へ回す。二列のままだと本文が読めない幅になる。 */
+  .admin-body {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-sections ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+}

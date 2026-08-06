@@ -1,29 +1,65 @@
 import type {
+  AdjustLeaveRequest,
   AnomalyList,
   ApiKeyList,
   ApiKeyRecord,
+  CalculationRuleVersionList,
+  CalculationRuleVersionRecord,
   ChangePasswordRequest,
   CloseMonthRequest,
   CorrectAttendanceRequest,
   CorrectAttendanceResponse,
   CreateApiKeyRequest,
   CreateApiKeyResponse,
+  CreateCalculationRuleVersionRequest,
+  CreateDepartmentRequest,
+  CreateEmployeeRequest,
+  CreateLaborSystemAssignmentRequest,
+  CreateOrganizationRequest,
+  CreateRequestTypeRequest,
+  CreateSiteRequest,
+  CreateWorkCategoryRequest,
   DailyRequestList,
   DailyRequestRecord,
   DecideDailyRequestRequest,
+  Department,
+  DepartmentList,
   DiscrepancyReport,
+  Employee,
+  EmployeeList,
   ErrorResponse,
+  GrantLeaveRequest,
+  GrantUserScopeRequest,
+  LaborSystemAssignmentList,
+  LaborSystemAssignmentRecord,
+  LeaveBalanceList,
+  LeaveLedgerEntryRecord,
+  LeaveLedgerList,
+  LeaveTypeSettingsList,
+  LeaveTypeSettingsRecord,
   LoginRequest,
   MonthlyClosingRecord,
+  Organization,
   OrganizationList,
   RecordAttendanceEventRequest,
   RecordAttendanceEventResponse,
   ReopenMonthRequest,
+  RequestTypeList,
+  RequestTypeRecord,
+  ReverseLeaveEntryRequest,
   RevokedSessions,
   SessionList,
   SessionResponse,
+  Site,
+  SiteList,
   SubmitDailyRequestRequest,
+  UpdateLeaveTypeRequest,
   UpdatePreferencesRequest,
+  UpdateRequestTypeRequest,
+  UserScopeList,
+  UserScopeRecord,
+  WorkCategoryList,
+  WorkCategoryRecord,
   WorkDay,
 } from '@staffweave/contracts';
 
@@ -135,6 +171,86 @@ export const api = {
   recordAttendanceEvent: (input: RecordAttendanceEventRequest) =>
     request<RecordAttendanceEventResponse>('/attendance/events', {
       method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // 設定の画面が使う経路。読み取りと作成を対にして並べる。
+  createOrganization: (input: CreateOrganizationRequest) =>
+    request<Organization>('/organizations', { method: 'POST', body: JSON.stringify(input) }),
+  listSites: () => request<SiteList>('/sites'),
+  createSite: (input: CreateSiteRequest) =>
+    request<Site>('/sites', { method: 'POST', body: JSON.stringify(input) }),
+  listDepartments: () => request<DepartmentList>('/departments'),
+  createDepartment: (input: CreateDepartmentRequest) =>
+    request<Department>('/departments', { method: 'POST', body: JSON.stringify(input) }),
+  listEmployees: () => request<EmployeeList>('/employees'),
+  createEmployee: (input: CreateEmployeeRequest) =>
+    request<Employee>('/employees', { method: 'POST', body: JSON.stringify(input) }),
+  listUserScopes: () => request<UserScopeList>('/user-scopes'),
+  grantUserScope: (input: GrantUserScopeRequest) =>
+    request<UserScopeRecord>('/user-scopes', { method: 'POST', body: JSON.stringify(input) }),
+  listWorkCategories: () => request<WorkCategoryList>('/work-categories'),
+  createWorkCategory: (input: CreateWorkCategoryRequest) =>
+    request<WorkCategoryRecord>('/work-categories', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listCalculationRuleVersions: () =>
+    request<CalculationRuleVersionList>('/calculation-rule-versions'),
+  createCalculationRuleVersion: (input: CreateCalculationRuleVersionRequest) =>
+    request<CalculationRuleVersionRecord>('/calculation-rule-versions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listLaborSystemAssignments: (query: { employeeId?: string } = {}) =>
+    request<LaborSystemAssignmentList>(
+      `/labor-system-assignments?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  assignLaborSystem: (input: CreateLaborSystemAssignmentRequest) =>
+    request<LaborSystemAssignmentRecord>('/labor-system-assignments', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  endLaborSystemAssignment: (assignmentId: string, effectiveTo: string) =>
+    request<LaborSystemAssignmentRecord>(`/labor-system-assignments/${assignmentId}/end`, {
+      method: 'POST',
+      body: JSON.stringify({ effectiveTo }),
+    }),
+  listLeaveTypeSettings: () => request<LeaveTypeSettingsList>('/leave-type-settings'),
+  updateLeaveType: (leaveTypeId: string, input: UpdateLeaveTypeRequest) =>
+    request<LeaveTypeSettingsRecord>(`/leave-type-settings/${leaveTypeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  listLeaveLedger: (query: { employeeId: string; leaveTypeId?: string }) =>
+    request<LeaveLedgerList>(
+      `/leave-ledger?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  listLeaveBalances: (query: { employeeId: string; asOf?: string }) =>
+    request<LeaveBalanceList>(
+      `/leave-balances?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  grantLeave: (input: GrantLeaveRequest) =>
+    request<LeaveLedgerEntryRecord>('/leave-ledger/grants', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  adjustLeave: (input: AdjustLeaveRequest) =>
+    request<LeaveLedgerEntryRecord>('/leave-ledger/adjustments', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  reverseLeaveEntry: (entryId: string, input: ReverseLeaveEntryRequest) =>
+    request<LeaveLedgerEntryRecord>(`/leave-ledger/${entryId}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listRequestTypes: () => request<RequestTypeList>('/request-types'),
+  createRequestType: (input: CreateRequestTypeRequest) =>
+    request<RequestTypeRecord>('/request-types', { method: 'POST', body: JSON.stringify(input) }),
+  updateRequestType: (requestTypeId: string, input: UpdateRequestTypeRequest) =>
+    request<RequestTypeRecord>(`/request-types/${requestTypeId}`, {
+      method: 'PATCH',
       body: JSON.stringify(input),
     }),
 };
