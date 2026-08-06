@@ -141,7 +141,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 組織の一覧表示 | implemented | `ui:packages/web/src/pages/HomePage.tsx` | 読み取りのみ。登録と編集は API だけ |
 | API キーの管理 | implemented | `ui:packages/web/src/pages/ApiKeys.tsx` | 作成・一覧・失効 |
 | 本人のセッション一覧とログアウト | implemented | `ui:packages/web/src/pages/ActiveSessions.tsx` | 端末ごと・一括 |
-| 勤怠時刻を拠点の時間帯で表示・入力する | planned | - | 表示も `datetime-local` も閲覧者のブラウザの時間帯を使う（P17） |
+| 勤怠時刻を拠点の時間帯で表示・入力する | implemented | `ui:packages/web/src/pages/TodayAttendance.tsx` `test:packages/web/src/time/zoned.test.ts` | 表示・入力とも拠点の時計で読む。存在しない現地時刻は保存させない |
 | 上部のモジュール切替と左メニュー | planned | - | 画面は 1 つで、機能を縦に並べている（P22） |
 | 組織・従業員・勤務区分・休暇・申請区分の設定画面 | planned | - | API では扱えるが、設定するための画面が無い（P22） |
 | 日次・月次の一覧とレポート | planned | - | 締めの進み具合、未申請・未承認、長時間労働の警告を含む（P23） |
