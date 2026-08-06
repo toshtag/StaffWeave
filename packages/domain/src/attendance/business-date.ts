@@ -5,6 +5,8 @@
  * 「業務日の開始時刻」を基準に、絶対時刻から所属する業務日を決める。
  */
 
+import { localMinutesOfDay } from './local-time.js';
+
 /** `YYYY-MM-DD` 形式の業務日。 */
 export type BusinessDate = string;
 
@@ -39,12 +41,22 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
 /**
  * 絶対時刻が所属する業務日を求める。
  *
+ * 現地の暦日と現地の時刻へ分解してから、開始時刻と比べて決める。
+ *
+ * 絶対時刻から開始分を引いてから日付にすると、オフセットが変わる日でずれる。
+ * `America/New_York` の業務日開始 5:00 で、現地 2026-03-08 05:00 は当日に属するが、
+ * 引き算では前日を返していた。切り替えの当日だけ 1 時間ずれるため、
+ * 平常時の検査には現れない。
+ *
  * @param dayStartMinutes 業務日の開始時刻（現地時間の 0 時からの分数）。
  *   たとえば 300 なら 5:00 開始となり、深夜 2:00 の打刻は前日の業務日に属する。
  */
 export function businessDateOf(instant: Date, timeZone: string, dayStartMinutes = 0): BusinessDate {
-  const shifted = new Date(instant.getTime() - dayStartMinutes * 60_000);
-  return formatterFor(timeZone).format(shifted);
+  const localDate = formatterFor(timeZone).format(instant);
+  if (dayStartMinutes === 0) return localDate;
+  return localMinutesOfDay(instant, timeZone) < dayStartMinutes
+    ? addDaysToBusinessDate(localDate, -1)
+    : localDate;
 }
 
 /** 業務日の前後関係を比較する。文字列比較で足りるが、意図を明示するために関数にする。 */
