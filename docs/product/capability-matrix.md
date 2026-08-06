@@ -142,14 +142,20 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | ログインと当日の勤怠・打刻・訂正 | implemented | `ui:packages/web/src/pages/SignInPage.tsx` `ui:packages/web/src/pages/TodayAttendance.tsx` | 日本語と英語 |
 | 承認待ちの一覧と承認 | implemented | `ui:packages/web/src/pages/PendingApprovals.tsx` |  |
 | 差異と異常の表示 | implemented | `ui:packages/web/src/pages/DiscrepancyPanel.tsx` `ui:packages/web/src/pages/AnomalyPanel.tsx` | 根拠つきで出す |
-| 組織の一覧表示 | implemented | `ui:packages/web/src/pages/HomePage.tsx` | 読み取りのみ。登録と編集は API だけ |
+| 組織の一覧表示 | implemented | `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` | 設定の画面から登録もできる |
 | API キーの管理 | implemented | `ui:packages/web/src/pages/ApiKeys.tsx` | 作成・一覧・失効 |
 | 本人のセッション一覧とログアウト | implemented | `ui:packages/web/src/pages/ActiveSessions.tsx` | 端末ごと・一括 |
 | 勤怠時刻を拠点の時間帯で表示・入力する | implemented | `ui:packages/web/src/pages/TodayAttendance.tsx` `test:packages/web/src/time/zoned.test.ts` | 表示・入力とも拠点の時計で読む。存在しない現地時刻は保存させない |
-| 上部のモジュール切替と左メニュー | planned | - | 画面は 1 つで、機能を縦に並べている（P22） |
-| 組織・従業員・勤務区分・休暇・申請区分の設定画面 | planned | - | API では扱えるが、設定するための画面が無い（P22） |
+| 上部のモジュール切替と左メニュー | implemented | `ui:packages/web/src/admin/AdminConsole.tsx` `test:e2e/admin-console.spec.ts` | どこを見ているかは URL に持つ。左右キーでモジュールを移れる |
+| 組織・拠点・部門・従業員の設定画面 | implemented | `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` `ui:packages/web/src/admin/sections/SiteSettings.tsx` `ui:packages/web/src/admin/sections/DepartmentSettings.tsx` `ui:packages/web/src/admin/sections/EmployeeSettings.tsx` | 一覧・作成・写して作る・CSV |
+| 勤務区分・計算規則・労働形態の設定画面 | implemented | `ui:packages/web/src/admin/sections/WorkCategorySettings.tsx` `ui:packages/web/src/admin/sections/CalculationRuleSettings.tsx` `ui:packages/web/src/admin/sections/LaborSystemSettings.tsx` | 未設定の閾値は 0 ではなく未設定として出す |
+| 休暇種別・台帳の設定画面 | implemented | `ui:packages/web/src/admin/sections/LeaveTypeSettings.tsx` `ui:packages/web/src/admin/sections/LeaveLedgerSettings.tsx` | 残数は台帳から組み立てた値として出す。付与と取消ができる |
+| 申請種別と承認経路の設定画面 | implemented | `ui:packages/web/src/admin/sections/RequestTypeSettings.tsx` `test:e2e/admin-console.spec.ts` | 段数を直しても提出済みの申請は動かない |
+| 一覧・写して作る・CSV を同じ形にする | implemented | `ui:packages/web/src/admin/SettingsSection.tsx` `test:packages/web/src/admin/resource.test.ts` | CSV の列は画面の表と同じ定義から作る |
+| 権限と組織の範囲で設定画面の表示を変える | implemented | `ui:packages/web/src/admin/AdminConsole.tsx` `test:e2e/admin-console.spec.ts` | 見られない設定は節ごと出さない。入口も出さない |
+| 設定の一括取り込み（CSV での投入） | partial | `op:importEmployeesCsv` | 従業員だけ。他の設定は 1 件ずつ |
 | 日次・月次の一覧とレポート | planned | - | 締めの進み具合、未申請・未承認、長時間労働の警告を含む（P23） |
-| WCAG 2.2 AA | planned | - | 自動検査も視覚回帰も無い（P22） |
+| WCAG 2.2 AA | partial | `test:e2e/admin-console.spec.ts` | 見出し・ラベル・焦点・キーボード操作・狭い画面での横はみ出しを画面テストで見る。自動の適合検査と視覚回帰は無い |
 
 ## 外部連携と出力
 
