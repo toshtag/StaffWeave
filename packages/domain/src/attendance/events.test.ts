@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { AttendanceEvent, AttendanceEventType } from './events.js';
 import { decidePunch, isOpenWorkDay, nextCardPunch, summarizeWorkDay } from './events.js';
 
 describe('decidePunch', () => {
@@ -28,8 +29,9 @@ describe('decidePunch', () => {
     });
   });
 
-  it('退勤後の再出勤は同じ業務日では受け付けない', () => {
-    expect(decidePunch('finished', 'clock_in').rejection).toBe('already_finished');
+  it('退勤後の再出勤を受け付ける', () => {
+    // 中抜け、分割シフト、呼び出し勤務は同じ業務日に出退勤を繰り返す。
+    expect(decidePunch('finished', 'clock_in')).toEqual({ accepted: true, nextState: 'working' });
   });
 
   it('退勤後の重複した退勤は受け付けない', () => {
@@ -82,6 +84,7 @@ describe('summarizeWorkDay', () => {
       state: 'not_started',
       firstClockInAt: null,
       lastClockOutAt: null,
+      sessions: [],
       breaks: [],
     });
   });
@@ -150,6 +153,80 @@ describe('summarizeWorkDay', () => {
   });
 });
 
+describe('複数の勤務区間', () => {
+  const at = (time: string) => new Date(`2026-04-01T${time}:00.000Z`);
+  const event = (eventType: AttendanceEventType, time: string): AttendanceEvent => ({
+    eventType,
+    occurredAt: at(time),
+  });
+
+  it('出退勤を繰り返した分だけ区間を持つ', () => {
+    const summary = summarizeWorkDay('2026-04-01', [
+      event('clock_in', '09:00'),
+      event('clock_out', '12:00'),
+      event('clock_in', '15:00'),
+      event('clock_out', '18:00'),
+    ]);
+
+    expect(summary.state).toBe('finished');
+    expect(summary.sessions).toEqual([
+      { startedAt: at('09:00'), endedAt: at('12:00') },
+      { startedAt: at('15:00'), endedAt: at('18:00') },
+    ]);
+    // 最初と最後は、これまでどおり日全体の端を指す。
+    expect(summary.firstClockInAt).toEqual(at('09:00'));
+    expect(summary.lastClockOutAt).toEqual(at('18:00'));
+  });
+
+  it('中抜けから戻って退勤していなければ、最後の区間が開いたまま', () => {
+    const summary = summarizeWorkDay('2026-04-01', [
+      event('clock_in', '09:00'),
+      event('clock_out', '12:00'),
+      event('clock_in', '15:00'),
+    ]);
+
+    expect(summary.state).toBe('working');
+    expect(summary.sessions).toEqual([
+      { startedAt: at('09:00'), endedAt: at('12:00') },
+      { startedAt: at('15:00'), endedAt: null },
+    ]);
+  });
+
+  it('休憩は区間をまたがず、そのままの並びで残る', () => {
+    const summary = summarizeWorkDay('2026-04-01', [
+      event('clock_in', '09:00'),
+      event('break_start', '10:00'),
+      event('break_end', '10:30'),
+      event('clock_out', '12:00'),
+      event('clock_in', '15:00'),
+      event('clock_out', '18:00'),
+    ]);
+
+    expect(summary.sessions).toHaveLength(2);
+    expect(summary.breaks).toEqual([{ startedAt: at('10:00'), endedAt: at('10:30') }]);
+  });
+
+  it('休憩中の退勤は区間を閉じない', () => {
+    const summary = summarizeWorkDay('2026-04-01', [
+      event('clock_in', '09:00'),
+      event('break_start', '10:00'),
+      event('clock_out', '11:00'),
+    ]);
+
+    expect(summary.state).toBe('on_break');
+    expect(summary.sessions).toEqual([{ startedAt: at('09:00'), endedAt: null }]);
+  });
+
+  it('二重の出勤は受け付けず、区間も増えない', () => {
+    const summary = summarizeWorkDay('2026-04-01', [
+      event('clock_in', '09:00'),
+      event('clock_in', '09:30'),
+    ]);
+
+    expect(summary.sessions).toEqual([{ startedAt: at('09:00'), endedAt: null }]);
+  });
+});
+
 describe('nextCardPunch', () => {
   it('状態から次の打刻を一意に決める', () => {
     expect(nextCardPunch('not_started')).toBe('clock_in');
@@ -157,7 +234,7 @@ describe('nextCardPunch', () => {
     expect(nextCardPunch('on_break')).toBe('break_end');
   });
 
-  it('退勤済みでは何もしない', () => {
-    expect(nextCardPunch('finished')).toBeNull();
+  it('退勤済みからは再出勤へ進む', () => {
+    expect(nextCardPunch('finished')).toBe('clock_in');
   });
 });

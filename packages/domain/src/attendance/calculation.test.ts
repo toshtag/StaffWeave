@@ -218,6 +218,78 @@ describe('calculateWorkDay', () => {
   });
 });
 
+describe('複数の勤務区間', () => {
+  it('中抜けの時間は在社にも実労働にも入れない', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [
+          event('clock_in', '09:00'),
+          event('clock_out', '12:00'),
+          event('clock_in', '15:00'),
+          event('clock_out', '18:00'),
+        ],
+      }),
+    );
+
+    // 09:00-12:00 と 15:00-18:00 で 6 時間。12:00-15:00 の 3 時間は数えない。
+    expect(result.attendedMinutes).toBe(6 * 60);
+    expect(result.workedMinutes).toBe(6 * 60);
+    expect(result.breakMinutes).toBe(0);
+  });
+
+  it('区間ごとの休憩を、その区間から引く', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [
+          event('clock_in', '09:00'),
+          event('break_start', '10:00'),
+          event('break_end', '10:30'),
+          event('clock_out', '12:00'),
+          event('clock_in', '15:00'),
+          event('clock_out', '18:00'),
+        ],
+      }),
+    );
+
+    expect(result.attendedMinutes).toBe(6 * 60);
+    expect(result.breakMinutes).toBe(30);
+    expect(result.workedMinutes).toBe(6 * 60 - 30);
+  });
+
+  it('区間ごとに所定内と所定外を分ける', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [
+          // 所定は 09:00-18:00。前half は所定内、後half は所定外。
+          event('clock_in', '07:00'),
+          event('clock_out', '08:00'),
+          event('clock_in', '10:00'),
+          event('clock_out', '11:00'),
+        ],
+      }),
+    );
+
+    expect(result.withinScheduleMinutes).toBe(60);
+    expect(result.outsideScheduleMinutes).toBe(60);
+  });
+
+  it('最後の区間が開いたままなら確定していないものとして扱う', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [
+          event('clock_in', '09:00'),
+          event('clock_out', '12:00'),
+          event('clock_in', '15:00'),
+        ],
+      }),
+    );
+
+    expect(result.basis.incomplete).toBe(true);
+    // 閉じた区間の 3 時間だけを在社として示す。
+    expect(result.attendedMinutes).toBe(3 * 60);
+  });
+});
+
 describe('fingerprintSource', () => {
   it('打刻の順序が変わっても同じ文字列になる', () => {
     const events = [event('clock_in', '09:00'), event('clock_out', '18:00')];

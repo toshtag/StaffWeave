@@ -181,18 +181,26 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
   const rules = input.rules;
   const dayType = input.schedule?.dayType ?? 'working_day';
 
+  // 勤務の区間ごとに数える。区間と区間の間（中抜け）は在社にも実労働にも入れない。
+  // 退勤していない区間は、その日の最後に分かっている時刻までを在社として示す。
+  const sessions: Interval[] = summary.sessions
+    .map((session) => {
+      const fallback =
+        summary.breaks.findLast((period) => period.startedAt >= session.startedAt)?.endedAt ??
+        summary.breaks.findLast((period) => period.startedAt >= session.startedAt)?.startedAt ??
+        session.startedAt;
+      return {
+        start: floorToMinute(session.startedAt),
+        end: floorToMinute(session.endedAt ?? fallback),
+      };
+    })
+    .filter((interval) => interval.end > interval.start);
+
+  // 休憩を勤務の範囲へ収めるために、日全体の端を渡す。
+  const first = sessions.at(0);
+  const last = sessions.at(-1);
   const attendance: Interval | null =
-    summary.firstClockInAt === null
-      ? null
-      : {
-          start: floorToMinute(summary.firstClockInAt),
-          end: floorToMinute(
-            summary.lastClockOutAt ??
-              summary.breaks.at(-1)?.endedAt ??
-              summary.breaks.at(-1)?.startedAt ??
-              summary.firstClockInAt,
-          ),
-        };
+    first === undefined || last === undefined ? null : { start: first.start, end: last.end };
 
   const breaks = breakIntervals(summary.breaks, attendance);
 
@@ -208,8 +216,8 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
   let outsideScheduleMinutes = 0;
   let nightMinutes = 0;
 
-  if (attendance) {
-    for (let instant = attendance.start; instant < attendance.end; instant += MINUTE) {
+  for (const session of sessions) {
+    for (let instant = session.start; instant < session.end; instant += MINUTE) {
       attendedMinutes += 1;
       if (overlaps(breaks, instant)) {
         breakMinutes += 1;
