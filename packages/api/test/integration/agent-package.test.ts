@@ -1,13 +1,12 @@
 /**
- * 打刻端末の配布物が、渡してよい形になっていることを確かめる。
+ * 打刻端末の配布物が、そのまま動くことを確かめる。
  *
- * 見るのは 2 つ。
+ * いちばん大事なのは「配布物を、リポジトリの外で起動できること」。
+ * 中身の形だけを見ていると、置いただけでは起動しない配布物を通してしまう。
+ * 実際に、TypeScript のまま配っていた時期があり、形の検査は通っていた。
  *
- *   動かすのに要らないものを混ぜていないこと
- *   サービスとして登録する手順が、配布物の中に揃っていること
- *
- * 配布物は現場の端末へ置かれる。テストや型定義まで入れると、
- * 現場に置くものが増え、何が動いているのかが読みにくくなる。
+ * したがってここでは、リポジトリの道具を一切使わず、
+ * 配布物の中の JS を素の node で起動する。
  *
  * 統合テストへ置いているのは、実際のプロセスとファイルシステムを使うためで、
  * 手元と CI の検証範囲を揃えるには既存の 2 つのどちらかへ入れる必要がある。
@@ -17,7 +16,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const run = promisify(execFile);
 
@@ -38,25 +37,58 @@ async function filesUnder(root: string): Promise<string[]> {
   return files;
 }
 
-beforeEach(async () => {
+/*
+ * 配布物は 1 度だけ作る。
+ *
+ * 作るのに、コンパイルと他所の部品の取り寄せが要る。検査ごとに作り直すと、
+ * この 1 ファイルだけで統合テスト全体の 2 割近くを使う。
+ * 検査は配布物を読むだけで、書き換えない。作り直す必要は無い。
+ */
+beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'staffweave-agent-package-'));
   bundle = join(directory, 'staffweave-agent');
   await run(PACKAGE_AGENT, [directory], { cwd: REPOSITORY_ROOT });
-});
+}, 300_000);
 
-afterEach(async () => {
+afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
 describe('打刻端末の配布物', () => {
-  it('動かすのに要るものだけを入れる', async () => {
+  it('コンパイル済みの JS を入れ、TypeScript は入れない', async () => {
     const files = await filesUnder(bundle);
 
-    expect(files).toContain('packages/agent/src/cli.ts');
-    expect(files).toContain('packages/contracts/src/index.ts');
-    expect(files).toContain('packages/domain/src/index.ts');
-    // 検査は現場で動かさない。入れると、置くものが増えて何が動くのか読みにくくなる。
-    expect(files.filter((file) => file.includes('.test.'))).toEqual([]);
+    expect(files).toContain('agent/cli.js');
+    expect(files).toContain('node_modules/@staffweave/contracts/index.js');
+    expect(files).toContain('node_modules/@staffweave/domain/index.js');
+    // Node は .ts を読めない。自分たちの側に混ざっていれば、配る形を間違えている。
+    // 他所の部品が持つ型定義は数えない。動かすのには使われない。
+    expect(
+      files.filter((file) => file.endsWith('.ts') && !file.startsWith('node_modules/')),
+    ).toEqual([]);
+    // 自分たちの検査は現場で動かさない。他所の部品が持つ検査までは面倒を見ない。
+    expect(
+      files.filter((file) => file.includes('.test.') && !file.startsWith('node_modules/')),
+    ).toEqual([]);
+  });
+
+  it('動かすのに要る他所の部品を同梱する', async () => {
+    const files = await filesUnder(bundle);
+
+    // 現場の端末は通信できないことがある。置いてから取り寄せる形にはできない。
+    for (const name of ['ajv', 'ajv-formats', 'fsmxjs']) {
+      expect(files.some((file) => file.startsWith(`node_modules/${name}/`))).toBe(true);
+    }
+  });
+
+  it('サービスの登録は、コンパイル済みの JS を起動する', async () => {
+    const script = await readFile(join(bundle, 'install-service.ps1'), 'utf8');
+
+    expect(script).toContain('agent/cli.js');
+    // .ts を Node へ渡す形が残っていれば、登録しても起動しない。
+    // 見るのは登録する道筋だけ。説明の文へ .ts が出るのは構わない。
+    expect(script).not.toContain('cli.ts');
+    expect(script).not.toMatch(/binPath[\s\S]*\.ts/);
   });
 
   it('サービスとして登録・削除する手順を同梱する', async () => {
@@ -114,34 +146,66 @@ describe('打刻端末の配布物', () => {
   });
 });
 
-describe('端末の常駐', () => {
-  const AGENT = join(REPOSITORY_ROOT, 'packages/agent');
-
+describe('配布物を、リポジトリの外で起動する', () => {
   /**
-   * 常駐したまま動き続け、合図で止まることを、実際にプロセスを立てて確かめる。
-   *
-   * 待ちの実装を誤ると、他に用の無いプロセスは最初の待ちで終了する。
-   * ログには「開始しました」だけが残るため、落ちたことに気付けない。
+   * 素の node で起動する。リポジトリの道具（tsx や node_modules）は一切使わない。
+   * 使うと、配布物が足りていなくても通ってしまう。
    */
-  it('立ち上げたあと動き続け、停止の合図で止まる', async () => {
+  function runBundle(args: string[]): ReturnType<typeof spawn> {
+    return spawn(process.execPath, args, {
+      cwd: bundle,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // リポジトリの解決に頼っていないことを確かめる。
+      env: { ...process.env, NODE_PATH: '' },
+    });
+  }
+
+  async function collect(child: ReturnType<typeof spawn>): Promise<{
+    code: number | null;
+    output: string;
+  }> {
+    let output = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    const code = await new Promise<number | null>((resolve) => {
+      child.on('exit', (value) => resolve(value));
+    });
+    return { code, output };
+  }
+
+  it('diagnose が動く', async () => {
     const store = join(directory, 'agent.json');
-    // 実際のサービスと同じく、間に何も挟まず直接立てる。
-    // 包むものを挟むと、停止の合図が本体まで届かず、止まり方を確かめられない。
-    const child = spawn(
-      join(AGENT, 'node_modules/.bin/tsx'),
-      ['src/cli.ts', 'serve', '--store', store],
-      {
-        cwd: AGENT,
-        stdio: ['ignore', 'pipe', 'ignore'],
-      },
+    const { code, output } = await collect(
+      runBundle(['agent/cli.js', 'diagnose', '--store', store]),
     );
 
-    const lines: string[] = [];
-    child.stdout.on('data', (chunk: Buffer) => lines.push(chunk.toString()));
+    expect(output).toContain('送信待ち');
+    expect(code).toBe(0);
+  }, 30_000);
 
+  it('知らない命令には、使える命令を伝えて終わる', async () => {
+    const { code, output } = await collect(runBundle(['agent/cli.js', '存在しない命令']));
+
+    expect(output).toContain('serve');
+    expect(code).toBe(1);
+  }, 30_000);
+
+  it('serve が常駐し、停止の合図で止まる', async () => {
+    const store = join(directory, 'agent.json');
+    const child = runBundle(['agent/cli.js', 'serve', '--store', store]);
+
+    let output = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
     const exited = new Promise<number | null>((resolve) => {
       child.on('exit', (code) => resolve(code));
     });
+
     // 待ちの時間より長く置く。ここで終わっていれば、常駐できていない。
     await new Promise((resolve) => setTimeout(resolve, 7_000));
     expect(child.exitCode).toBeNull();
@@ -149,6 +213,7 @@ describe('端末の常駐', () => {
     child.kill('SIGTERM');
     await exited;
 
-    expect(lines.join('')).toContain('agent.stopped');
-  }, 30_000);
+    expect(output).toContain('agent.started');
+    expect(output).toContain('agent.stopped');
+  }, 40_000);
 });
