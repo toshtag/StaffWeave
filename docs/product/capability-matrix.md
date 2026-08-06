@@ -38,8 +38,8 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 実カードリーダーからの読み取り | planned | - | シミュレーターが識別子を手入力で受け取っている（P24） |
 | PC セッション観測の受理と差異の提示 | implemented | `op:recordSessionObservations` `op:getDiscrepancyReport` `test:packages/domain/src/attendance/session-observations.test.ts` | 勤務時間は自動確定しない |
 | OS からのセッション観測の自動取得 | planned | - | 送る側は常駐サービスが要る（P24） |
-| 拠点のタイムゾーンによる業務日判定 | partial | `test:packages/domain/src/attendance/business-date.test.ts` | 拠点の時間帯で判定する。夏時間の切り替わる日に前日を返しうる（P17） |
-| 日をまたぐ勤務を 1 日として扱う | partial | `test:packages/domain/src/attendance/calculation.test.ts` | 通常の日は 1 日として扱える。業務日の判定が夏時間の境界で誤る（P17） |
+| 拠点のタイムゾーンによる業務日判定 | implemented | `test:packages/domain/src/attendance/business-date.test.ts` | 現地の暦日と時刻で決める。夏時間の切り替わる日もずれない |
+| 日をまたぐ勤務を 1 日として扱う | implemented | `test:packages/domain/src/attendance/calculation.test.ts` `test:packages/domain/src/attendance/business-date.test.ts` | 業務日の開始時刻を基準に 1 日として扱う |
 | 1 日に複数の勤務区間 | planned | - | 退勤したあとの再出勤を受け付けない（P17） |
 | カードの 1 回のタップで休憩を始める | planned | - | 勤務中のタップは退勤に割り当てている（P24） |
 | 打刻時の位置情報 | planned | - | 取得・同意・精度・保持期間・閲覧権限のいずれも無い（P24） |
