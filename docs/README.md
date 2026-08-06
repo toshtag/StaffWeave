@@ -1,5 +1,12 @@
 # ドキュメント
 
+## 製品 — `product/`
+
+| 文書 | 内容 |
+| --- | --- |
+| [product/capability-matrix.md](product/capability-matrix.md) | 能力ごとの状態。動くもの、一部だけのもの、これから作るもの、作らないもの |
+| [roadmap.md](roadmap.md) | どの順で作るかと、その順にする理由 |
+
 ## 使い方 — `guide/`
 
 | 文書 | 内容 |
@@ -44,4 +51,4 @@
 コードを読んでも分からない判断だけを残しています。
 ライセンスや、データベースの並びをどう決めたかなど。一覧は [decisions/](decisions/)。
 
-いま何を作っているかは、GitHub の Issue と Pull Request を見てください。
+個々の課題がいまどこまで進んでいるかは、GitHub の Issue と Pull Request を見てください。
