@@ -1,5 +1,11 @@
 import type { Organization, SessionResponse } from '@staffweave/contracts';
 import { useEffect, useState } from 'react';
+import {
+  AdminConsole,
+  adminHref,
+  hasVisibleAdminSection,
+  useAdminRoute,
+} from '../admin/AdminConsole.tsx';
 import { ApiRequestError, api } from '../api/client.ts';
 import { LocaleSwitcher } from '../components/LocaleSwitcher.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
@@ -82,6 +88,34 @@ function OrganizationTable({ session }: { session: SessionResponse }): React.JSX
 export function HomePage({ session }: { session: SessionResponse }): React.JSX.Element {
   const { locale, messages } = useLocale();
   const { signOut } = useSession();
+  const adminRoute = useAdminRoute();
+
+  // 設定は、日々の画面と混ぜない。開く人も頻度も違う。
+  // 同じ画面へ並べると、毎日使う打刻の下に、年に数回しか触らない設定が積み上がる。
+  if (adminRoute !== null) {
+    return (
+      <>
+        <a className="skip-link" href="#main">
+          {messages.skipToMain}
+        </a>
+        <header className="page-header">
+          <div>
+            <h1>{messages.admin.title}</h1>
+            <p className="subtitle">{session.workspace.name}</p>
+          </div>
+          <div className="header-actions">
+            <LocaleSwitcher />
+            <a className="header-link" href="#/">
+              {messages.admin.backToHome}
+            </a>
+          </div>
+        </header>
+        <main id="main" className="wide">
+          <AdminConsole permissions={session.user.permissions} route={adminRoute} />
+        </main>
+      </>
+    );
+  }
 
   return (
     <>
@@ -95,6 +129,11 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         </div>
         <div className="header-actions">
           <LocaleSwitcher />
+          {hasVisibleAdminSection(session.user.permissions, messages.admin) && (
+            <a className="header-link" href={adminHref('organization', 'organizations')}>
+              {messages.admin.openConsole}
+            </a>
+          )}
           <button type="button" onClick={() => void signOut()}>
             {messages.signOut}
           </button>
