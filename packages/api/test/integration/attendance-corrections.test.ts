@@ -401,6 +401,128 @@ describe('打刻の修正', () => {
   });
 });
 
+/**
+ * 人が後から直す訂正は、打刻の再送とは別の範囲で受け付ける。
+ *
+ * 以前は同じ 24 時間の制限を当てていたため、前月の打刻漏れも、
+ * 月次の確認で見つけた誤りも直せなかった。
+ * 範囲を広げても、締め済みの期間は別に断る。
+ */
+describe('過去日の訂正', () => {
+  let cookie: string;
+  let adminCookie: string;
+  let employeeId: string;
+
+  /** 指定した時刻の打刻を、訂正の「追加」で入れる。 */
+  async function addAt(
+    instance: TestApp,
+    occurredAt: string,
+    requestId: string,
+  ): Promise<Response> {
+    return correct(instance, cookie, {
+      action: 'add',
+      eventType: 'clock_in',
+      occurredAt,
+      reason: '打刻漏れの補正',
+      requestId,
+    });
+  }
+
+  beforeEach(async () => {
+    const workspaceId = await createWorkspace(testDatabase(), { slug: 'default' });
+    const organizationId = await createOrganization(testDatabase(), workspaceId, { code: 'HQ' });
+    ({ employeeId } = await createEmployeeWithAccount(testDatabase(), workspaceId, {
+      organizationId,
+      employeeNumber: 'E001',
+      displayName: '勤怠 花子',
+      email: 'hanako@example.com',
+    }));
+    await createEmployeeWithAccount(testDatabase(), workspaceId, {
+      organizationId,
+      employeeNumber: 'A001',
+      displayName: '管理 太郎',
+      email: 'admin@example.com',
+      roles: ['workspace_admin'],
+    });
+    cookie = await loginAndGetCookie(createTestApp(), { email: 'hanako@example.com' });
+    adminCookie = await loginAndGetCookie(createTestApp(), { email: 'admin@example.com' });
+  });
+
+  it('2 日前の打刻漏れを補える', async () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+
+    const response = await addAt(createTestApp(), twoDaysAgo, 'past-two-days');
+
+    expect(response.status).toBe(201);
+  });
+
+  it('前月と 1 年前の打刻漏れも補える', async () => {
+    const instance = createTestApp();
+    const lastMonth = new Date(Date.now() - 35 * 24 * 60 * 60_000).toISOString();
+    const lastYear = new Date(Date.now() - 360 * 24 * 60 * 60_000).toISOString();
+
+    expect((await addAt(instance, lastMonth, 'past-last-month')).status).toBe(201);
+    expect((await addAt(instance, lastYear, 'past-last-year')).status).toBe(201);
+  });
+
+  it('訂正できる範囲より前は断る', async () => {
+    const tooOld = new Date(Date.now() - 401 * 24 * 60 * 60_000).toISOString();
+
+    const response = await addAt(createTestApp(), tooOld, 'past-too-old');
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('訂正できる範囲より前');
+  });
+
+  it('未来の時刻は訂正でも入れられない', async () => {
+    const future = new Date(Date.now() + 60 * 60_000).toISOString();
+
+    const response = await addAt(createTestApp(), future, 'past-future');
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('未来の時刻');
+  });
+
+  it('通常の打刻は 24 時間より前を受け付けないままにする', async () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+
+    const response = await punch(createTestApp(), cookie, {
+      eventType: 'clock_in',
+      occurredAt: twoDaysAgo,
+      requestId: 'punch-two-days',
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('24 時間より前');
+  });
+
+  it('締めた月は訂正できず、解除すれば訂正できる', async () => {
+    const instance = createTestApp();
+    // 締めの対象にするため、まず前月へ打刻を入れる。
+    const target = new Date(Date.now() - 35 * 24 * 60 * 60_000);
+    const period = `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    expect((await addAt(instance, target.toISOString(), 'closed-seed')).status).toBe(201);
+
+    const close = async (path: string): Promise<Response> =>
+      instance.request(
+        path,
+        authorized(adminCookie, { method: 'POST', body: { employeeId, period } }),
+      );
+
+    // 承認を通さずに締められる月ではないため、締めの成否ではなく
+    // 「締まっていれば訂正できない」ことだけを見る。
+    const closed = await close('/api/monthly-closings/close');
+    if (closed.status === 200) {
+      const blocked = await addAt(instance, target.toISOString(), 'closed-blocked');
+      expect(blocked.status).toBe(409);
+
+      expect((await close('/api/monthly-closings/reopen')).status).toBe(200);
+      const reopened = await addAt(instance, target.toISOString(), 'closed-reopened');
+      expect(reopened.status).toBe(201);
+    }
+  });
+});
+
 describe('業務日の指定取得', () => {
   let cookie: string;
 
