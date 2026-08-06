@@ -421,3 +421,109 @@ describe('パスワードの変更との関係', () => {
     expect(await sessionsOf(app, after)).toHaveLength(2);
   });
 });
+
+describe('管理者による復旧', () => {
+  /**
+   * 退職や端末の紛失では、本人が操作できない。
+   * 管理者が終わらせられないと、失効の手段がデータベースを直に触ることになる。
+   *
+   * 送信の仕組みを持たないため、本人が入れなくなったときの復旧も管理者が行う。
+   */
+  let memberUserId: string;
+  let adminCookie: string;
+  let memberCookie: string;
+
+  beforeEach(async () => {
+    const workspaceId = await createWorkspace(testDatabase(), { slug: 'default', name: '既定' });
+    await createUser(testDatabase(), workspaceId, {
+      email: 'admin@example.com',
+      displayName: '管理 太郎',
+      roles: ['workspace_admin'],
+    });
+    memberUserId = await createUser(testDatabase(), workspaceId, {
+      email: 'member@example.com',
+      displayName: '一般 花子',
+      roles: ['employee'],
+    });
+    const app = createTestApp();
+    adminCookie = await loginAndGetCookie(app, { email: 'admin@example.com' });
+    memberCookie = await loginAndGetCookie(app, { email: 'member@example.com' });
+  });
+
+  it('管理者は、利用者のセッションをすべて終わらせられる', async () => {
+    const app = createTestApp();
+    // 本人が 2 か所から入っている状態を作る。
+    await loginAndGetCookie(app, { email: 'member@example.com' });
+
+    const response = await app.request(
+      `/api/users/${memberUserId}/sessions/revoke`,
+      authorized(adminCookie, { method: 'POST' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { revoked: number }).revoked).toBeGreaterThanOrEqual(2);
+
+    // 終わったセッションでは、もう読めない。
+    expect((await app.request('/api/auth/session', authorized(memberCookie))).status).toBe(401);
+  });
+
+  it('管理者は、利用者のパスワードを再設定できる', async () => {
+    const app = createTestApp();
+
+    const response = await app.request(
+      `/api/users/${memberUserId}/password`,
+      authorized(adminCookie, { method: 'POST', body: { newPassword: 'staffweave reset pass' } }),
+    );
+
+    expect(response.status).toBe(200);
+
+    // 再設定した時点でセッションも終わる。
+    expect((await app.request('/api/auth/session', authorized(memberCookie))).status).toBe(401);
+
+    // 新しいパスワードでは入れる。
+    const fresh = await login(app, {
+      email: 'member@example.com',
+      password: 'staffweave reset pass',
+    });
+    expect(fresh.status).toBe(200);
+  });
+
+  it('短すぎるパスワードへは再設定できない', async () => {
+    const response = await createTestApp().request(
+      `/api/users/${memberUserId}/password`,
+      authorized(adminCookie, { method: 'POST', body: { newPassword: 'short' } }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it('従業員は、他の利用者のセッションを終わらせられない', async () => {
+    const response = await createTestApp().request(
+      `/api/users/${memberUserId}/sessions/revoke`,
+      authorized(memberCookie, { method: 'POST' }),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it('居ない利用者は見つからないとして返す', async () => {
+    const response = await createTestApp().request(
+      '/api/users/00000000-0000-4000-8000-000000000000/sessions/revoke',
+      authorized(adminCookie, { method: 'POST' }),
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it('管理者の操作は監査に残る', async () => {
+    await createTestApp().request(
+      `/api/users/${memberUserId}/sessions/revoke`,
+      authorized(adminCookie, { method: 'POST' }),
+    );
+
+    const rows = await testDatabase().query<{ action: string }>(
+      "SELECT action FROM audit_logs WHERE action = 'auth.sessions_revoked_by_admin'",
+    );
+    expect(rows).toHaveLength(1);
+  });
+});
