@@ -475,6 +475,29 @@ describe('休暇の申請と台帳', () => {
     expect(await availableMinutes(instance)).toBe(4 * 60);
   });
 
+  it('同時に承認された別々の申請でも、残数は負にならない', async () => {
+    const instance = app();
+    // 1 日ぶんしか無いところへ、1 日ずつの申請を 2 件出す。
+    await grant(instance, DAY);
+    const type = await leaveType(instance);
+    const first = await submit(instance, type, { leaveTypeId: fixture.paidLeaveId });
+    const second = await submit(instance, type, {
+      leaveTypeId: fixture.paidLeaveId,
+      businessDate: '2026-04-11',
+    });
+    for (const request of [first, second]) {
+      await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 });
+    }
+
+    const results = await Promise.all([
+      decide(instance, first.id, { decision: 'approved', step: 2, submission: 1 }),
+      decide(instance, second.id, { decision: 'approved', step: 2, submission: 1 }),
+    ]);
+
+    expect(results.filter((response) => response.status === 200)).toHaveLength(1);
+    expect(await availableMinutes(instance)).toBe(0);
+  });
+
   it('取得の単位に合わない時間帯は承認できない', async () => {
     const instance = app();
     await grant(instance, 10 * DAY);
@@ -512,6 +535,40 @@ describe('権限', () => {
     );
 
     expect(response.status).toBe(403);
+  });
+
+  it('従業員の一覧には、自分の申請しか出ない', async () => {
+    const instance = app();
+    const type = await createType(instance, {});
+    await submit(instance, type);
+
+    const db = testDatabase();
+    const workspaces = await db.query<{ id: string }>('SELECT id FROM workspaces LIMIT 1');
+    const workspaceId = workspaces[0]?.id;
+    if (!workspaceId) throw new Error('ワークスペースが見つかりません');
+    const organizations = await db.query<{ id: string }>('SELECT id FROM organizations LIMIT 1');
+    const organizationId = organizations[0]?.id;
+    if (!organizationId) throw new Error('組織が見つかりません');
+    const other = await createEmployeeWithAccount(db, workspaceId, {
+      organizationId,
+      employeeNumber: 'E002',
+      displayName: '申請 太郎',
+      email: 'taro@example.com',
+    });
+    await db.query(
+      `INSERT INTO employee_requests
+         (workspace_id, request_type_id, employee_id, total_steps, business_date, reason)
+       VALUES ($1, $2, $3, 1, '2026-04-10', '対応のため')`,
+      [workspaceId, type.id, other.employeeId],
+    );
+
+    const response = await instance.request(
+      '/api/employee-requests',
+      authorized(fixture.employeeCookie),
+    );
+
+    const { requests } = (await response.json()) as { requests: EmployeeRequestRecord[] };
+    expect(requests.map((request) => request.employeeId)).toEqual([fixture.employeeId]);
   });
 
   it('従業員は申請種別を作れない', async () => {

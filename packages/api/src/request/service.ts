@@ -179,6 +179,10 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
       );
     }
 
+    // 残数を読んでから積むまでの間に、別の申請の承認が割り込めないようにする。
+    // 割り込まれると、どちらの承認も「足りている」と判断して合計が負になる。
+    await repositories.leave.lockLedgerOf(workspaceId, request.employeeId);
+
     const entries = await repositories.leave.listEntries(workspaceId, {
       employeeId: request.employeeId,
       leaveTypeId: request.leaveTypeId,
@@ -442,8 +446,8 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
         const next = applyStagedRequestEvent(stateOf(existing), { type: 'RESUBMIT' });
         if (!next.ok) throw new ApiError('conflict', PROBLEM_MESSAGES[next.problem]);
 
-        // 出し直しに合わせて内容も直せる。要否は、提出時と同じ定義で見る。
-        await requests.updateRequestContent(context.workspace.id, existing.id, input);
+        // 出し直しに合わせて内容も直せる。要否は、いまの申請の定義で見る。
+        // 触れなかった項目は前の提出のままなので、両方を重ねてから判断する。
         validateContent(type, {
           leaveTypeId: 'leaveTypeId' in input ? input.leaveTypeId : existing.leaveTypeId,
           startMinutes: 'startMinutes' in input ? input.startMinutes : existing.startMinutes,
@@ -454,6 +458,7 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
               : existing.overtimeLimitMinutes,
           reason: 'reason' in input ? input.reason : existing.reason,
         });
+        await requests.updateRequestContent(context.workspace.id, existing.id, input);
 
         const saved = await requests.updateRequestState(context.workspace.id, existing.id, {
           state: next.request.state,

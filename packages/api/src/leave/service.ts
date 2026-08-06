@@ -200,6 +200,7 @@ export function createLeaveService(deps: LeaveServiceDependencies): LeaveService
         // 減らす手当ては、残数の範囲でしか受け付けない。
         // 負の残数を作れると、あとから帳尻を合わせる作業が要る。
         if (input.minutes < 0) {
+          await leave.lockLedgerOf(context.workspace.id, input.employeeId);
           const entries = await leave.listEntries(context.workspace.id, {
             employeeId: input.employeeId,
             leaveTypeId: input.leaveTypeId,

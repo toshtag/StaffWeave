@@ -21,6 +21,14 @@ export interface LeaveRepository {
     input: UpdateLeaveTypeRequest,
   ): Promise<LeaveTypeSettingsRecord | null>;
 
+  /**
+   * その従業員の台帳を、いまのトランザクションが終わるまで他へ触らせない。
+   *
+   * 残数は台帳から組み立てる。読んでから積むまでの間に別の要求が積むと、
+   * どちらも「足りている」と判断して、合計が負になる。
+   * 一意制約は同じ申請の二度目しか止められないため、ここは順番を作る。
+   */
+  lockLedgerOf(workspaceId: string, employeeId: string): Promise<void>;
   listEntries(
     workspaceId: string,
     query: { employeeId: string; leaveTypeId?: string },
@@ -154,6 +162,14 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
       );
       const row = rows[0];
       return row ? toLeaveType(row) : null;
+    },
+
+    async lockLedgerOf(workspaceId, employeeId) {
+      // 台帳は追記のみで、行を先取りできない。従業員の行を鍵として使う。
+      await db.query('SELECT id FROM employees WHERE workspace_id = $1 AND id = $2 FOR UPDATE', [
+        workspaceId,
+        employeeId,
+      ]);
     },
 
     async listEntries(workspaceId, query) {
