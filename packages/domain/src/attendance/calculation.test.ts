@@ -218,6 +218,214 @@ describe('calculateWorkDay', () => {
   });
 });
 
+describe('法定の区分', () => {
+  /**
+   * 何時間で時間外になるかは事業者が決める。製品は既定値を持たない。
+   * 設定が無いまま 0 を返すと、設定し忘れに気付けない。
+   */
+  it('1 日の閾値が未設定なら、法定の区分を計算しない', () => {
+    const result = calculateWorkDay(
+      input({ events: [event('clock_in', '09:00'), event('clock_out', '21:00')] }),
+    );
+
+    expect(result.legalOvertimeMinutes).toBeNull();
+    expect(result.legalInsideOvertimeMinutes).toBeNull();
+    expect(result.nightOvertimeMinutes).toBeNull();
+    expect(result.basis.unconfigured).toContain('法定内・法定外の 1 日の閾値');
+  });
+
+  it('閾値を設定すると、法定内と法定外を分ける', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [event('clock_in', '09:00'), event('clock_out', '21:00')],
+        rules: { ...DEFAULT_CALCULATION_RULES, dailyLegalMinutes: 8 * 60 },
+      }),
+    );
+
+    // 12 時間働き、閾値は 8 時間。法定外は 4 時間。
+    expect(result.workedMinutes).toBe(12 * 60);
+    expect(result.legalOvertimeMinutes).toBe(4 * 60);
+    // 所定は 09:00-18:00。所定外は 3 時間で、そのうち法定内は 0 分。
+    expect(result.outsideScheduleMinutes).toBe(3 * 60);
+    expect(result.legalInsideOvertimeMinutes).toBe(0);
+    expect(result.basis.unconfigured).toEqual([]);
+  });
+
+  it('所定を超えても法定内に収まる分を分ける', () => {
+    const result = calculateWorkDay(
+      input({
+        // 所定 09:00-18:00（休憩 60 分）。10 時間在社。
+        events: [event('clock_in', '09:00'), event('clock_out', '19:00')],
+        rules: { ...DEFAULT_CALCULATION_RULES, dailyLegalMinutes: 10 * 60 },
+      }),
+    );
+
+    expect(result.workedMinutes).toBe(10 * 60);
+    expect(result.legalOvertimeMinutes).toBe(0);
+    // 所定の時間帯の外で働いた 1 時間は、法定内の時間外。
+    expect(result.legalInsideOvertimeMinutes).toBe(60);
+  });
+
+  it('境界のちょうどでは法定外にしない', () => {
+    const rules = { ...DEFAULT_CALCULATION_RULES, dailyLegalMinutes: 8 * 60 };
+
+    const exact = calculateWorkDay(
+      input({ events: [event('clock_in', '09:00'), event('clock_out', '17:00')], rules }),
+    );
+    const oneMore = calculateWorkDay(
+      input({ events: [event('clock_in', '09:00'), event('clock_out', '17:01')], rules }),
+    );
+
+    expect(exact.legalOvertimeMinutes).toBe(0);
+    expect(oneMore.legalOvertimeMinutes).toBe(1);
+  });
+
+  it('法定休日と法定外休日を分ける', () => {
+    const events = [event('clock_in', '09:00'), event('clock_out', '13:00')];
+
+    const legal = calculateWorkDay(
+      input({ events, schedule: { ...dayShift, dayType: 'legal_holiday' } }),
+    );
+    const nonLegal = calculateWorkDay(
+      input({ events, schedule: { ...dayShift, dayType: 'non_working_day' } }),
+    );
+
+    expect(legal.legalHolidayMinutes).toBe(4 * 60);
+    expect(legal.nonLegalHolidayMinutes).toBe(0);
+    expect(nonLegal.legalHolidayMinutes).toBe(0);
+    expect(nonLegal.nonLegalHolidayMinutes).toBe(4 * 60);
+  });
+
+  it('深夜のうち法定時間外に当たる分を出す', () => {
+    const result = calculateWorkDay(
+      input({
+        // 13:00 から翌 1:00 まで 12 時間。深夜帯は 22:00-翌 5:00。
+        events: [event('clock_in', '13:00'), event('clock_out', '25:00')],
+        rules: { ...DEFAULT_CALCULATION_RULES, dailyLegalMinutes: 8 * 60 },
+      }),
+    );
+
+    expect(result.nightMinutes).toBe(3 * 60);
+    // 法定外は後ろの 4 時間（21:00-25:00）。そのうち深夜は 22:00-25:00 の 3 時間。
+    expect(result.legalOvertimeMinutes).toBe(4 * 60);
+    expect(result.nightOvertimeMinutes).toBe(3 * 60);
+  });
+});
+
+describe('遅刻・早退・所定の前後', () => {
+  it('所定に対する遅れと早退を出す', () => {
+    const result = calculateWorkDay(
+      input({ events: [event('clock_in', '09:30'), event('clock_out', '17:00')] }),
+    );
+
+    expect(result.lateMinutes).toBe(30);
+    expect(result.earlyLeaveMinutes).toBe(60);
+  });
+
+  it('所定より前と後に働いた分を出す', () => {
+    const result = calculateWorkDay(
+      input({ events: [event('clock_in', '08:00'), event('clock_out', '19:00')] }),
+    );
+
+    expect(result.beforeScheduleMinutes).toBe(60);
+    expect(result.afterScheduleMinutes).toBe(60);
+    expect(result.lateMinutes).toBe(0);
+    expect(result.earlyLeaveMinutes).toBe(0);
+  });
+});
+
+describe('勤務区分の休憩', () => {
+  const category = {
+    code: 'DAY',
+    fixedBreaks: [{ startMinutes: 12 * 60, endMinutes: 13 * 60 }],
+    autoBreaks: [],
+    nightStartMinutes: null,
+    nightEndMinutes: null,
+    gapTreatment: 'non_working' as const,
+    deemedMinutes: null,
+  };
+
+  it('固定休憩を、打刻が無くても引く', () => {
+    const result = calculateWorkDay(
+      input({ events: [event('clock_in', '09:00'), event('clock_out', '18:00')], category }),
+    );
+
+    expect(result.breakMinutes).toBe(60);
+    expect(result.workedMinutes).toBe(8 * 60);
+  });
+
+  it('同じ時間帯を打刻していても二度引かない', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [
+          event('clock_in', '09:00'),
+          event('break_start', '12:00'),
+          event('break_end', '13:00'),
+          event('clock_out', '18:00'),
+        ],
+        category,
+      }),
+    );
+
+    expect(result.breakMinutes).toBe(60);
+    expect(result.basis.breakOrigins).toContainEqual({
+      origin: 'fixed',
+      minutes: 60,
+      adopted: false,
+    });
+  });
+
+  it('自動休憩を実労働から引く', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [event('clock_in', '09:00'), event('clock_out', '18:00')],
+        category: {
+          ...category,
+          fixedBreaks: [],
+          autoBreaks: [{ thresholdMinutes: 6 * 60, additionalMinutes: 45 }],
+        },
+      }),
+    );
+
+    expect(result.breakMinutes).toBe(45);
+    expect(result.workedMinutes).toBe(9 * 60 - 45);
+  });
+
+  it('中抜けを休憩として扱う設定では、区間の間を休憩へ入れる', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [
+          event('clock_in', '09:00'),
+          event('clock_out', '12:00'),
+          event('clock_in', '15:00'),
+          event('clock_out', '18:00'),
+        ],
+        category: { ...category, fixedBreaks: [], gapTreatment: 'break' },
+      }),
+    );
+
+    expect(result.workedMinutes).toBe(6 * 60);
+    expect(result.breakMinutes).toBe(3 * 60);
+  });
+
+  it('深夜帯を勤務区分で上書きできる', () => {
+    const result = calculateWorkDay(
+      input({
+        events: [event('clock_in', '18:00'), event('clock_out', '22:00')],
+        category: {
+          ...category,
+          fixedBreaks: [],
+          nightStartMinutes: 20 * 60,
+          nightEndMinutes: 6 * 60,
+        },
+      }),
+    );
+
+    // 既定なら 0 分。上書きで 20:00-22:00 の 2 時間。
+    expect(result.nightMinutes).toBe(2 * 60);
+  });
+});
+
 describe('複数の勤務区間', () => {
   it('中抜けの時間は在社にも実労働にも入れない', () => {
     const result = calculateWorkDay(

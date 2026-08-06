@@ -40,13 +40,29 @@ interface CalculationRow {
   non_working_day_minutes: number;
   leave_minutes: number;
   absence_minutes: number;
+  legal_inside_overtime_minutes: number | null;
+  legal_overtime_minutes: number | null;
+  legal_holiday_minutes: number | null;
+  non_legal_holiday_minutes: number | null;
+  night_overtime_minutes: number | null;
+  night_holiday_minutes: number | null;
+  late_minutes: number | null;
+  early_leave_minutes: number | null;
+  before_schedule_minutes: number | null;
+  after_schedule_minutes: number | null;
+  deemed_minutes: number | null;
   basis: CalculationBasis;
 }
 
 const COLUMNS = `version, calculated_at, input_fingerprint, rule_version,
   attended_minutes, worked_minutes, break_minutes, scheduled_minutes,
   within_schedule_minutes, outside_schedule_minutes, night_minutes,
-  non_working_day_minutes, leave_minutes, absence_minutes, basis`;
+  non_working_day_minutes, leave_minutes, absence_minutes,
+  legal_inside_overtime_minutes, legal_overtime_minutes,
+  legal_holiday_minutes, non_legal_holiday_minutes,
+  night_overtime_minutes, night_holiday_minutes,
+  late_minutes, early_leave_minutes, before_schedule_minutes, after_schedule_minutes,
+  deemed_minutes, basis`;
 
 function toRecord(row: CalculationRow): AttendanceCalculationRecord {
   return {
@@ -64,6 +80,17 @@ function toRecord(row: CalculationRow): AttendanceCalculationRecord {
     nonWorkingDayMinutes: row.non_working_day_minutes,
     leaveMinutes: row.leave_minutes,
     absenceMinutes: row.absence_minutes,
+    legalInsideOvertimeMinutes: row.legal_inside_overtime_minutes,
+    legalOvertimeMinutes: row.legal_overtime_minutes,
+    legalHolidayMinutes: row.legal_holiday_minutes,
+    nonLegalHolidayMinutes: row.non_legal_holiday_minutes,
+    nightOvertimeMinutes: row.night_overtime_minutes,
+    nightHolidayMinutes: row.night_holiday_minutes,
+    lateMinutes: row.late_minutes,
+    earlyLeaveMinutes: row.early_leave_minutes,
+    beforeScheduleMinutes: row.before_schedule_minutes,
+    afterScheduleMinutes: row.after_schedule_minutes,
+    deemedMinutes: row.deemed_minutes,
     basis: row.basis,
   };
 }
@@ -87,8 +114,14 @@ export function createCalculationRepository(db: Queryable): CalculationRepositor
            (workspace_id, employee_id, business_date, version, input_fingerprint, rule_version,
             attended_minutes, worked_minutes, break_minutes, scheduled_minutes,
             within_schedule_minutes, outside_schedule_minutes, night_minutes,
-            non_working_day_minutes, leave_minutes, absence_minutes, basis)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)
+            non_working_day_minutes, leave_minutes, absence_minutes,
+            legal_inside_overtime_minutes, legal_overtime_minutes,
+            legal_holiday_minutes, non_legal_holiday_minutes,
+            night_overtime_minutes, night_holiday_minutes,
+            late_minutes, early_leave_minutes, before_schedule_minutes, after_schedule_minutes,
+            deemed_minutes, basis)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                 $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28::jsonb)
          RETURNING ${COLUMNS}`,
         [
           workspaceId,
@@ -107,6 +140,17 @@ export function createCalculationRepository(db: Queryable): CalculationRepositor
           result.nonWorkingDayMinutes,
           result.leaveMinutes,
           result.absenceMinutes,
+          result.legalInsideOvertimeMinutes,
+          result.legalOvertimeMinutes,
+          result.legalHolidayMinutes,
+          result.nonLegalHolidayMinutes,
+          result.nightOvertimeMinutes,
+          result.nightHolidayMinutes,
+          result.lateMinutes,
+          result.earlyLeaveMinutes,
+          result.beforeScheduleMinutes,
+          result.afterScheduleMinutes,
+          result.deemedMinutes,
           JSON.stringify(result.basis),
         ],
       );

@@ -8,10 +8,13 @@
  * 計算は分単位で行う。区間を 1 分ずつ数えることで、
  * 夏時間の切り替えや日付をまたぐ勤務でも数え落としが起きない。
  */
+
+import type { AutoBreakRule, MinuteInterval } from './breaks.js';
+import { resolveBreaks } from './breaks.js';
 import type { BusinessDate } from './business-date.js';
 import type { AttendanceEvent, BreakPeriod } from './events.js';
 import { summarizeWorkDay } from './events.js';
-import { localMinutesOfDay } from './local-time.js';
+import { instantFromLocal, localMinutesOfDay } from './local-time.js';
 
 const MINUTE = 60_000;
 
@@ -22,6 +25,8 @@ const MINUTE = 60_000;
 export const DAY_TYPES = [
   'working_day',
   'non_working_day',
+  // 法定休日。法定外休日と分けて数えるため、種別として持つ。
+  'legal_holiday',
   'public_holiday',
   'leave',
   'absence',
@@ -48,22 +53,58 @@ export type RoundingMode = 'none' | 'down' | 'nearest';
 export interface CalculationRules {
   /** ルール版。結果と一緒に保存し、どの規則で計算したかを追えるようにする。 */
   version: string;
-  /** 深夜帯の開始（現地 0 時からの分数）。既定は 22:00。 */
+  /** 深夜帯の開始（現地 0 時からの分数）。 */
   nightStartMinutes: number;
-  /** 深夜帯の終了（現地 0 時からの分数）。既定は 5:00。 */
+  /** 深夜帯の終了（現地 0 時からの分数）。 */
   nightEndMinutes: number;
   /** 集計の丸め単位（分）。0 なら丸めない。 */
   roundingMinutes: number;
   roundingMode: RoundingMode;
+  /**
+   * 法定内と法定外を分ける 1 日の閾値（分）。
+   *
+   * 事業者が決める値で、製品は既定値を持たない。
+   * 未設定のまま計算すると、誰も決めていない値が結果に残る。
+   * `null` の間は法定の区分を出さず、未設定として示す。
+   */
+  dailyLegalMinutes: number | null;
 }
 
+/**
+ * 何も設定されていない状態。
+ *
+ * 深夜帯と丸めは、これまで動いていた値をそのまま引き継ぐ。
+ * 法定の閾値は持たない。持たせると、設定しないまま法定内外が出てしまう。
+ */
 export const DEFAULT_CALCULATION_RULES: CalculationRules = {
   version: 'v1',
   nightStartMinutes: 22 * 60,
   nightEndMinutes: 5 * 60,
   roundingMinutes: 0,
   roundingMode: 'none',
+  dailyLegalMinutes: null,
 };
+
+/**
+ * その日に適用する勤務区分。
+ *
+ * 勤務予定に紐づく版を渡す。渡さない場合は、これまでどおり勤務予定の
+ * 所定時刻と休憩分数だけで計算する。
+ */
+export interface WorkCategorySettings {
+  code: string;
+  /** 固定休憩（現地 0 時からの分数）。 */
+  fixedBreaks: readonly { startMinutes: number; endMinutes: number }[];
+  /** 自動休憩の規則。 */
+  autoBreaks: readonly AutoBreakRule[];
+  /** 深夜帯の上書き。null なら計算規則に従う。 */
+  nightStartMinutes: number | null;
+  nightEndMinutes: number | null;
+  /** 区間と区間の間の扱い。 */
+  gapTreatment: 'non_working' | 'break';
+  /** みなし労働分数。給与向けの値として実績とは別に持つ。 */
+  deemedMinutes: number | null;
+}
 
 export interface CalculationInput {
   businessDate: BusinessDate;
@@ -71,6 +112,7 @@ export interface CalculationInput {
   events: readonly AttendanceEvent[];
   schedule: WorkSchedule | null;
   rules: CalculationRules;
+  category?: WorkCategorySettings | null;
 }
 
 export interface CalculationStep {
@@ -93,6 +135,15 @@ export interface CalculationBasis {
   steps: CalculationStep[];
   /** 勤務が確定していない（退勤していない）場合は true。 */
   incomplete: boolean;
+  /**
+   * 設定されていないため計算できなかった区分。
+   *
+   * 空でなければ、その区分は `null` になる。
+   * 黙って 0 を返すと、設定し忘れに気付けない。
+   */
+  unconfigured: string[];
+  /** 採用した休憩と、重なりで捨てた休憩。 */
+  breakOrigins: { origin: string; minutes: number; adopted: boolean }[];
 }
 
 export interface CalculationResult {
@@ -116,6 +167,36 @@ export interface CalculationResult {
   leaveMinutes: number;
   /** 欠勤として扱う時間。実労働ではない。 */
   absenceMinutes: number;
+
+  /**
+   * 法定の区分。
+   *
+   * 1 日の閾値が設定されていなければ `null`。0 ではない。
+   * 0 だと「計算した結果 0 分だった」と読めてしまい、未設定と区別がつかない。
+   */
+  legalInsideOvertimeMinutes: number | null;
+  legalOvertimeMinutes: number | null;
+  /** 法定休日に働いた実労働。勤務区分の種別で決まる。 */
+  legalHolidayMinutes: number;
+  /** 法定外休日に働いた実労働。 */
+  nonLegalHolidayMinutes: number;
+  /** 深夜帯のうち、法定時間外に当たる分。閾値が未設定なら `null`。 */
+  nightOvertimeMinutes: number | null;
+  /** 深夜帯のうち、休日労働に当たる分。 */
+  nightHolidayMinutes: number;
+
+  /** 所定始業に遅れた分。所定が無ければ 0。 */
+  lateMinutes: number;
+  /** 所定終業より早く出た分。 */
+  earlyLeaveMinutes: number;
+  /** 所定始業より前に働いた分。 */
+  beforeScheduleMinutes: number;
+  /** 所定終業より後に働いた分。 */
+  afterScheduleMinutes: number;
+
+  /** みなし労働分数。勤務区分または労働形態が持つ場合だけ。 */
+  deemedMinutes: number | null;
+
   basis: CalculationBasis;
 }
 
@@ -124,8 +205,11 @@ function floorToMinute(instant: Date): number {
 }
 
 /** 現地時間の分が深夜帯に含まれるか。深夜帯は日をまたぐ。 */
-function isNightMinute(minuteOfDay: number, rules: CalculationRules): boolean {
-  const { nightStartMinutes, nightEndMinutes } = rules;
+function isNightMinute(
+  minuteOfDay: number,
+  band: { nightStartMinutes: number; nightEndMinutes: number },
+): boolean {
+  const { nightStartMinutes, nightEndMinutes } = band;
   if (nightStartMinutes === nightEndMinutes) return false;
   if (nightStartMinutes < nightEndMinutes) {
     return minuteOfDay >= nightStartMinutes && minuteOfDay < nightEndMinutes;
@@ -202,7 +286,43 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
   const attendance: Interval | null =
     first === undefined || last === undefined ? null : { start: first.start, end: last.end };
 
-  const breaks = breakIntervals(summary.breaks, attendance);
+  const category = input.category ?? null;
+
+  // 実績・固定・自動を突き合わせ、同じ時間を二度引かないようにする。
+  const actualBreaks = breakIntervals(summary.breaks, attendance);
+
+  // 休憩の突き合わせは絶対時刻のまま行う。
+  // 「現地 0 時からの分数」へ写すと、夏時間で長さの変わる日にずれる。
+  // 固定休憩は現地時刻で決めるため、こちらを絶対時刻へ直す。
+  const toMinutes = (instant: number): number => Math.round(instant / MINUTE);
+  const fromMinutes = (minutes: number): number => minutes * MINUTE;
+  const localToInstant = (minutesOfDay: number): number =>
+    instantFromLocal(input.businessDate, minutesOfDay, input.timeZone).getTime();
+
+  const rawWorkedMinutes =
+    attendance === null
+      ? 0
+      : sessions.reduce((sum, session) => sum + (session.end - session.start) / MINUTE, 0) -
+        actualBreaks.reduce((sum, interval) => sum + (interval.end - interval.start) / MINUTE, 0);
+
+  const resolution = resolveBreaks({
+    actual: actualBreaks.map<MinuteInterval>((interval) => ({
+      start: toMinutes(interval.start),
+      end: toMinutes(interval.end),
+    })),
+    fixed: (category?.fixedBreaks ?? []).map<MinuteInterval>((entry) => ({
+      start: toMinutes(localToInstant(entry.startMinutes)),
+      end: toMinutes(localToInstant(entry.endMinutes)),
+    })),
+    automatic: category?.autoBreaks ?? [],
+    workedMinutes: rawWorkedMinutes,
+  });
+
+  const breaks: Interval[] = resolution.intervals.map((interval) => ({
+    start: fromMinutes(interval.start),
+    end: fromMinutes(interval.end),
+  }));
+  const automaticBreakMinutes = resolution.automaticMinutes;
 
   const scheduleInterval: Interval | null =
     input.schedule?.startAt && input.schedule.endAt
@@ -216,6 +336,15 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
   let outsideScheduleMinutes = 0;
   let nightMinutes = 0;
 
+  // 深夜帯は勤務区分で上書きできる。上書きが無ければ計算規則の版に従う。
+  const nightBand = {
+    nightStartMinutes: category?.nightStartMinutes ?? rules.nightStartMinutes,
+    nightEndMinutes: category?.nightEndMinutes ?? rules.nightEndMinutes,
+  };
+
+  // 実労働の分を、あとで法定内外へ振り分けるために順番に覚えておく。
+  const workedInstants: number[] = [];
+
   for (const session of sessions) {
     for (let instant = session.start; instant < session.end; instant += MINUTE) {
       attendedMinutes += 1;
@@ -224,6 +353,7 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
         continue;
       }
       workedMinutes += 1;
+      workedInstants.push(instant);
 
       if (scheduleInterval !== null && overlaps([scheduleInterval], instant)) {
         withinScheduleMinutes += 1;
@@ -231,10 +361,32 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
         outsideScheduleMinutes += 1;
       }
 
-      if (isNightMinute(localMinutesOfDay(new Date(instant), input.timeZone), rules)) {
+      if (isNightMinute(localMinutesOfDay(new Date(instant), input.timeZone), nightBand)) {
         nightMinutes += 1;
       }
     }
+  }
+
+  // 中抜けを休憩として扱う設定なら、区間の間を休憩へ足す。
+  if (category?.gapTreatment === 'break') {
+    for (let index = 1; index < sessions.length; index += 1) {
+      const previous = sessions[index - 1];
+      const current = sessions[index];
+      if (previous === undefined || current === undefined) continue;
+      breakMinutes += Math.max(0, Math.round((current.start - previous.end) / MINUTE));
+    }
+  }
+
+  // 自動休憩は時間帯を持たない。実労働から直接引く。
+  if (automaticBreakMinutes > 0) {
+    const deducted = Math.min(automaticBreakMinutes, workedMinutes);
+    workedMinutes -= deducted;
+    breakMinutes += deducted;
+    // 引いた分は、所定外から先に落とす。所定内を削ると所定を満たしていないように見える。
+    const fromOutside = Math.min(deducted, outsideScheduleMinutes);
+    outsideScheduleMinutes -= fromOutside;
+    withinScheduleMinutes -= deducted - fromOutside;
+    workedInstants.splice(workedInstants.length - deducted, deducted);
   }
 
   // 休暇と欠勤は「予定はあるが働かない日」。所定労働は残し、働いた時間とは別に数える。
@@ -253,6 +405,69 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
   const leaveMinutes = dayType === 'leave' ? scheduledMinutes : 0;
   const absenceMinutes = dayType === 'absence' ? scheduledMinutes : 0;
 
+  const unconfigured: string[] = [];
+
+  // 法定休日と法定外休日を分ける。どちらに当たるかは勤務区分の種別が決める。
+  // 種別が渡らない日は、これまでどおり「休日労働」としてまとめたままにする。
+  const legalHolidayMinutes = dayType === 'legal_holiday' ? workedMinutes : 0;
+  const nonLegalHolidayMinutes =
+    dayType === 'non_working_day' || dayType === 'public_holiday' ? workedMinutes : 0;
+
+  // 法定内と法定外は、1 日の閾値が決まっていなければ計算しない。
+  // 事業者が決める値で、製品が既定値を持つと、設定しないまま結果が出てしまう。
+  let legalInsideOvertimeMinutes: number | null = null;
+  let legalOvertimeMinutes: number | null = null;
+  let nightOvertimeMinutes: number | null = null;
+  const legalLimit = rules.dailyLegalMinutes;
+
+  if (legalLimit === null) {
+    unconfigured.push('法定内・法定外の 1 日の閾値');
+  } else if (plannedDay) {
+    const overtime = Math.max(0, workedMinutes - legalLimit);
+    legalOvertimeMinutes = overtime;
+    // 所定を超えたが法定内に収まる分。
+    legalInsideOvertimeMinutes = Math.max(0, outsideScheduleMinutes - overtime);
+
+    // 法定時間外に当たる分のうち、深夜帯に入るもの。
+    // 閾値を超えたのは、その日の後ろから数えた分。
+    const overtimeInstants = workedInstants.slice(workedInstants.length - overtime);
+    nightOvertimeMinutes = overtimeInstants.filter((instant) =>
+      isNightMinute(localMinutesOfDay(new Date(instant), input.timeZone), nightBand),
+    ).length;
+  } else {
+    // 休日は所定が無い。法定内外ではなく休日労働として数える。
+    legalInsideOvertimeMinutes = 0;
+    legalOvertimeMinutes = 0;
+    nightOvertimeMinutes = 0;
+  }
+
+  const nightHolidayMinutes = plannedDay
+    ? 0
+    : workedInstants.filter((instant) =>
+        isNightMinute(localMinutesOfDay(new Date(instant), input.timeZone), nightBand),
+      ).length;
+
+  // 遅刻・早退・始業前・終業後。所定の時間帯が決まっていなければ 0。
+  let lateMinutes = 0;
+  let earlyLeaveMinutes = 0;
+  let beforeScheduleMinutes = 0;
+  let afterScheduleMinutes = 0;
+
+  if (scheduleInterval !== null && plannedDay && workedInstants.length > 0) {
+    const firstWorked = workedInstants[0] ?? 0;
+    const lastWorked = (workedInstants.at(-1) ?? 0) + MINUTE;
+    lateMinutes = Math.max(0, Math.round((firstWorked - scheduleInterval.start) / MINUTE));
+    earlyLeaveMinutes = Math.max(0, Math.round((scheduleInterval.end - lastWorked) / MINUTE));
+    beforeScheduleMinutes = workedInstants.filter(
+      (instant) => instant < scheduleInterval.start,
+    ).length;
+    afterScheduleMinutes = workedInstants.filter(
+      (instant) => instant >= scheduleInterval.end,
+    ).length;
+  }
+
+  const deemedMinutes = category?.deemedMinutes ?? null;
+
   const rounded = {
     attendedMinutes: applyRounding(attendedMinutes, rules),
     workedMinutes: applyRounding(workedMinutes, rules),
@@ -263,6 +478,20 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
     nonWorkingDayMinutes: applyRounding(nonWorkingDayMinutes, rules),
     leaveMinutes: applyRounding(leaveMinutes, rules),
     absenceMinutes: applyRounding(absenceMinutes, rules),
+    legalInsideOvertimeMinutes:
+      legalInsideOvertimeMinutes === null ? null : applyRounding(legalInsideOvertimeMinutes, rules),
+    legalOvertimeMinutes:
+      legalOvertimeMinutes === null ? null : applyRounding(legalOvertimeMinutes, rules),
+    legalHolidayMinutes: applyRounding(legalHolidayMinutes, rules),
+    nonLegalHolidayMinutes: applyRounding(nonLegalHolidayMinutes, rules),
+    nightOvertimeMinutes:
+      nightOvertimeMinutes === null ? null : applyRounding(nightOvertimeMinutes, rules),
+    nightHolidayMinutes: applyRounding(nightHolidayMinutes, rules),
+    lateMinutes: applyRounding(lateMinutes, rules),
+    earlyLeaveMinutes: applyRounding(earlyLeaveMinutes, rules),
+    beforeScheduleMinutes: applyRounding(beforeScheduleMinutes, rules),
+    afterScheduleMinutes: applyRounding(afterScheduleMinutes, rules),
+    deemedMinutes,
   };
 
   const segments: CalculationSegment[] = [];
@@ -285,8 +514,36 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
       { label: '休暇', minutes: rounded.leaveMinutes },
       { label: '欠勤', minutes: rounded.absenceMinutes },
       { label: '所定労働', minutes: scheduledMinutes },
+      ...(rounded.legalOvertimeMinutes === null
+        ? []
+        : [
+            { label: '法定内時間外', minutes: rounded.legalInsideOvertimeMinutes ?? 0 },
+            { label: '法定時間外', minutes: rounded.legalOvertimeMinutes },
+            { label: '深夜時間外', minutes: rounded.nightOvertimeMinutes ?? 0 },
+          ]),
+      { label: '法定休日', minutes: rounded.legalHolidayMinutes },
+      { label: '法定外休日', minutes: rounded.nonLegalHolidayMinutes },
+      { label: '深夜休日', minutes: rounded.nightHolidayMinutes },
+      { label: '遅刻', minutes: rounded.lateMinutes },
+      { label: '早退', minutes: rounded.earlyLeaveMinutes },
+      { label: '始業前', minutes: rounded.beforeScheduleMinutes },
+      { label: '終業後', minutes: rounded.afterScheduleMinutes },
+      ...(deemedMinutes === null ? [] : [{ label: 'みなし労働', minutes: deemedMinutes }]),
     ],
     incomplete: summary.state !== 'finished' && summary.state !== 'not_started',
+    unconfigured,
+    breakOrigins: [
+      ...resolution.adopted.map((entry) => ({
+        origin: entry.origin,
+        minutes: entry.end - entry.start,
+        adopted: true,
+      })),
+      ...resolution.overlapped.map((entry) => ({
+        origin: entry.origin,
+        minutes: entry.end - entry.start,
+        adopted: false,
+      })),
+    ],
   };
 
   return {

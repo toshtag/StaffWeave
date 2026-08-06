@@ -45,9 +45,11 @@ import { createOrganizationRepository } from './organization/repository.js';
 import { createOrganizationRoutes } from './organization/routes.js';
 import { createOrganizationService } from './organization/service.js';
 import { createWorkCycleRepository } from './schedule/cycle-repository.js';
+import { createLaborSystemRepository } from './schedule/labor-system-repository.js';
 import { createScheduleRepository } from './schedule/repository.js';
 import { createScheduleRoutes } from './schedule/routes.js';
 import { createScheduleService } from './schedule/service.js';
+import { createWorkCategoryRepository } from './schedule/work-category-repository.js';
 import { createSessionObservationRepository } from './session/repository.js';
 import { createSessionRoutes } from './session/routes.js';
 import { createSessionService } from './session/service.js';
@@ -165,6 +167,9 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     approval: createApprovalRepository(deps.db),
   };
 
+  const workCategoryRepository = createWorkCategoryRepository(deps.db);
+  const laborSystemRepository = createLaborSystemRepository(deps.db);
+
   const withTransaction = <T>(
     fn: (repositories: {
       attendance: ReturnType<typeof createAttendanceRepository>;
@@ -206,6 +211,8 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   const scheduleService = createScheduleService({
     repositories: dayRepositories,
     cycles: createWorkCycleRepository(deps.db),
+    categories: workCategoryRepository,
+    laborSystems: laborSystemRepository,
     visibility,
     transaction: withTransaction,
   });

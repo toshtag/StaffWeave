@@ -52,12 +52,12 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 勤務予定の登録 | implemented | `op:upsertWorkSchedule` `op:listWorkSchedules` | 従業員と業務日ごとに持つ |
 | 勤務周期による予定の生成 | implemented | `op:generateWorkSchedules` `op:createWorkCycle` `test:packages/domain/src/schedule/work-cycle.test.ts` | 曜日を前提にしない |
 | 有効期間付きの制度切り替え | implemented | `op:assignWorkCycle` `op:endWorkCycleAssignment` `migration:0019_exclude_overlapping_work_cycles.sql` | 期間の重なりを DB で排他する |
-| 版管理された勤務区分 | planned | - | 管理者名・表示名・種別・所定分数を持つ集約が無い（P18） |
-| 複数の固定休憩 | planned | - | 休憩は合計分数だけを持つ（P18） |
-| 自動休憩（労働時間の閾値で足す） | planned | - | 閾値・追加分数・追加位置のいずれも無い（P18） |
-| みなし労働時間 | planned | - | 勤務区分側に持たせる（P18） |
-| シフト属性と表示色 | planned | - | 周期生成はあるが、シフトとしての属性が無い（P18） |
-| マスターの改定・無効化・コピー | planned | - | 勤務パターン・休暇種別・勤務周期は作成と一覧が中心（P18） |
+| 版管理された勤務区分 | implemented | `op:createWorkCategory` `op:listWorkCategories` `migration:0026_create_work_categories_and_rule_versions.sql` | 同じ code で期間を分けて改定する。期間の重なりを DB で排他する |
+| 複数の固定休憩 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `migration:0026_create_work_categories_and_rule_versions.sql` | 実績と重なる分は二度引かない |
+| 自動休憩（労働時間の閾値で足す） | implemented | `test:packages/domain/src/attendance/breaks.test.ts` | 閾値と追加分数を持つ。段階が複数でも足し合わせない |
+| みなし労働時間 | implemented | `op:createWorkCategory` `op:assignLaborSystem` | 勤務区分と労働形態の両方に持てる。実績とは別に出す |
+| シフト属性と表示色 | implemented | `op:createWorkCategory` | 勤務区分が持つ。画面での使い方は P22 |
+| マスターの改定・無効化・コピー | partial | `op:createWorkCategory` | 勤務区分は版を重ねて改定できる。休暇種別と勤務周期は作成と一覧のまま（P20） |
 
 ## 勤務時間の計算
 
@@ -67,24 +67,24 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 計算の決定性と根拠の保存 | implemented | `migration:0005_create_schedules_and_calculations.sql` `test:packages/domain/src/attendance/calculation.test.ts` | 入力の指紋・ルール版・区間・手順を結果と一緒に残す |
 | 深夜帯の集計 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 既定は 22:00–5:00 |
 | 丸め | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 単位と方法をワークスペースごとに保存できる |
-| 計算ルールの変更 | partial | `migration:0005_create_schedules_and_calculations.sql` | 値はワークスペースごとに保存できる。変える経路が API にも画面にも無い（P18） |
-| 所定内・所定外 | partial | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯の内外は出せる。法定の区分を持たない（P18） |
-| 休日労働 | partial | `test:packages/domain/src/attendance/calculation.test.ts` | 休日労働としてまとめて出せる。法定休日と法定外休日を区別しない（P18） |
-| 所定休憩の実労働からの控除 | partial | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の休憩は所定労働時間を減らす。実労働からは実際の休憩打刻だけを引く（P18） |
-| 法定内時間外・法定時間外 | planned | - | 日・週・月の閾値を持たない（P18） |
-| 深夜時間外・深夜休日 | planned | - | 深夜と時間外・休日を掛け合わせた区分が無い（P18） |
-| 遅刻・早退・始業前・終業後 | planned | - | 所定時刻との差を集計しない（P18） |
-| 週・月の集計 | planned | - | 日次の計算だけを持ち、期間の集計エンジンが無い（P18） |
+| 計算ルールの変更 | implemented | `op:createCalculationRuleVersion` `op:listCalculationRuleVersions` | 適用開始日つきの版を作る。過去の集計は当時の版のまま |
+| 所定内・所定外 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯の内外を出す |
+| 休日労働 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 法定休日と法定外休日を分けて出す |
+| 所定休憩の実労働からの控除 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` | 固定休憩は打刻が無くても引く。重なりは二度引かない |
+| 法定内時間外・法定時間外 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 1 日の閾値は事業者が設定する。未設定なら計算せず未設定として示す |
+| 深夜時間外・深夜休日 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 深夜帯は勤務区分で上書きできる |
+| 遅刻・早退・始業前・終業後 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯との差から出す |
+| 週・月の集計 | planned | - | 集計の境界は計算規則の版が持つ。集計そのものは P23 |
 | 認定時間（申請した残業上限の反映） | planned | - | 申請側に上限時刻が無い（P21） |
 
 ## 労働形態
 
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
-| 一般勤務（固定・時短・シフト） | partial | `op:createWorkPattern` `op:upsertWorkSchedule` | 所定時刻と勤務周期で表せる。勤務区分としての設定を持たない（P18） |
-| フレックスタイム制 | planned | - | 清算期間・総枠・コアタイム・不足・繰越のいずれも無い（P19） |
-| 裁量労働制 | planned | - | みなし時間と実績を分けて持たない（P19） |
-| 変形労働時間制 | planned | - | フレックスと裁量のあとに判断する（P19） |
+| 一般勤務（固定・時短・シフト） | implemented | `op:createWorkCategory` `op:assignLaborSystem` | 勤務区分と労働形態の割当で表す |
+| フレックスタイム制 | partial | `op:assignLaborSystem` `migration:0027_create_labor_system_assignments.sql` | 清算期間・総枠・コアタイムを期間つきで持つ。清算期間の集計は P23 |
+| 裁量労働制 | implemented | `op:assignLaborSystem` | みなし分数を割当が持ち、実績とは別に出す |
+| 変形労働時間制 | partial | `op:assignLaborSystem` | 対象期間と総枠を期間つきで持つ。期間の集計は P23 |
 
 ## 休暇
 

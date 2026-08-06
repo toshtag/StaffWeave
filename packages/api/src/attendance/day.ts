@@ -89,7 +89,8 @@ async function buildContext(
     employeeId,
     businessDate,
   );
-  const rules = knownRules ?? (await repositories.schedule.findCalculationRules(workspaceId));
+  const rules =
+    knownRules ?? (await repositories.schedule.findCalculationRules(workspaceId, businessDate));
   const request = await repositories.approval.findRequest(workspaceId, employeeId, businessDate);
   const closing = await repositories.approval.findClosing(
     workspaceId,

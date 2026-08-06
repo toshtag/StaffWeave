@@ -14,6 +14,28 @@ export interface UpsertWorkScheduleInput {
   leaveTypeId: string | null;
 }
 
+/** 適用開始日つきの計算規則。 */
+export interface CalculationRuleVersion {
+  effectiveFrom: string;
+  rules: CalculationRules;
+}
+
+/**
+ * その業務日に効いている版を選ぶ。
+ *
+ * 版は新しい順に並んでいる。適用開始日がその日以前で、いちばん新しいものを採る。
+ * 無ければ、何も設定されていない状態として返す。
+ */
+export function rulesFor(
+  versions: readonly CalculationRuleVersion[],
+  businessDate: string,
+): CalculationRules {
+  return (
+    versions.find((version) => version.effectiveFrom <= businessDate)?.rules ??
+    DEFAULT_CALCULATION_RULES
+  );
+}
+
 export interface ScheduleRepository {
   listWorkPatterns(workspaceId: string): Promise<WorkPattern[]>;
   findWorkPattern(workspaceId: string, workPatternId: string): Promise<WorkPattern | null>;
@@ -45,7 +67,21 @@ export interface ScheduleRepository {
   ): Promise<WorkScheduleRecord>;
 
   /** ワークスペースの計算ルール。未設定なら既定値を返す。 */
-  findCalculationRules(workspaceId: string): Promise<CalculationRules>;
+  /**
+   * 計算規則の版を、新しい順に返す。
+   *
+   * 期間をまとめて計算するときは、日ごとに読み直さずこれを 1 回だけ読み、
+   * `rulesFor` で日ごとに選ぶ。
+   */
+  findCalculationRuleVersions(workspaceId: string): Promise<CalculationRuleVersion[]>;
+
+  /**
+   * その業務日に適用する計算規則。
+   *
+   * 版は適用開始日で選ぶ。過去の日を再計算しても、当時の版で計算する。
+   * 版が無ければ、何も設定されていない状態として返す。
+   */
+  findCalculationRules(workspaceId: string, businessDate?: string): Promise<CalculationRules>;
 }
 
 interface WorkPatternRow {
@@ -186,27 +222,40 @@ export function createScheduleRepository(db: Queryable): ScheduleRepository {
       return toWorkSchedule(row);
     },
 
-    async findCalculationRules(workspaceId) {
+    async findCalculationRuleVersions(workspaceId) {
       const rows = await db.query<{
-        version: string;
+        id: string;
+        effective_from: string;
         night_start_minutes: number;
         night_end_minutes: number;
         rounding_minutes: number;
         rounding_mode: RoundingMode;
+        daily_legal_minutes: number | null;
       }>(
-        `SELECT version, night_start_minutes, night_end_minutes, rounding_minutes, rounding_mode
-           FROM calculation_rule_sets WHERE workspace_id = $1`,
+        `SELECT id, effective_from, night_start_minutes, night_end_minutes,
+                rounding_minutes, rounding_mode, daily_legal_minutes
+           FROM calculation_rule_versions
+          WHERE workspace_id = $1
+          ORDER BY effective_from DESC`,
         [workspaceId],
       );
-      const row = rows[0];
-      if (!row) return DEFAULT_CALCULATION_RULES;
-      return {
-        version: row.version,
-        nightStartMinutes: row.night_start_minutes,
-        nightEndMinutes: row.night_end_minutes,
-        roundingMinutes: row.rounding_minutes,
-        roundingMode: row.rounding_mode,
-      };
+      return rows.map((row) => ({
+        effectiveFrom: row.effective_from,
+        rules: {
+          // 版そのものを結果へ残す。あとから「どの設定で計算したか」を辿れる。
+          version: `${row.effective_from}/${row.id.slice(0, 8)}`,
+          nightStartMinutes: row.night_start_minutes,
+          nightEndMinutes: row.night_end_minutes,
+          roundingMinutes: row.rounding_minutes,
+          roundingMode: row.rounding_mode,
+          dailyLegalMinutes: row.daily_legal_minutes,
+        },
+      }));
+    },
+
+    async findCalculationRules(workspaceId, businessDate) {
+      const versions = await this.findCalculationRuleVersions(workspaceId);
+      return rulesFor(versions, businessDate ?? new Date().toISOString().slice(0, 10));
     },
   };
 }

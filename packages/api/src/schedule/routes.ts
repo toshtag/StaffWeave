@@ -1,17 +1,25 @@
 import type {
   AssignWorkCycleRequest,
+  CreateCalculationRuleVersionRequest,
+  CreateLaborSystemAssignmentRequest,
   CreateLeaveTypeRequest,
+  CreateWorkCategoryRequest,
   CreateWorkCycleRequest,
   CreateWorkPatternRequest,
+  EndLaborSystemAssignmentRequest,
   EndWorkCycleAssignmentRequest,
   GenerateWorkSchedulesRequest,
   UpsertWorkScheduleRequest,
 } from '@staffweave/contracts';
 import {
   assignWorkCycleRequestSchema,
+  createCalculationRuleVersionRequestSchema,
+  createLaborSystemAssignmentRequestSchema,
   createLeaveTypeRequestSchema,
+  createWorkCategoryRequestSchema,
   createWorkCycleRequestSchema,
   createWorkPatternRequestSchema,
+  endLaborSystemAssignmentRequestSchema,
   endWorkCycleAssignmentRequestSchema,
   generateWorkSchedulesRequestSchema,
   honoPath,
@@ -33,6 +41,68 @@ export interface ScheduleRouteDependencies {
 export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { service } = deps;
+
+  app.get(operations.listWorkCategories.path, async (c) => {
+    const auth = requirePermission(c, 'organization.read');
+    return c.json({ workCategories: await service.listWorkCategories(auth.workspace.id) }, 200);
+  });
+
+  app.post(operations.createWorkCategory.path, async (c) => {
+    const auth = requirePermission(c, 'organization.manage');
+    const body = await readBody<CreateWorkCategoryRequest>(c, createWorkCategoryRequestSchema);
+    return c.json(await service.createWorkCategory(auth.workspace.id, body), 201);
+  });
+
+  app.get(operations.listCalculationRuleVersions.path, async (c) => {
+    const auth = requirePermission(c, 'organization.read');
+    return c.json(
+      { calculationRuleVersions: await service.listCalculationRuleVersions(auth.workspace.id) },
+      200,
+    );
+  });
+
+  app.post(operations.createCalculationRuleVersion.path, async (c) => {
+    const auth = requirePermission(c, 'organization.manage');
+    const body = await readBody<CreateCalculationRuleVersionRequest>(
+      c,
+      createCalculationRuleVersionRequestSchema,
+    );
+    return c.json(await service.createCalculationRuleVersion(auth.workspace.id, body), 201);
+  });
+
+  app.get(operations.listLaborSystemAssignments.path, async (c) => {
+    const auth = requirePermission(c, 'employee.read');
+    const query = readQuery<{ employeeId: string }>(c, listEmployeeWorkCyclesQuerySchema);
+    return c.json(
+      { laborSystemAssignments: await service.listLaborSystemAssignments(auth, query.employeeId) },
+      200,
+    );
+  });
+
+  app.post(operations.assignLaborSystem.path, async (c) => {
+    const auth = requirePermission(c, 'employee.manage');
+    const body = await readBody<CreateLaborSystemAssignmentRequest>(
+      c,
+      createLaborSystemAssignmentRequestSchema,
+    );
+    return c.json(await service.assignLaborSystem(auth, body), 201);
+  });
+
+  app.post(honoPath(operations.endLaborSystemAssignment), async (c) => {
+    const auth = requirePermission(c, 'employee.manage');
+    const body = await readBody<EndLaborSystemAssignmentRequest>(
+      c,
+      endLaborSystemAssignmentRequestSchema,
+    );
+    return c.json(
+      await service.endLaborSystemAssignment(
+        auth,
+        pathParam(c, 'laborSystemAssignmentId'),
+        body.effectiveTo,
+      ),
+      200,
+    );
+  });
 
   app.get(operations.listWorkPatterns.path, async (c) => {
     const auth = requirePermission(c, 'organization.read');

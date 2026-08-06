@@ -79,6 +79,12 @@ import {
   webhookEndpointListSchema,
 } from './schemas/integration.js';
 import {
+  createLaborSystemAssignmentRequestSchema,
+  endLaborSystemAssignmentRequestSchema,
+  laborSystemAssignmentListSchema,
+  laborSystemAssignmentSchema,
+} from './schemas/labor-system.js';
+import {
   createDepartmentRequestSchema,
   createEmployeeRequestSchema,
   createOrganizationRequestSchema,
@@ -122,6 +128,14 @@ import {
   recordSessionObservationsResponseSchema,
   sessionObservationListSchema,
 } from './schemas/session.js';
+import {
+  calculationRuleVersionListSchema,
+  calculationRuleVersionSchema,
+  createCalculationRuleVersionRequestSchema,
+  createWorkCategoryRequestSchema,
+  workCategoryListSchema,
+  workCategorySchema,
+} from './schemas/work-category.js';
 
 export type HttpMethod = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
@@ -485,6 +499,115 @@ export const operations = {
       unauthorized,
       forbidden,
       { status: 404, description: '対象の打刻が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  listWorkCategories: {
+    operationId: 'listWorkCategories',
+    method: 'get',
+    path: '/work-categories',
+    summary: '勤務区分の版を一覧する',
+    tags: ['schedule'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '勤務区分の一覧', schema: workCategoryListSchema },
+      unauthorized,
+      forbidden,
+    ],
+  },
+  createWorkCategory: {
+    operationId: 'createWorkCategory',
+    method: 'post',
+    path: '/work-categories',
+    summary: '勤務区分の版を作る',
+    tags: ['schedule'],
+    security: 'session',
+    requestBody: createWorkCategoryRequestSchema,
+    responses: [
+      { status: 201, description: '作った勤務区分', schema: workCategorySchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      conflict,
+    ],
+  },
+  listCalculationRuleVersions: {
+    operationId: 'listCalculationRuleVersions',
+    method: 'get',
+    path: '/calculation-rule-versions',
+    summary: '計算規則の版を一覧する',
+    tags: ['schedule'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '計算規則の版', schema: calculationRuleVersionListSchema },
+      unauthorized,
+      forbidden,
+    ],
+  },
+  createCalculationRuleVersion: {
+    operationId: 'createCalculationRuleVersion',
+    method: 'post',
+    path: '/calculation-rule-versions',
+    summary: '計算規則の版を作る',
+    tags: ['schedule'],
+    security: 'session',
+    requestBody: createCalculationRuleVersionRequestSchema,
+    responses: [
+      { status: 201, description: '作った版', schema: calculationRuleVersionSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      conflict,
+    ],
+  },
+  listLaborSystemAssignments: {
+    operationId: 'listLaborSystemAssignments',
+    method: 'get',
+    path: '/labor-system-assignments',
+    summary: '労働形態の割当を一覧する',
+    tags: ['schedule'],
+    security: 'session',
+    query: listEmployeeWorkCyclesQuerySchema,
+    responses: [
+      { status: 200, description: '割当の一覧', schema: laborSystemAssignmentListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
+  },
+  assignLaborSystem: {
+    operationId: 'assignLaborSystem',
+    method: 'post',
+    path: '/labor-system-assignments',
+    summary: '労働形態を割り当てる',
+    tags: ['schedule'],
+    security: 'session',
+    requestBody: createLaborSystemAssignmentRequestSchema,
+    responses: [
+      { status: 201, description: '作った割当', schema: laborSystemAssignmentSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      conflict,
+    ],
+  },
+  endLaborSystemAssignment: {
+    operationId: 'endLaborSystemAssignment',
+    method: 'post',
+    path: '/labor-system-assignments/{laborSystemAssignmentId}/end',
+    summary: '労働形態の割当へ終了日を設定する',
+    tags: ['schedule'],
+    security: 'session',
+    pathParameters: [
+      { name: 'laborSystemAssignmentId', description: '割当の識別子', schema: uuidSchema },
+    ],
+    requestBody: endLaborSystemAssignmentRequestSchema,
+    responses: [
+      { status: 200, description: '終了日を設定した割当', schema: laborSystemAssignmentSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '割当が見つからない', schema: errorResponseSchema },
+      conflict,
     ],
   },
   listWorkPatterns: {
