@@ -6,6 +6,9 @@
  *
  * 実在の人物や企業の情報は含めない。すべて説明のための架空の値を使う。
  * 既定のパスワードは分かりやすい値にしてあるため、公開された場所では使わないこと。
+ *
+ * ここが置く休暇の単位・失効・承認の段数は、画面を動かして見せるための例示にすぎない。
+ * 適法性は保証しない。実際の運用では、事業者が自分の制度に合わせて設定し直すこと。
  */
 import { createDatabase } from '@staffweave/db';
 import { loadApiConfig } from '../config.js';
@@ -72,9 +75,23 @@ async function main(): Promise<void> {
         [workspaceId],
       );
 
+      // 単位・1 日ぶんの分数・失効までの月数は、この demo を動かすための例示。
+      // 製品は既定値を持たない。設定しないかぎり、どれも適用しない。
       await tx.query(
-        `INSERT INTO leave_types (workspace_id, code, name, paid)
-         VALUES ($1, 'PAID', '年次有給休暇', true)`,
+        `INSERT INTO leave_types
+           (workspace_id, code, name, paid, unit_minutes, day_minutes, expires_after_months)
+         VALUES ($1, 'PAID', '年次有給休暇（サンプル設定・適法性の保証なし）', true, 60, 480, 24)`,
+        [workspaceId],
+      );
+
+      // 申請種別と段数も例示。実際の決裁経路は事業者が決める。
+      await tx.query(
+        `INSERT INTO request_types
+           (workspace_id, code, name, category, approval_steps,
+            requires_reason, requires_leave_type, requires_time_range)
+         VALUES
+           ($1, 'LEAVE', '休暇申請（サンプル設定・適法性の保証なし）', 'leave', 2, true, true, false),
+           ($1, 'OVERTIME', '残業申請（サンプル設定・適法性の保証なし）', 'overtime', 1, true, false, true)`,
         [workspaceId],
       );
 
