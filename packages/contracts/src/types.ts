@@ -348,6 +348,20 @@ export interface AttendanceCalculationRecord {
   nonWorkingDayMinutes: number;
   leaveMinutes: number;
   absenceMinutes: number;
+  /** 法定内の時間外。1 日の閾値が未設定なら null。 */
+  legalInsideOvertimeMinutes: number | null;
+  /** 法定時間外。1 日の閾値が未設定なら null。 */
+  legalOvertimeMinutes: number | null;
+  legalHolidayMinutes: number | null;
+  nonLegalHolidayMinutes: number | null;
+  nightOvertimeMinutes: number | null;
+  nightHolidayMinutes: number | null;
+  lateMinutes: number | null;
+  earlyLeaveMinutes: number | null;
+  beforeScheduleMinutes: number | null;
+  afterScheduleMinutes: number | null;
+  /** 給与向けのみなし労働。設定が無ければ null。 */
+  deemedMinutes: number | null;
   basis: CalculationBasis;
 }
 
@@ -774,4 +788,156 @@ export interface CreateWebhookEndpointResponse {
 export interface ImportResult {
   created: number;
   problems: { line: number; message: string }[];
+}
+
+/** 勤務区分の種別。 */
+export type WorkCategoryType =
+  | 'working_day'
+  | 'non_working_day'
+  | 'legal_holiday'
+  | 'leave'
+  | 'absence';
+
+/** 区間と区間の間（中抜け）の扱い。 */
+export type GapTreatment = 'non_working' | 'break';
+
+export interface WorkCategoryFixedBreak {
+  startMinutes: number;
+  endMinutes: number;
+}
+
+export interface WorkCategoryAutoBreak {
+  thresholdMinutes: number;
+  additionalMinutes: number;
+}
+
+/** 版管理された勤務区分。同じ code で期間を分けて改定する。 */
+export interface WorkCategoryRecord {
+  id: string;
+  code: string;
+  internalName: string;
+  displayName: string;
+  categoryType: WorkCategoryType;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  scheduledStartMinutes: number | null;
+  scheduledEndMinutes: number | null;
+  prescribedMinutes: number | null;
+  deemedMinutes: number | null;
+  nightStartMinutes: number | null;
+  nightEndMinutes: number | null;
+  gapTreatment: GapTreatment;
+  shift: boolean;
+  color: string | null;
+  countsAsWorkingDay: boolean;
+  fixedBreaks: WorkCategoryFixedBreak[];
+  autoBreaks: WorkCategoryAutoBreak[];
+  createdAt: string;
+}
+
+export interface CreateWorkCategoryRequest {
+  code: string;
+  internalName: string;
+  displayName: string;
+  categoryType: WorkCategoryType;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  scheduledStartMinutes?: number;
+  scheduledEndMinutes?: number;
+  prescribedMinutes?: number;
+  deemedMinutes?: number;
+  nightStartMinutes?: number;
+  nightEndMinutes?: number;
+  gapTreatment?: GapTreatment;
+  shift?: boolean;
+  color?: string;
+  countsAsWorkingDay?: boolean;
+  fixedBreaks?: WorkCategoryFixedBreak[];
+  autoBreaks?: WorkCategoryAutoBreak[];
+}
+
+export interface WorkCategoryList {
+  workCategories: WorkCategoryRecord[];
+}
+
+/** 適用開始日つきの計算規則。 */
+export interface CalculationRuleVersionRecord {
+  id: string;
+  effectiveFrom: string;
+  dayStartMinutes: number;
+  nightStartMinutes: number;
+  nightEndMinutes: number;
+  roundingMinutes: number;
+  roundingMode: 'none' | 'down' | 'nearest';
+  /** 法定内と法定外を分ける 1 日の閾値。未設定なら法定の区分を計算しない。 */
+  dailyLegalMinutes: number | null;
+  weeklyLegalMinutes: number | null;
+  weekStartsOn: number;
+  monthStartsOn: number;
+  createdAt: string;
+}
+
+export interface CreateCalculationRuleVersionRequest {
+  effectiveFrom: string;
+  dayStartMinutes: number;
+  nightStartMinutes: number;
+  nightEndMinutes: number;
+  roundingMinutes: number;
+  roundingMode: 'none' | 'down' | 'nearest';
+  dailyLegalMinutes?: number;
+  weeklyLegalMinutes?: number;
+  weekStartsOn: number;
+  monthStartsOn: number;
+}
+
+export interface CalculationRuleVersionList {
+  calculationRuleVersions: CalculationRuleVersionRecord[];
+}
+
+/** 労働形態。 */
+export type LaborSystemType = 'normal' | 'flex' | 'discretionary' | 'variable';
+
+/** 清算期間の総枠を、法定に合わせるか所定に合わせるか。 */
+export type SettlementBasis = 'legal' | 'prescribed';
+
+export interface LaborSystemAssignmentRecord {
+  id: string;
+  employeeId: string;
+  systemType: LaborSystemType;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  settlementMonths: number | null;
+  settlementStartsOn: string | null;
+  settlementBasis: SettlementBasis | null;
+  settlementTotalMinutes: number | null;
+  coreStartMinutes: number | null;
+  coreEndMinutes: number | null;
+  flexibleStartMinutes: number | null;
+  flexibleEndMinutes: number | null;
+  deemedMinutes: number | null;
+  createdAt: string;
+}
+
+export interface CreateLaborSystemAssignmentRequest {
+  employeeId: string;
+  systemType: LaborSystemType;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  settlementMonths?: number;
+  settlementStartsOn?: string;
+  settlementBasis?: SettlementBasis;
+  settlementTotalMinutes?: number;
+  coreStartMinutes?: number;
+  coreEndMinutes?: number;
+  flexibleStartMinutes?: number;
+  flexibleEndMinutes?: number;
+  deemedMinutes?: number;
+}
+
+export interface EndLaborSystemAssignmentRequest {
+  effectiveTo: string;
+}
+
+export interface LaborSystemAssignmentList {
+  laborSystemAssignments: LaborSystemAssignmentRecord[];
 }

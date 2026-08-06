@@ -266,6 +266,26 @@ export const attendanceCalculationSchema = objectSchema({
     nonWorkingDayMinutes: { type: 'integer' },
     leaveMinutes: { type: 'integer' },
     absenceMinutes: { type: 'integer' },
+    legalInsideOvertimeMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '法定内の時間外。1 日の閾値が未設定なら null',
+    },
+    legalOvertimeMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '法定時間外。1 日の閾値が未設定なら null',
+    },
+    legalHolidayMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    nonLegalHolidayMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    nightOvertimeMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    nightHolidayMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    lateMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    earlyLeaveMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    beforeScheduleMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    afterScheduleMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    deemedMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '給与向けのみなし労働。設定が無ければ null',
+    },
     basis: objectSchema({
       properties: {
         ruleVersion: { type: 'string' },
@@ -274,8 +294,32 @@ export const attendanceCalculationSchema = objectSchema({
         segments: arraySchema(calculationSegmentSchema),
         steps: arraySchema(calculationStepSchema),
         incomplete: { type: 'boolean' },
+        unconfigured: arraySchema(
+          { type: 'string' },
+          '設定が無いため計算しなかった区分。空でなければ、その区分は null になる',
+        ),
+        breakOrigins: arraySchema(
+          objectSchema({
+            properties: {
+              origin: { type: 'string', enum: ['actual', 'fixed', 'automatic'] },
+              minutes: { type: 'integer' },
+              adopted: { type: 'boolean', description: '重なりで捨てた区間は false' },
+            },
+            required: ['origin', 'minutes', 'adopted'],
+          }),
+          '採用した休憩と、重なりで捨てた休憩',
+        ),
       },
-      required: ['ruleVersion', 'timeZone', 'dayType', 'segments', 'steps', 'incomplete'],
+      required: [
+        'ruleVersion',
+        'timeZone',
+        'dayType',
+        'segments',
+        'steps',
+        'incomplete',
+        'unconfigured',
+        'breakOrigins',
+      ],
     }),
   },
   required: [
