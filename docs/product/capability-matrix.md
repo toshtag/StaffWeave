@@ -113,7 +113,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
 | 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった休暇の申請だけを、同じトランザクションで消化する |
 | 承認結果の勤怠への反映 | planned | - | 残業・休日出勤・打刻修正の申請は、まだ日次の計算へ効かない（P23） |
-| 利用者への通知 | planned | - | Webhook は外部システム向けで、利用者通知の代わりにはならない（P24） |
+| 利用者への通知 | planned | - | Webhook は外部システム向けで、利用者通知の代わりにはならない（P25 以降） |
 
 ## 締めと監査
 
@@ -137,7 +137,13 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 端末の登録・失効と受領記録 | implemented | `op:registerDevice` `op:enrollDevice` `op:revokeDevice` `op:listDeviceReceipts` | 登録トークンに有効期限がある |
 | 端末シミュレーターによる打刻の確認 | implemented | `test:packages/agent/src/client.test.ts` | 実機なしで取り決めを確かめられる |
 | IC カードの登録・失効 | implemented | `op:createCardRegistration` `op:revokeCardCredential` `op:listCardCredentials` | 指紋だけを保存する |
-| 実機の常駐サービス（インストーラー・自動更新・診断） | planned | - | いまあるのは取り決めとシミュレーターだけ（P24） |
+| 端末の常駐と送信待ちの保管 | implemented | `test:packages/agent/src/service/spool.test.ts` `test:packages/agent/src/service/runner.test.ts` | 1 件 1 ファイルで書き、落ちても消えない。送る順番は崩さない |
+| 端末のログの秘匿 | implemented | `test:packages/agent/src/service/redact.test.ts` | 秘密鍵・トークン・カードの指紋は、書く側が忘れても伏せる |
+| 端末の診断 | implemented | `test:packages/agent/src/service/spool.test.ts` | 接続先・連番・送信待ちの件数を出す。秘密は出さない |
+| Windows のサービスとしての登録・削除 | partial | `test:packages/api/test/integration/agent-package.test.ts` `docs:operations/device-agent-service.md` | 手順と配布物を作る仕組みはある。**実機での起動と再起動は未確認** |
+| 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/reader.test.ts` `docs:operations/device-agent-service.md` | 取り決めと検証用のアダプターはある。**実機の読み取り装置では未確認** |
+| 端末の自動更新 | planned | - | 署名と配布の方式が決まってから（P26） |
+| 打刻時の位置情報 | planned | - | 同意と保持期間の扱いを決めてから |
 
 ## 画面
 
@@ -171,7 +177,8 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | Webhook の署名と送信先の制約 | implemented | `op:createWebhookEndpoint` `op:listWebhookDeliveries` `migration:0014_create_webhook_outbox.sql` | 送信待ちは業務処理と同じトランザクションで積む |
 | connector SDK | implemented | `test:packages/connector/src/index.test.ts` | 外部連携を作るための足場 |
 | 給与連携の CSV 出力 | implemented | `op:exportPayrollCsv` `test:packages/api/test/integration/monthly-reporting.test.ts` | 締めた月は締めた時点の値を出す。既にある列の並びは変えず、締めの回数と締めた日時を後ろへ足した |
-| Webhook の自動再送とデッドレター | planned | - | 失敗は記録するが、到達は保証しない（P25） |
+| Webhook の自動再送とデッドレター | implemented | `op:listAbandonedDeliveries` `op:requeueAbandonedDelivery` `test:packages/domain/src/integration/retry.test.ts` `test:packages/api/test/integration/webhook-outbox.test.ts` | 間隔を広げながら送り直し、諦めた行は残す。人が手で送り直せる |
+| 送り直す意味のある失敗の見分け | implemented | `test:packages/domain/src/integration/retry.test.ts` | 要求そのものを断られたものは送り直さない |
 
 ## 認証と利用者
 
