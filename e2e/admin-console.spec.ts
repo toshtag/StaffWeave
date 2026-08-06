@@ -95,6 +95,22 @@ test.describe('設定の画面', () => {
     await expect(card(page).locator('tbody tr', { hasText: 'PAID' })).toContainText('60');
   });
 
+  test('月次の集計を、対象月を選んで見られる', async ({ page }) => {
+    await page.goto('/#/admin/monthly/summaries');
+    await expect(page.getByRole('heading', { level: 2, name: '月次の集計' })).toBeVisible();
+
+    await card(page).getByLabel('対象月').fill('2026-04-01');
+
+    // 打刻の無い月でも、従業員の行は出る。集計が 0 であることが分かる。
+    await expect(card(page).locator('tbody tr').first()).toBeVisible();
+  });
+
+  test('締める前の確認を見られる', async ({ page }) => {
+    await page.goto('/#/admin/monthly/readiness');
+
+    await expect(page.getByRole('heading', { level: 2, name: '締める前の確認' })).toBeVisible();
+  });
+
   test('狭い画面でも本文が横にはみ出さない', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/#/admin/organization/organizations');
