@@ -38,12 +38,18 @@ import {
   createWebhookNetworkPolicy,
   createWebhookTargetValidator,
 } from './integration/webhook-network-policy.js';
+import { createLeaveRepository } from './leave/repository.js';
+import { createLeaveRoutes } from './leave/routes.js';
+import { createLeaveService } from './leave/service.js';
 import { createAssignmentRepository } from './organization/assignment-repository.js';
 import { createAssignmentRoutes } from './organization/assignment-routes.js';
 import { createAssignmentService } from './organization/assignment-service.js';
 import { createOrganizationRepository } from './organization/repository.js';
 import { createOrganizationRoutes } from './organization/routes.js';
 import { createOrganizationService } from './organization/service.js';
+import { createRequestRepository } from './request/repository.js';
+import { createRequestRoutes } from './request/routes.js';
+import { createRequestService } from './request/service.js';
 import { createWorkCycleRepository } from './schedule/cycle-repository.js';
 import { createLaborSystemRepository } from './schedule/labor-system-repository.js';
 import { createScheduleRepository } from './schedule/repository.js';
@@ -176,6 +182,8 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       schedule: ReturnType<typeof createScheduleRepository>;
       calculations: ReturnType<typeof createCalculationRepository>;
       approval: ReturnType<typeof createApprovalRepository>;
+      leave: ReturnType<typeof createLeaveRepository>;
+      requests: ReturnType<typeof createRequestRepository>;
       devices: ReturnType<typeof createDeviceRepository>;
       cards: ReturnType<typeof createCardRepository>;
       observations: ReturnType<typeof createSessionObservationRepository>;
@@ -189,6 +197,8 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         schedule: createScheduleRepository(tx),
         calculations: createCalculationRepository(tx),
         approval: createApprovalRepository(tx),
+        leave: createLeaveRepository(tx),
+        requests: createRequestRepository(tx),
         devices: createDeviceRepository(tx),
         cards: createCardRepository(tx),
         observations: createSessionObservationRepository(tx),
@@ -249,6 +259,20 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     transaction: withTransaction,
   });
 
+  const leaveService = createLeaveService({
+    repository: createLeaveRepository(deps.db),
+    visibility,
+    now,
+    transaction: withTransaction,
+  });
+
+  const requestService = createRequestService({
+    repository: createRequestRepository(deps.db),
+    visibility,
+    now,
+    transaction: withTransaction,
+  });
+
   const api = new Hono<AppEnv>();
 
   // Cookie の資格情報に頼る要求は、送信元を確かめてから処理へ進める。
@@ -296,6 +320,8 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));
+  api.route('/', createLeaveRoutes({ service: leaveService }));
+  api.route('/', createRequestRoutes({ service: requestService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));
   // 指紋鍵が無い構成では、カードの経路を受け付けない。
   // 鍵なしで計算した指紋は、保存した値からカードを言い当てられる。

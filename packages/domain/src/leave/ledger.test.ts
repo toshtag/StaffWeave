@@ -175,9 +175,9 @@ describe('消化の検査', () => {
     expect(validateLeaveConsumption({ balance, minutes: 4 * HOUR, unitMinutes: 4 * HOUR })).toEqual(
       [],
     );
-    expect(validateLeaveConsumption({ balance, minutes: 3 * HOUR, unitMinutes: 4 * HOUR })).toEqual([
-      'not_a_multiple',
-    ]);
+    expect(validateLeaveConsumption({ balance, minutes: 3 * HOUR, unitMinutes: 4 * HOUR })).toEqual(
+      ['not_a_multiple'],
+    );
   });
 
   it('単位が決まっていなければ、倍数は見ない', () => {

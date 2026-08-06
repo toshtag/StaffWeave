@@ -89,7 +89,8 @@ export function buildLeaveBalance(
     }
     // 箱に収まらなかった分は、付与を伴わない減算として残数から引く。
     // 台帳は追記のみなので、ここで捨てず負の残数として見せる。
-    if (remaining > 0) buckets.push({ entryId: 'unallocated', minutes: -remaining, expiresOn: null });
+    if (remaining > 0)
+      buckets.push({ entryId: 'unallocated', minutes: -remaining, expiresOn: null });
   };
 
   for (const entry of effective) {
