@@ -47,9 +47,12 @@ jobs:
           SBOM_CANARY: SBOM_MUST_NOT_CONTAIN_THIS_VALUE
         run: pnpm sbom:generate
 
+      # 書いてある commit が、いま見ているものと同じかを突き合わせる。
+      # 突き合わせないと、古い SBOM を配っても気付けない。
       - name: SBOM を検証する
         env:
           SBOM_CANARY: SBOM_MUST_NOT_CONTAIN_THIS_VALUE
+          SBOM_EXPECTED_SOURCE_SHA: ${{ github.sha }}
         run: pnpm sbom:verify
 
       - name: SBOM を成果物として残す

@@ -22,7 +22,8 @@ SYFT_VERSION="v1.50.0"
 
 # SBOM の対象にするイメージ。production の Dockerfile をそのまま使う。
 # SBOM 専用の Dockerfile を作ると、確かめている構成が配るものと別になる。
-IMAGE_TAG="staffweave-sbom:$(git rev-parse HEAD)"
+SOURCE_SHA="$(git rev-parse HEAD)"
+IMAGE_TAG="staffweave-sbom:$SOURCE_SHA"
 
 WORKSPACE_SBOM="$OUTPUT_DIR/staffweave-workspace.cdx.json"
 CONTAINER_SBOM="$OUTPUT_DIR/staffweave-container.cdx.json"
@@ -82,7 +83,26 @@ docker run --rm \
   --output "cyclonedx-json=/dev/stdout" \
   --quiet > "$CONTAINER_SBOM"
 
-# 3. チェックサム
+# 3. 元にした commit を書き込む
+#
+# 出来上がった SBOM だけを渡されても、どの時点のソースから作ったのかが分からない。
+# 分からなければ、SBOM に載っている構成を自分で作り直して確かめることもできない。
+# 表に出す名前（metadata.component.version）へ commit を入れる。
+for sbom in "$WORKSPACE_SBOM" "$CONTAINER_SBOM"; do
+  SOURCE_SHA="$SOURCE_SHA" node --input-type=module -e '
+    import { readFileSync, writeFileSync } from "node:fs";
+    const path = process.argv[1];
+    const document = JSON.parse(readFileSync(path, "utf8"));
+    document.metadata ??= {};
+    document.metadata.component ??= {};
+    const properties = document.metadata.component.properties ?? [];
+    properties.push({ name: "staffweave:source-sha", value: process.env.SOURCE_SHA });
+    document.metadata.component.properties = properties;
+    writeFileSync(path, `${JSON.stringify(document, null, 2)}\n`);
+  ' "$sbom"
+done
+
+# 4. チェックサム
 #
 # 名前と digest だけを書く。生成した機械の場所は残さない。
 for sbom in "$WORKSPACE_SBOM" "$CONTAINER_SBOM"; do

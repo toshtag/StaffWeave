@@ -190,11 +190,34 @@ async function checkChecksums() {
   }
 }
 
+/**
+ * どの時点のソースから作ったのかが、SBOM だけを見て分かるか。
+ *
+ * 分からなければ、載っている構成を自分で作り直して確かめることもできない。
+ * 「生成できた」ことを、正しいことの根拠にしないための一つ。
+ */
+function checkSourceSha(name, document) {
+  const properties = document.metadata?.component?.properties ?? [];
+  const recorded = properties.find((property) => property.name === 'staffweave:source-sha')?.value;
+  check(
+    typeof recorded === 'string' && /^[0-9a-f]{40}$/.test(recorded),
+    `${name}: 元にした commit が書いてある`,
+  );
+  if (typeof recorded === 'string' && process.env.SBOM_EXPECTED_SOURCE_SHA !== undefined) {
+    check(
+      recorded === process.env.SBOM_EXPECTED_SOURCE_SHA,
+      `${name}: 書いてある commit が、いま見ているものと同じ`,
+    );
+  }
+}
+
 const workspace = await readSbom(WORKSPACE);
 const container = await readSbom(CONTAINER);
 
 if (workspace) await checkWorkspace(workspace.raw, workspace.document);
 if (container) checkContainer(container.raw, container.document);
+if (workspace) checkSourceSha(WORKSPACE, workspace.document);
+if (container) checkSourceSha(CONTAINER, container.document);
 if (workspace && container) await checkChecksums();
 
 console.log('');
