@@ -1242,3 +1242,19 @@ export interface RecalculateAttendanceResponse {
   /** 締められていて動かさなかった日。 */
   skippedClosedDays: string[];
 }
+
+/** 決めた回数だけ試しても送れず、諦めた通知。行は残る。 */
+export interface AbandonedDeliveryRecord {
+  id: string;
+  endpointId: string;
+  eventType: WebhookEventType;
+  eventId: string;
+  occurredAt: string;
+  attempts: number;
+  abandonedAt: string;
+  lastError: string | null;
+}
+
+export interface AbandonedDeliveryList {
+  deliveries: AbandonedDeliveryRecord[];
+}

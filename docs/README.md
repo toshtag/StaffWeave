@@ -22,6 +22,7 @@
 | --- | --- |
 | [deployment.md](operations/deployment.md) | Docker で立てる。公開する前にやること |
 | [backup.md](operations/backup.md) | バックアップと復元 |
+| [device-agent-service.md](operations/device-agent-service.md) | 打刻端末の常駐、Windows サービス、実機で確かめること |
 
 ## 開発 — `development/`
 

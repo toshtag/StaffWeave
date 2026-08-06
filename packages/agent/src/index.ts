@@ -16,3 +16,9 @@ export {
   signMessage,
   signPayload,
 } from './credentials.js';
+export type { AgentLogger } from './service/redact.js';
+export { createAgentLogger, REDACTED, redact } from './service/redact.js';
+export type { FlushResult, RunnerOptions, SendOutcome } from './service/runner.js';
+export { flushSpool, runAgent } from './service/runner.js';
+export type { Spool, SpooledPunch } from './service/spool.js';
+export { createFileSpool } from './service/spool.js';

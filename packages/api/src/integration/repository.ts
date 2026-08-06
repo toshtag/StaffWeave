@@ -48,6 +48,8 @@ export interface WebhookDeliveryRecord {
   statusCode: number | null;
   outcome: 'delivered' | 'failed' | 'skipped';
   errorMessage: string | null;
+  /** 何回目の試行だったか。履歴だけを見て、何度目で通ったのかが分かるようにする。 */
+  attempt: number;
 }
 
 export interface IntegrationRepository {
@@ -89,6 +91,7 @@ export interface IntegrationRepository {
       statusCode: number | null;
       outcome: WebhookDeliveryRecord['outcome'];
       errorMessage: string | null;
+      attempt: number;
     },
   ): Promise<void>;
   listDeliveries(workspaceId: string, limit: number): Promise<WebhookDeliveryRecord[]>;
@@ -245,8 +248,8 @@ export function createIntegrationRepository(db: Queryable): IntegrationRepositor
       await db.query(
         `INSERT INTO webhook_deliveries
            (workspace_id, endpoint_id, event_type, event_id, payload, attempted_at,
-            status_code, outcome, error_message)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)`,
+            status_code, outcome, error_message, attempt)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)`,
         [
           workspaceId,
           input.endpointId,
@@ -257,6 +260,7 @@ export function createIntegrationRepository(db: Queryable): IntegrationRepositor
           input.statusCode,
           input.outcome,
           input.errorMessage,
+          input.attempt,
         ],
       );
     },
@@ -271,9 +275,10 @@ export function createIntegrationRepository(db: Queryable): IntegrationRepositor
         status_code: number | null;
         outcome: WebhookDeliveryRecord['outcome'];
         error_message: string | null;
+        attempt: number;
       }>(
         `SELECT id, endpoint_id, event_type, event_id, attempted_at, status_code, outcome,
-                error_message
+                error_message, attempt
            FROM webhook_deliveries
           WHERE workspace_id = $1
           ORDER BY attempted_at DESC LIMIT $2`,
@@ -288,6 +293,7 @@ export function createIntegrationRepository(db: Queryable): IntegrationRepositor
         statusCode: row.status_code,
         outcome: row.outcome,
         errorMessage: row.error_message,
+        attempt: row.attempt,
       }));
     },
   };

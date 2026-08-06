@@ -22,6 +22,7 @@ const claimed = (overrides: Partial<ClaimedWebhookDelivery> = {}): ClaimedWebhoo
   payload: { requestId: 'r1' },
   occurredAt: '2026-04-01T08:00:00.000Z',
   claimToken: 'token-1',
+  attempts: 0,
   endpoint: { url: 'https://example.test/hooks', signingKey: SIGNING_KEY },
   ...overrides,
 });
@@ -32,8 +33,16 @@ interface LoggedEvent {
 }
 
 interface Harness {
-  recorded: { workspaceId: string; eventId: string; outcome: string; statusCode: number | null }[];
+  recorded: {
+    workspaceId: string;
+    eventId: string;
+    outcome: string;
+    statusCode: number | null;
+    attempt: number;
+  }[];
   completed: { id: string; claimToken: string }[];
+  retried: { id: string; delayMs: number; lastError: string }[];
+  abandoned: { id: string; lastError: string }[];
   claimInputs: ClaimNextInput[];
   logged: LoggedEvent[];
   processor: ReturnType<typeof createWebhookDeliveryProcessor>;
@@ -47,10 +56,13 @@ function harness(
     send?: () => Promise<WebhookSendResult>;
     completes?: boolean;
     recordFails?: (eventId: string) => boolean;
+    maximumAttempts?: number;
   } = {},
 ): Harness {
   const recorded: Harness['recorded'] = [];
   const completed: Harness['completed'] = [];
+  const retried: Harness['retried'] = [];
+  const abandoned: Harness['abandoned'] = [];
   const claimInputs: ClaimNextInput[] = [];
   const logged: LoggedEvent[] = [];
   const sentBodies: string[] = [];
@@ -72,6 +84,16 @@ function harness(
       completed.push({ id, claimToken });
       return options.completes ?? true;
     },
+    scheduleRetry: async (id, _claimToken, input) => {
+      retried.push({ id, delayMs: input.delayMs, lastError: input.lastError });
+      return true;
+    },
+    abandon: async (id, _claimToken, lastError) => {
+      abandoned.push({ id, lastError });
+      return true;
+    },
+    listAbandoned: async () => [],
+    requeue: async () => true,
   };
 
   const processor = createWebhookDeliveryProcessor({
@@ -86,6 +108,7 @@ function harness(
           eventId: input.eventId,
           outcome: input.outcome,
           statusCode: input.statusCode,
+          attempt: input.attempt,
         });
       },
     },
@@ -99,9 +122,27 @@ function harness(
     now: () => NOW,
     claimLeaseMs: 60_000,
     logger,
+    retryPolicy: {
+      initialDelayMs: 1000,
+      multiplier: 2,
+      maximumDelayMs: 60_000,
+      maximumAttempts: options.maximumAttempts ?? 3,
+    },
+    // 間隔をずらす値は固定にする。同じ入力で同じ答えを返させるため。
+    jitter: () => 0,
   });
 
-  return { recorded, completed, claimInputs, logged, sentBodies, sentRequests, processor };
+  return {
+    recorded,
+    completed,
+    retried,
+    abandoned,
+    claimInputs,
+    logged,
+    sentBodies,
+    sentRequests,
+    processor,
+  };
 }
 
 describe('createWebhookDeliveryProcessor', () => {
@@ -110,7 +151,13 @@ describe('createWebhookDeliveryProcessor', () => {
 
     expect(await processor.processNext()).toBe(true);
     expect(recorded).toEqual([
-      { workspaceId: 'workspace-1', eventId: 'event-1', outcome: 'delivered', statusCode: 204 },
+      {
+        workspaceId: 'workspace-1',
+        eventId: 'event-1',
+        outcome: 'delivered',
+        statusCode: 204,
+        attempt: 1,
+      },
     ]);
     expect(completed).toEqual([{ id: 'outbox-1', claimToken: 'token-1' }]);
 
@@ -159,15 +206,17 @@ describe('createWebhookDeliveryProcessor', () => {
     expect(completed.map((entry) => entry.id)).toEqual(['outbox-1']);
   });
 
-  it('送信に失敗しても結果を記録して完了させる', async () => {
-    const { recorded, completed, processor } = harness([claimed()], {
+  it('送信に失敗しても結果を記録し、送り直す予定を入れる', async () => {
+    const { recorded, completed, retried, processor } = harness([claimed()], {
       send: async () => ({ outcome: 'failed', statusCode: 500, errorMessage: 'HTTP 500' }),
     });
 
     await processor.processNext();
 
     expect(recorded[0]).toMatchObject({ outcome: 'failed', statusCode: 500 });
-    expect(completed.map((entry) => entry.id)).toEqual(['outbox-1']);
+    // 完了させない。完了させると、相手が復旧しても二度と送らない。
+    expect(completed).toEqual([]);
+    expect(retried.map((entry) => entry.id)).toEqual(['outbox-1']);
   });
 
   it('取得の印が一致せず完了できなくても例外にしない', async () => {
@@ -233,20 +282,21 @@ describe('送信結果のログ', () => {
         eventType: 'attendance_request.approved',
         outcome: 'delivered',
         statusCode: 204,
+        attempt: 1,
       },
     });
   });
 
-  it('HTTP が失敗した場合も同じイベント名で outcome だけが変わる', async () => {
+  it('送り直すことにした場合は、完了とは別のイベント名で残す', async () => {
     const event = await outcomeOf(async () => ({
       outcome: 'failed',
       statusCode: 500,
       errorMessage: 'HTTP 500',
     }));
 
-    // 失敗を webhook.delivered として数えられないようにする。
-    expect(event.event).toBe('webhook.delivery_completed');
-    expect(event.fields.outcome).toBe('failed');
+    // 失敗を webhook.delivery_completed として数えられないようにする。
+    expect(event.event).toBe('webhook.delivery_retry_scheduled');
+    expect(event.fields.statusCode).toBe(500);
   });
 
   it('送信先が止まっていた場合', async () => {
@@ -272,5 +322,85 @@ describe('送信結果のログ', () => {
     await processor.processNext();
 
     expect(logged.map((entry) => entry.event)).not.toContain('webhook.delivered');
+  });
+});
+
+describe('送れなかったときの扱い', () => {
+  const failed = (statusCode: number | null): (() => Promise<WebhookSendResult>) => {
+    return async () => ({ outcome: 'failed', statusCode, errorMessage: '送れませんでした' });
+  };
+
+  it('相手側の失敗は、間を空けて送り直す', async () => {
+    const { retried, completed, processor } = harness([claimed()], { send: failed(503) });
+
+    await processor.processNext();
+
+    expect(retried).toEqual([{ id: 'outbox-1', delayMs: 1000, lastError: '送れませんでした' }]);
+    // 送り直す行は完了させない。完了させると、二度と送らない。
+    expect(completed).toEqual([]);
+  });
+
+  it('応答が返らなくても送り直す', async () => {
+    const { retried, processor } = harness([claimed()], { send: failed(null) });
+
+    await processor.processNext();
+
+    expect(retried).toHaveLength(1);
+  });
+
+  it('試すたびに間隔を広げる', async () => {
+    const { retried, processor } = harness([claimed({ attempts: 2 })], {
+      send: failed(503),
+      maximumAttempts: 8,
+    });
+
+    await processor.processNext();
+
+    // 3 回目の失敗。1000 * 2^2。
+    expect(retried[0]?.delayMs).toBe(4000);
+  });
+
+  it('要求そのものを断られたなら送り直さない', async () => {
+    const { retried, completed, processor } = harness([claimed()], { send: failed(400) });
+
+    await processor.processNext();
+
+    // 同じ要求を送り直しても、同じ答えしか返らない。
+    expect(retried).toEqual([]);
+    expect(completed).toEqual([{ id: 'outbox-1', claimToken: 'token-1' }]);
+  });
+
+  it('決めた回数を超えたら諦め、行は残す', async () => {
+    const { abandoned, retried, completed, logged, processor } = harness(
+      [claimed({ attempts: 2 })],
+      { send: failed(503), maximumAttempts: 3 },
+    );
+
+    await processor.processNext();
+
+    expect(abandoned).toEqual([{ id: 'outbox-1', lastError: '送れませんでした' }]);
+    expect(retried).toEqual([]);
+    // 完了扱いにしない。完了させると、届かなかったことが履歴から読めなくなる。
+    expect(completed).toEqual([]);
+    // 運用が気付ける高さで残す。
+    expect(logged.map((entry) => entry.event)).toContain('webhook.delivery_abandoned');
+  });
+
+  it('送信先が止まっているだけなら、送り直さず完了させる', async () => {
+    const { retried, completed, recorded, processor } = harness([claimed({ endpoint: null })]);
+
+    await processor.processNext();
+
+    expect(recorded[0]?.outcome).toBe('skipped');
+    expect(retried).toEqual([]);
+    expect(completed).toHaveLength(1);
+  });
+
+  it('何回目の試行だったかを履歴へ残す', async () => {
+    const { recorded, processor } = harness([claimed({ attempts: 3 })], { send: failed(400) });
+
+    await processor.processNext();
+
+    expect(recorded[0]?.attempt).toBe(4);
   });
 });

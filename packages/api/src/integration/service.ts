@@ -8,6 +8,7 @@ import {
 import type { AuthenticatedContext } from '../identity/service.js';
 import { ApiError, invalidRequest } from '../shared/errors.js';
 import { hashToken } from '../shared/security/tokens.js';
+import type { AbandonedDelivery, WebhookOutboxRepository } from './outbox-repository.js';
 import type {
   ApiKeyRecord,
   IntegrationRepository,
@@ -20,6 +21,8 @@ import { deriveWebhookSigningKey } from './webhook-signature.js';
 
 export interface IntegrationServiceDependencies {
   repository: IntegrationRepository;
+  /** 諦めた通知を読み、送り直すために使う。 */
+  outbox: WebhookOutboxRepository;
   now: () => Date;
   /** Webhook 送信先を登録してよいかの判断。内部ネットワーク宛の登録をここで止める。 */
   webhookTarget: WebhookTargetValidator;
@@ -45,6 +48,10 @@ export interface IntegrationService {
     input: { name: string; url: string; eventTypes: string[] },
   ): Promise<{ endpoint: WebhookEndpointRecord; secret: string }>;
   listDeliveries(workspaceId: string): Promise<WebhookDeliveryRecord[]>;
+  /** 諦めた通知。人が中身を確かめて送り直すために出す。 */
+  listAbandonedDeliveries(workspaceId: string): Promise<AbandonedDelivery[]>;
+  /** 諦めた通知を、もう一度送信待ちへ戻す。無ければ false。 */
+  requeueAbandonedDelivery(workspaceId: string, outboxId: string): Promise<boolean>;
 }
 
 const KEY_PREFIX = 'sw';
@@ -158,5 +165,7 @@ export function createIntegrationService(deps: IntegrationServiceDependencies): 
     },
 
     listDeliveries: (workspaceId) => deps.repository.listDeliveries(workspaceId, 200),
+    listAbandonedDeliveries: (workspaceId) => deps.outbox.listAbandoned(workspaceId, 200),
+    requeueAbandonedDelivery: (workspaceId, outboxId) => deps.outbox.requeue(workspaceId, outboxId),
   };
 }

@@ -77,6 +77,7 @@ import {
   updateRequestTypeRequestSchema,
 } from './schemas/employee-request.js';
 import {
+  abandonedDeliveryListSchema,
   apiKeyListSchema,
   apiKeySchema,
   createApiKeyRequestSchema,
@@ -1827,6 +1828,34 @@ export const operations = {
       unauthorized,
       forbidden,
       { status: 404, description: '従業員が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  listAbandonedDeliveries: {
+    operationId: 'listAbandonedDeliveries',
+    method: 'get',
+    path: '/webhook-deliveries/abandoned',
+    summary: '諦めた通知を一覧する（行は消えていない）',
+    tags: ['integration'],
+    security: 'session',
+    responses: [
+      { status: 200, description: '諦めた通知', schema: abandonedDeliveryListSchema },
+      unauthorized,
+      forbidden,
+    ],
+  },
+  requeueAbandonedDelivery: {
+    operationId: 'requeueAbandonedDelivery',
+    method: 'post',
+    path: '/webhook-deliveries/abandoned/{outboxId}/requeue',
+    summary: '諦めた通知を、もう一度送信待ちへ戻す',
+    tags: ['integration'],
+    security: 'session',
+    pathParameters: [{ name: 'outboxId', description: '送信待ちの識別子', schema: uuidSchema }],
+    responses: [
+      { status: 204, description: '送信待ちへ戻した' },
+      unauthorized,
+      forbidden,
+      { status: 404, description: '諦めた通知が見つからない', schema: errorResponseSchema },
     ],
   },
 } as const satisfies Record<string, OperationContract>;

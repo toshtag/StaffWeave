@@ -1,3 +1,5 @@
+import type { RetryPolicy } from '@staffweave/domain';
+import { DEFAULT_RETRY_POLICY, isRetryable, retryDelayMs, shouldAbandon } from '@staffweave/domain';
 import type { StructuredLogger } from '../shared/logger.js';
 import { silentLogger } from '../shared/logger.js';
 import type { ClaimedWebhookDelivery, WebhookOutboxRepository } from './outbox-repository.js';
@@ -12,8 +14,14 @@ import { signWebhookMessage } from './webhook-signature.js';
  * 取り出しは送信の直前に 1 件だけ行う。先に何件もまとめて取ると、まだ送っていない行の
  * 占有期限が切れ、別のワーカーが引き取って同時に送ってしまう。
  *
- * HTTP の失敗やタイムアウトは自動で再試行しない。結果を記録して送信待ちを完了扱いにする。
- * 再試行と指数バックオフは P25 で扱う（docs/roadmap.md）。
+ * 送れなかったものは間を空けて送り直す。間隔は試行のたびに広げる。
+ * 広げないと、止まっている相手へ送り続けて復旧を妨げる。
+ *
+ * 相手が「その要求は受け取れない」と言っているものは送り直さない。
+ * 同じ要求を送り直しても、同じ答えしか返らない。
+ *
+ * 決めた回数を超えたら諦め、行は残したまま印を付ける。
+ * 消すと、届かなかったこと自体が分からなくなる。諦めた行は人が手で送り直せる。
  */
 
 export interface WebhookDeliveryProcessor {
@@ -32,6 +40,13 @@ export interface WebhookDeliveryProcessorDependencies {
   now: () => Date;
   claimLeaseMs: number;
   logger?: StructuredLogger;
+  /** 再試行の方針。省略すると既定値。 */
+  retryPolicy?: RetryPolicy;
+  /**
+   * 間隔をずらすための 0 以上 1 未満の値。
+   * 既定は乱数。検査では固定値を渡し、同じ入力で同じ答えを返させる。
+   */
+  jitter?: () => number;
 }
 
 const SKIPPED: {
@@ -48,6 +63,8 @@ export function createWebhookDeliveryProcessor(
   deps: WebhookDeliveryProcessorDependencies,
 ): WebhookDeliveryProcessor {
   const logger = deps.logger ?? silentLogger;
+  const policy = deps.retryPolicy ?? DEFAULT_RETRY_POLICY;
+  const jitter = deps.jitter ?? Math.random;
 
   const deliver = async (entry: ClaimedWebhookDelivery): Promise<void> => {
     const attemptedAt = deps.now();
@@ -83,6 +100,7 @@ export function createWebhookDeliveryProcessor(
             body,
           });
 
+    const attempt = entry.attempts + 1;
     await deps.deliveries.recordDelivery(entry.workspaceId, {
       endpointId: entry.endpointId,
       eventType: entry.eventType,
@@ -92,7 +110,54 @@ export function createWebhookDeliveryProcessor(
       statusCode: result.statusCode,
       outcome: result.outcome,
       errorMessage: result.errorMessage,
+      attempt,
     });
+
+    // 送り直しても同じ答えしか返らないものは、ここで打ち切る。
+    // 送信先が止まっているだけの場合も同じで、再開したときに次の出来事から送る。
+    const retryable = result.outcome === 'failed' && isRetryable(result.statusCode);
+
+    if (retryable && !shouldAbandon(policy, attempt)) {
+      const delayMs = retryDelayMs(policy, attempt, jitter());
+      const scheduled = await deps.outbox.scheduleRetry(entry.id, entry.claimToken, {
+        delayMs,
+        lastError: result.errorMessage ?? '',
+      });
+      if (!scheduled) {
+        logger.error('outbox.retry_rejected', { outboxId: entry.id, eventId: entry.eventId });
+        return;
+      }
+      logger.info('webhook.delivery_retry_scheduled', {
+        outboxId: entry.id,
+        eventId: entry.eventId,
+        eventType: entry.eventType,
+        attempt,
+        delayMs,
+        statusCode: result.statusCode,
+      });
+      return;
+    }
+
+    if (retryable) {
+      const abandoned = await deps.outbox.abandon(
+        entry.id,
+        entry.claimToken,
+        result.errorMessage ?? '',
+      );
+      if (!abandoned) {
+        logger.error('outbox.abandon_rejected', { outboxId: entry.id, eventId: entry.eventId });
+        return;
+      }
+      // 諦めたことは、運用が気付ける高さで残す。行は消していない。
+      logger.error('webhook.delivery_abandoned', {
+        outboxId: entry.id,
+        eventId: entry.eventId,
+        eventType: entry.eventType,
+        attempts: attempt,
+        statusCode: result.statusCode,
+      });
+      return;
+    }
 
     const completed = await deps.outbox.complete(entry.id, entry.claimToken);
     if (!completed) {
@@ -108,6 +173,7 @@ export function createWebhookDeliveryProcessor(
       eventType: entry.eventType,
       outcome: result.outcome,
       statusCode: result.statusCode,
+      attempt,
     });
   };
 

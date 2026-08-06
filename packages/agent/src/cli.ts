@@ -11,6 +11,9 @@
  *   pnpm agent card-register --token-file <path> --card-stdin
  *   pnpm agent card-punch --card-stdin
  *   pnpm agent session-observe --employee E001 --type sign_in [--at <ISO日時>]
+ *   pnpm agent queue --employee E001 --type clock_in   送信待ちへ積むだけ
+ *   pnpm agent serve                                   常駐して送信待ちを送り続ける
+ *   pnpm agent diagnose                                設定と送信待ちの状態を出す
  *
  * ループバック以外の接続先には https を指定する。
  * 端末登録トークン・署名付きの打刻・カード指紋を、暗号化なしで送らないため。
@@ -36,6 +39,9 @@ import {
 import type { DeviceCredentials } from './credentials.js';
 import { generateKeyPair, loadCredentials, saveCredentials } from './credentials.js';
 import { requireSecret } from './secret-input.js';
+import { createAgentLogger } from './service/redact.js';
+import { runAgent } from './service/runner.js';
+import { createFileSpool } from './service/spool.js';
 
 const DEFAULT_STORE = '.staffweave-agent.json';
 
@@ -237,6 +243,125 @@ async function runSessionObserve(): Promise<void> {
   );
 }
 
+/** 送信待ちの置き場。資格情報と同じところに置く。 */
+function spoolPath(): string {
+  return option('spool') ?? `${storePath()}.spool`;
+}
+
+/**
+ * 送信待ちへ積むだけ。送信は serve が行う。
+ *
+ * 現場の端末では、打刻を受け取る側と送る側を分ける。
+ * その場で送ろうとすると、回線が切れているあいだ利用者を待たせることになる。
+ */
+async function runQueue(): Promise<void> {
+  const employeeNumber = requireOption('employee');
+  const eventType = option('type') ?? 'clock_in';
+  if (!isAttendanceEventType(eventType)) {
+    throw new Error(`--type が不正です: ${eventType}`);
+  }
+  const now = new Date();
+  await createFileSpool(spoolPath()).add({
+    requestId: randomUUID(),
+    employeeNumber,
+    eventType,
+    occurredAt: option('at') ?? now.toISOString(),
+    queuedAt: now.toISOString(),
+  });
+  console.log('送信待ちへ積みました。');
+}
+
+/** 常駐して送信待ちを送り続ける。停止の合図を受けたら、今の 1 件を送り終えてから止まる。 */
+async function runServe(): Promise<void> {
+  const spool = createFileSpool(spoolPath());
+  const logger = createAgentLogger();
+  let running = true;
+  /** 待っている間に停止の合図が来たら、待ちを打ち切る。次の周回まで待たせない。 */
+  let wake: (() => void) | null = null;
+  const stop = (): void => {
+    running = false;
+    logger.info('agent.stopping');
+    wake?.();
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+
+  logger.info('agent.started', { store: storePath(), spool: spoolPath() });
+
+  await runAgent({
+    spool,
+    logger,
+    running: () => running,
+    // 待ちは unref しない。unref すると、待っている間に他へ用が無いプロセスが終了し、
+    // 常駐しているつもりの端末が最初の待ちで落ちる。
+    sleep: (ms) =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          wake = null;
+          resolve();
+        }, ms);
+        wake = () => {
+          clearTimeout(timer);
+          wake = null;
+          resolve();
+        };
+      }),
+    send: async (punch) => {
+      // 連番は送るたびに進める。飛ばすとサーバー側の検査に掛かる。
+      const credentials = (await loadCredentials(storePath())) as StoredCredentials;
+      try {
+        await sendEvent(credentials, {
+          sequence: credentials.nextSequence,
+          requestId: punch.requestId,
+          employeeNumber: punch.employeeNumber,
+          eventType: punch.eventType as AttendanceEventType,
+          occurredAt: punch.occurredAt,
+          deviceTime: new Date().toISOString(),
+        });
+        await saveCredentials(storePath(), {
+          ...credentials,
+          nextSequence: credentials.nextSequence + 1,
+        });
+        return { kind: 'accepted' };
+      } catch (error) {
+        if (error instanceof AgentRequestError) {
+          // 相手が「その要求は受け取れない」と言っているものは、送り直しても同じ答えになる。
+          return error.status >= 500 || error.status === 429 || error.status === 408
+            ? { kind: 'retry', reason: `HTTP ${error.status}` }
+            : { kind: 'rejected', reason: `HTTP ${error.status}` };
+        }
+        return { kind: 'retry', reason: '接続できません' };
+      }
+    },
+  });
+
+  logger.info('agent.stopped');
+}
+
+/** 設定と送信待ちの状態を出す。現場で「なぜ送れないのか」を切り分けるために使う。 */
+async function runDiagnose(): Promise<void> {
+  const spool = createFileSpool(spoolPath());
+  const pending = await spool.list();
+  const unreadable = await spool.listUnreadable();
+
+  let credentials: StoredCredentials | null = null;
+  try {
+    credentials = (await loadCredentials(storePath())) as StoredCredentials;
+  } catch (error) {
+    console.log(`資格情報を読めません: ${error instanceof Error ? error.message : error}`);
+  }
+
+  // 秘密鍵と指紋の鍵は出さない。診断のために保守の人が実行するため、画面にも残る。
+  console.log(`接続先: ${credentials?.baseUrl ?? '（未登録）'}`);
+  console.log(`端末: ${credentials?.deviceId ?? '（未登録）'}`);
+  console.log(`次の連番: ${credentials?.nextSequence ?? '（未登録）'}`);
+  console.log(`送信待ち: ${pending.length} 件`);
+  console.log(`読めない送信待ち: ${unreadable.length} 件`);
+  if (pending[0] !== undefined) {
+    console.log(`いちばん古い送信待ち: ${pending[0].occurredAt}`);
+  }
+}
+
 async function runStatus(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
   console.log(`接続先: ${credentials.baseUrl}`);
@@ -262,9 +387,16 @@ async function main(): Promise<void> {
       return runSessionObserve();
     case 'status':
       return runStatus();
+    case 'queue':
+      return runQueue();
+    case 'serve':
+      return runServe();
+    case 'diagnose':
+      return runDiagnose();
     default:
       throw new Error(
-        'enroll / punch / replay / card-register / card-punch / session-observe / status のいずれかを指定してください',
+        'enroll / punch / replay / card-register / card-punch / session-observe / status / ' +
+          'queue / serve / diagnose のいずれかを指定してください',
       );
   }
 }

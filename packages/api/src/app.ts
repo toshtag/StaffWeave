@@ -151,6 +151,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const integrationService = createIntegrationService({
     repository: createIntegrationRepository(deps.db),
+    outbox: createWebhookOutboxRepository(deps.db),
     now,
     ...(deps.apiKeyUsageIntervalMs === undefined
       ? {}
