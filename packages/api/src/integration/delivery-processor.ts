@@ -13,7 +13,7 @@ import { signWebhookMessage } from './webhook-signature.js';
  * 占有期限が切れ、別のワーカーが引き取って同時に送ってしまう。
  *
  * HTTP の失敗やタイムアウトは自動で再試行しない。結果を記録して送信待ちを完了扱いにする。
- * 再試行と指数バックオフは P20 で扱う。
+ * 再試行と指数バックオフは P25 で扱う（docs/roadmap.md）。
  */
 
 export interface WebhookDeliveryProcessor {

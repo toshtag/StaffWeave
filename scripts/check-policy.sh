@@ -19,7 +19,11 @@ pass() {
 }
 
 # 検査自身が例として持つ文字列を拾わないよう、この脚本は対象から外す。
-TRACKED=$(git ls-files | grep -v '^scripts/check-policy.sh$')
+#
+# `core.quotePath` を切る。既定では ASCII の外の文字を 8 進数のエスケープへ置き換えるため、
+# 日本語のファイル名が `"\346\257\224..."` の形で並ぶ。
+# 名前そのものを検査する側から見ると、その名前はどこにも無いことになる。
+TRACKED=$(git -c core.quotePath=false ls-files | grep -v '^scripts/check-policy.sh$')
 
 echo '名称の一貫性'
 # 名前は 2 つだけ。人が読む `StaffWeave` と、機械が読む小文字の `staffweave`。
@@ -81,6 +85,100 @@ if printf '%s\n' "$TRACKED" | xargs grep -liE 'co-authored-by: *claude|generated
   fail '生成ツール由来の定型文が含まれています'
 else
   pass '生成ツール由来の定型文はありません'
+fi
+
+echo '他の製品への言及'
+# 機能の要件は StaffWeave の設計として書く。他の製品を引き合いに出して説明すると、
+# その名前や画面の写しが入り込む入口になり、相手の版が変われば説明だけが古くなる。
+#
+# ここで見るのは「引き合いに出す言い回し」だけで、製品名の一覧は持たない。
+# 一覧にすると、書かせたくない名前をこの脚本へ書き込むことになる。
+# 言い回しを止めれば、名前を書く文そのものが成り立たなくなる。
+#
+# 「競合」は同時更新の意味で全体に出るため、単独では見ない。
+COMPARISON_PATTERN='比較元|比較対象製品|参考製品|参考にした製品|他社製品|他社の製品|他社のサービス|競合製品|競合サービス|競合他社|本家'
+
+# 見る先は追跡ファイルの中身だけではない。名前を残せる場所はいくつもあり、
+# 中身だけを見ていると、他の経路から入ったものを検査が通してしまう。
+#
+# branch と commit は、Git の状態から推測しない。CI の checkout は既定で
+# detached HEAD になり、履歴も 1 件しか取らない。推測すると branch 名は `HEAD`、
+# commit は 1 件だけ、という状態のまま成功する。
+# 対象は呼ぶ側が渡し、渡されていなければ「見ていない」と示す。
+#
+#   POLICY_HEAD_REF   branch 名
+#   POLICY_BASE_SHA   commit の範囲の起点
+#   POLICY_HEAD_SHA   範囲の終点
+#   PR_TITLE PR_BODY  PR の題と本文
+#
+# 出すのは経路ごとの件数だけにする。一致した行を出すと、
+# その行に並んでいた固有名がそのままログへ残る。
+# ログは PR の画面から誰でも読めるため、伏せたい語を伏せた意味が無くなる。
+comparison_hits() {
+  printf '%s\n' "$1" | grep -cE "$COMPARISON_PATTERN" || true
+}
+
+# 手元では、渡されていなくても分かるものを使う。CI では渡された値だけを見る。
+if [ -n "${POLICY_HEAD_REF-}" ]; then
+  COMPARISON_REF="$POLICY_HEAD_REF"
+elif [ -z "${CI-}" ]; then
+  COMPARISON_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+else
+  COMPARISON_REF=''
+  COMPARISON_UNCHECKED='branch'
+fi
+
+if [ -n "${POLICY_BASE_SHA-}" ] && [ -n "${POLICY_HEAD_SHA-}" ]; then
+  COMPARISON_RANGE="${POLICY_BASE_SHA}..${POLICY_HEAD_SHA}"
+elif [ -z "${CI-}" ]; then
+  COMPARISON_RANGE='origin/main..HEAD'
+else
+  COMPARISON_RANGE=''
+  COMPARISON_UNCHECKED="${COMPARISON_UNCHECKED-} commit"
+fi
+
+COMPARISON_LOG=''
+if [ -n "$COMPARISON_RANGE" ]; then
+  # 範囲を読めないまま 0 件にしない。読めなければ、見ていないものとして示す。
+  if COMPARISON_LOG=$(git log --format='%s%n%b' "$COMPARISON_RANGE" 2>/dev/null); then
+    :
+  else
+    COMPARISON_LOG=''
+    COMPARISON_UNCHECKED="${COMPARISON_UNCHECKED-} commit"
+  fi
+fi
+
+# 中身は git grep で探す。改行区切りの一覧を xargs へ渡すと、
+# 名前に空白やタブを含むファイルが途中で切れ、そのファイルだけ検査されない。
+# この脚本自身は、検査の対象語をそのまま持つため除く。
+COMPARISON_CONTENT=$(git grep -hE "$COMPARISON_PATTERN" -- . ':!scripts/check-policy.sh' 2>/dev/null | grep -c . || true)
+# 名前の側も、NUL 区切りで受け取ってから 1 行ずつに直す。
+COMPARISON_NAME=$(git -c core.quotePath=false ls-files -z \
+  | tr '\0' '\n' | grep -v '^scripts/check-policy.sh$' | grep -cE "$COMPARISON_PATTERN" || true)
+COMPARISON_BRANCH=$(comparison_hits "$COMPARISON_REF")
+COMPARISON_COMMIT=$(comparison_hits "$COMPARISON_LOG")
+COMPARISON_PR=$(comparison_hits "$(printf '%s\n%s' "${PR_TITLE-}" "${PR_BODY-}")")
+COMPARISON_TOTAL=$((COMPARISON_CONTENT + COMPARISON_NAME + COMPARISON_BRANCH + COMPARISON_COMMIT + COMPARISON_PR))
+if [ "$COMPARISON_TOTAL" -ne 0 ]; then
+  printf '  内容 %s 件 / ファイル名 %s 件 / branch %s 件 / commit %s 件 / PR %s 件\n' \
+    "$COMPARISON_CONTENT" "$COMPARISON_NAME" "$COMPARISON_BRANCH" "$COMPARISON_COMMIT" "$COMPARISON_PR"
+  fail '他の製品を引き合いに出す言い回しが含まれています（場所は出しません。手元で探してください）'
+elif [ -n "${COMPARISON_UNCHECKED-}" ]; then
+  # 見ていない経路があるなら、見た経路だけで「無い」と言わない。
+  printf '  見ていない経路:%s\n' "$COMPARISON_UNCHECKED"
+  fail '他の製品を引き合いに出す言い回しを、一部の経路で検査できませんでした'
+else
+  pass '他の製品を引き合いに出す言い回しはありません（内容・ファイル名・branch・commit・PR）'
+fi
+
+# 取り込んだ画像と PDF は、中身を差分で読めない。何が写っているかを確かめないまま
+# 再配布することになるため、置かない。図は本文か SVG（文字として読める形）で書く。
+IMPORTED_MEDIA=$(printf '%s\n' "$TRACKED" | grep -iE '\.(pdf|png|jpe?g|gif|webp|bmp|tiff?|heic)$' || true)
+if [ -n "$IMPORTED_MEDIA" ]; then
+  printf '  %s\n' "$(printf '%s ' $IMPORTED_MEDIA)"
+  fail '差分で読めない画像や PDF が追跡されています'
+else
+  pass '差分で読めない画像や PDF はありません'
 fi
 
 echo '検索できる形'
@@ -241,6 +339,19 @@ if [ -n "$EXTRA" ]; then
   fail 'ワークフローが 3 つより多くあります'
 else
   pass 'ワークフローは 3 つだけです'
+fi
+
+# Secret と、PR が書き換えられるコードを、同じ job へ置かない。
+# 置いた時点で、脚本を 1 行変えた PR から Secret を読み出せる。
+#
+# Secret を使う検査が要るなら、PR のコードを取り出しも実行もしない別のワークフローへ置く。
+# ここで見るのは、いまある 2 つが Secret を受け取っていないことだけ。
+SECRET_IN_UNTRUSTED=$(grep -l 'secrets\.' "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" 2>/dev/null || true)
+if [ -n "$SECRET_IN_UNTRUSTED" ]; then
+  printf '  %s\n' "$(printf '%s ' $SECRET_IN_UNTRUSTED)"
+  fail 'PR のコードを動かすワークフローが Secret を受け取っています'
+else
+  pass 'PR のコードを動かすワークフローは Secret を受け取りません'
 fi
 
 # `paths` を持たない pull_request は、変更の内容によらず必ず走る。
@@ -553,6 +664,22 @@ if [ -n "$UNLISTED" ]; then
 else
   pass 'docs/README.md の索引にすべての文書が載っています'
 fi
+
+echo '製品の能力'
+# 「いま何ができるか」と「どの順で作るか」は、この 2 つを正本にする。
+# どちらかが欠けると、リポジトリを受け取った側は Issue を読むまで位置付けを判断できない。
+#
+# 中身の形は検査しない。以前は Markdown の表の形を専用の脚本で厳密に読んでいたが、
+# 確かめられるのは「表が壊れていないか」までで、書いてあることが本当かは分からない。
+# 文書を直すたびに脚本とそのテストも直すことになり、割に合わなかった。
+# 能力の正しさは、実装とテストを見てレビューで判断する。
+for required in docs/product/capability-matrix.md docs/roadmap.md; do
+  if [ -f "$required" ]; then
+    pass "$required があります"
+  else
+    fail "$required がありません"
+  fi
+done
 
 echo 'マイグレーション'
 DUPLICATES=$(git ls-files 'packages/db/migrations/*.sql' | sed 's#.*/##' | cut -c1-4 | sort | uniq -d)
