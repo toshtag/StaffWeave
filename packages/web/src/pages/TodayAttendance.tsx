@@ -18,6 +18,11 @@ import type { Messages } from '../i18n/messages.ts';
 import type { PunchBlockedReason, PunchQueue, PunchQueueSnapshot } from '../offline/punch-queue.ts';
 import { acceptsNewPunch, createPunchQueue, isPunchQueueOwner } from '../offline/punch-queue.ts';
 import { useSession } from '../session/SessionProvider.tsx';
+import {
+  formatInstantInTimeZone,
+  instantToZonedLocalInput,
+  zonedLocalInputToInstant,
+} from '../time/zoned.ts';
 
 type LoadState =
   | { status: 'loading' }
@@ -99,16 +104,9 @@ function requestStateLabel(state: DailyRequestState, messages: Messages): string
   }
 }
 
-function formatTime(value: string | null, locale: string): string {
+function formatTime(value: string | null, locale: string, timeZone: string): string {
   if (value === null) return '—';
-  return new Date(value).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-}
-
-/** `datetime-local` 入力に渡すため、現地時間の文字列へ変換する。 */
-function toLocalInputValue(iso: string): string {
-  const date = new Date(iso);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  return formatInstantInTimeZone(value, timeZone, locale);
 }
 
 interface CorrectionDraft {
@@ -369,6 +367,20 @@ function EmployeeTodayAttendance({
   }
 
   function submitCorrection(current: CorrectionDraft): void {
+    // 入力は拠点の時計として読む。存在しない現地時刻は保存させない。
+    const converted =
+      current.action === 'void'
+        ? { iso: null, problem: null }
+        : zonedLocalInputToInstant(current.occurredAt, day.timeZone);
+    if (converted.problem !== null) {
+      setError(
+        converted.problem === 'nonexistent'
+          ? messages.correctionTimeNonexistent
+          : messages.correctionTimeMalformed,
+      );
+      return;
+    }
+
     handle(
       api.correctAttendance({
         action: current.action,
@@ -377,7 +389,7 @@ function EmployeeTodayAttendance({
           ? {}
           : {
               eventType: current.eventType,
-              occurredAt: new Date(current.occurredAt).toISOString(),
+              ...(converted.iso === null ? {} : { occurredAt: converted.iso }),
             }),
         ...(current.action === 'add' ? { businessDate: day.businessDate } : {}),
         reason: current.reason,
@@ -489,11 +501,15 @@ function EmployeeTodayAttendance({
         </p>
       )}
 
+      <p className="notice">
+        {messages.timeZoneNotice}: <span className="time-zone">{day.timeZone}</span>
+      </p>
+
       <dl className="details">
         <dt>{messages.firstClockInAt}</dt>
-        <dd>{formatTime(day.firstClockInAt, locale)}</dd>
+        <dd>{formatTime(day.firstClockInAt, locale, day.timeZone)}</dd>
         <dt>{messages.lastClockOutAt}</dt>
-        <dd>{formatTime(day.lastClockOutAt, locale)}</dd>
+        <dd>{formatTime(day.lastClockOutAt, locale, day.timeZone)}</dd>
       </dl>
 
       <h3>{messages.calculation}</h3>
@@ -530,11 +546,11 @@ function EmployeeTodayAttendance({
           <ul className="break-list">
             {day.breaks.map((period) => (
               <li key={period.startedAt}>
-                <span>{formatTime(period.startedAt, locale)}</span>
+                <span>{formatTime(period.startedAt, locale, day.timeZone)}</span>
                 <span>
                   {period.endedAt === null
                     ? messages.breakInProgress
-                    : formatTime(period.endedAt, locale)}
+                    : formatTime(period.endedAt, locale, day.timeZone)}
                 </span>
               </li>
             ))}
@@ -571,7 +587,10 @@ function EmployeeTodayAttendance({
                   {requestStateLabel(transition.toState, messages)}
                 </span>
                 <time dateTime={transition.occurredAt}>
-                  {new Date(transition.occurredAt).toLocaleString(locale)}
+                  {formatInstantInTimeZone(transition.occurredAt, day.timeZone, locale, {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })}
                 </time>
                 {transition.comment !== null && (
                   <span className="history-reason">{transition.comment}</span>
@@ -590,7 +609,9 @@ function EmployeeTodayAttendance({
           {day.events.map((event) => (
             <li key={event.id}>
               <span>{eventLabel(event.eventType, messages)}</span>
-              <time dateTime={event.occurredAt}>{formatTime(event.occurredAt, locale)}</time>
+              <time dateTime={event.occurredAt}>
+                {formatTime(event.occurredAt, locale, day.timeZone)}
+              </time>
               {day.editable && (
                 <span className="punch-actions">
                   <button
@@ -601,7 +622,7 @@ function EmployeeTodayAttendance({
                         action: 'adjust',
                         target: event,
                         eventType: event.eventType,
-                        occurredAt: toLocalInputValue(event.occurredAt),
+                        occurredAt: instantToZonedLocalInput(event.occurredAt, day.timeZone),
                         reason: '',
                       })
                     }
@@ -616,7 +637,7 @@ function EmployeeTodayAttendance({
                         action: 'void',
                         target: event,
                         eventType: event.eventType,
-                        occurredAt: toLocalInputValue(event.occurredAt),
+                        occurredAt: instantToZonedLocalInput(event.occurredAt, day.timeZone),
                         reason: '',
                       })
                     }
@@ -640,7 +661,7 @@ function EmployeeTodayAttendance({
               action: 'add',
               target: null,
               eventType: 'clock_in',
-              occurredAt: toLocalInputValue(new Date().toISOString()),
+              occurredAt: instantToZonedLocalInput(new Date().toISOString(), day.timeZone),
               reason: '',
             })
           }
@@ -662,7 +683,7 @@ function EmployeeTodayAttendance({
           {draft.target !== null && (
             <p className="notice">
               {messages.originalPunch}: {eventLabel(draft.target.eventType, messages)}{' '}
-              {formatTime(draft.target.occurredAt, locale)}
+              {formatTime(draft.target.occurredAt, locale, day.timeZone)}
             </p>
           )}
 
@@ -731,7 +752,9 @@ function EmployeeTodayAttendance({
                   ? eventLabel(record.eventType, messages)
                   : `${actionLabel(record.correctionAction, messages)}: ${eventLabel(record.eventType, messages)}`}
               </span>
-              <time dateTime={record.occurredAt}>{formatTime(record.occurredAt, locale)}</time>
+              <time dateTime={record.occurredAt}>
+                {formatTime(record.occurredAt, locale, day.timeZone)}
+              </time>
               {record.correctionReason !== null && (
                 <span className="history-reason">{record.correctionReason}</span>
               )}

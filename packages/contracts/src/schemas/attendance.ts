@@ -57,6 +57,10 @@ export const workDaySchema = objectSchema({
   properties: {
     businessDate: businessDateSchema,
     employeeId: uuidSchema,
+    timeZone: {
+      type: 'string',
+      description: '時刻を読む基準になる拠点の IANA タイムゾーン。画面と CSV はこれで表示する',
+    },
     state: {
       type: 'string',
       enum: ['not_started', 'working', 'on_break', 'finished'],
@@ -80,6 +84,7 @@ export const workDaySchema = objectSchema({
   required: [
     'businessDate',
     'employeeId',
+    'timeZone',
     'state',
     'firstClockInAt',
     'lastClockOutAt',

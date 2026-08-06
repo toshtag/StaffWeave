@@ -354,6 +354,8 @@ export interface AttendanceCalculationRecord {
 export interface WorkDay {
   businessDate: string;
   employeeId: string;
+  /** 時刻を読む基準になる拠点の IANA タイムゾーン。 */
+  timeZone: string;
   state: WorkDayState;
   firstClockInAt: string | null;
   lastClockOutAt: string | null;

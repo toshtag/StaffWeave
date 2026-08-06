@@ -159,6 +159,11 @@ td {
   border-bottom: 1px solid var(--border);
 }
 
+.time-zone {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .notice {
   color: var(--muted);
   font-size: 0.9375rem;
