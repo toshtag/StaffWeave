@@ -119,6 +119,28 @@ describe('残数の組み立て', () => {
     ]);
   });
 
+  it('失効を明示した記録は、期限の切れた付与からだけ引く', () => {
+    const balance = buildLeaveBalance(
+      [
+        entry({ id: 'lapsed', minutes: 2 * DAY, expiresOn: '2026-09-30' }),
+        entry({ id: 'live', minutes: 3 * DAY, expiresOn: '2027-03-31' }),
+        entry({
+          id: 'lapse',
+          entryType: 'expire',
+          minutes: -2 * DAY,
+          effectiveOn: '2026-10-01',
+        }),
+      ],
+      '2026-10-31',
+    );
+
+    // 期限内の live には手を付けない。
+    expect(balance.remaining).toEqual([
+      { entryId: 'live', minutes: 3 * DAY, expiresOn: '2027-03-31' },
+    ]);
+    expect(balance.expiredMinutes).toBe(2 * DAY);
+  });
+
   it('期限の日そのものは、まだ使える', () => {
     const balance = buildLeaveBalance(
       [entry({ id: 'a', minutes: 2 * DAY, expiresOn: '2026-09-30' })],

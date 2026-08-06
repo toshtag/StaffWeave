@@ -92,12 +92,17 @@ export function buildLeaveBalance(
     }
   };
 
-  /** 古い（期限の近い）箱から減らす。 */
-  const take = (amount: number): void => {
+  /**
+   * 古い（期限の近い）箱から減らす。
+   *
+   * @param from どの箱から引いてよいか。省略すると、残っているどの箱からでも引く。
+   */
+  const take = (amount: number, from?: (expiresOn: string | null) => boolean): void => {
     let remaining = amount;
     for (const bucket of buckets) {
       if (remaining <= 0) break;
       if (bucket.minutes <= 0) continue;
+      if (from !== undefined && !from(bucket.expiresOn)) continue;
       const taken = Math.min(bucket.minutes, remaining);
       bucket.minutes -= taken;
       remaining -= taken;
@@ -121,8 +126,9 @@ export function buildLeaveBalance(
         take(-entry.minutes);
         break;
       case 'expire':
-        // 失効を明示した記録は、期限の切れた付与から引く。ここでは外さない。
-        take(-entry.minutes);
+        // 失効を明示した記録は、期限の切れた付与からだけ引く。
+        // 期限の来ていない付与から引くと、まだ使える分を失効させたことになる。
+        take(-entry.minutes, (expiresOn) => expiresOn !== null && expiresOn < entry.effectiveOn);
         expiredMinutes += -entry.minutes;
         break;
       case 'adjust':
