@@ -40,8 +40,8 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | OS からのセッション観測の自動取得 | planned | - | 送る側は常駐サービスが要る（P24） |
 | 拠点のタイムゾーンによる業務日判定 | implemented | `test:packages/domain/src/attendance/business-date.test.ts` | 現地の暦日と時刻で決める。夏時間の切り替わる日もずれない |
 | 日をまたぐ勤務を 1 日として扱う | implemented | `test:packages/domain/src/attendance/calculation.test.ts` `test:packages/domain/src/attendance/business-date.test.ts` | 業務日の開始時刻を基準に 1 日として扱う |
-| 1 日に複数の勤務区間 | planned | - | 退勤したあとの再出勤を受け付けない（P17） |
-| カードの 1 回のタップで休憩を始める | planned | - | 勤務中のタップは退勤に割り当てている（P24） |
+| 1 日に複数の勤務区間 | implemented | `test:packages/domain/src/attendance/events.test.ts` `test:packages/domain/src/attendance/calculation.test.ts` | 退勤したあと再出勤できる。区間の間は勤務時間に数えない |
+| カードの 1 回のタップで休憩を始める | planned | - | 勤務中のタップは退勤、退勤済みのタップは再出勤に割り当てている（P24） |
 | 打刻時の位置情報 | planned | - | 取得・同意・精度・保持期間・閲覧権限のいずれも無い（P24） |
 
 ## 勤務予定と勤務区分
