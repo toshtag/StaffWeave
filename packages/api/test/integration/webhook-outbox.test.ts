@@ -557,11 +557,18 @@ describe('送信待ちの取得と回復', () => {
 });
 
 describe('送れなかった通知の再試行と、諦めた行の扱い', () => {
-  /** すぐ諦める方針。検査を待たせないため、回数を小さく取る。 */
+  /**
+   * すぐ送り直し、すぐ諦める方針。
+   *
+   * 間隔を 0 にするのは、この検査が見たいのが DB の状態の移り変わりだからで、
+   * 間隔そのものは domain と処理側の検査で見ている。
+   * わずかでも間隔を置くと、次に取り出せる時刻を過ぎたかどうかが機械の速さで変わり、
+   * 速い機械でだけ落ちる検査になる。
+   */
   const impatient = {
-    initialDelayMs: 1,
+    initialDelayMs: 0,
     multiplier: 1,
-    maximumDelayMs: 1,
+    maximumDelayMs: 0,
     maximumAttempts: 2,
   };
 
