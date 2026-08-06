@@ -13,7 +13,9 @@ export default defineConfig({
         test: {
           name: 'unit',
           environment: 'node',
-          include: ['packages/*/src/**/*.test.ts'],
+          // 統合テストの土台（`test/`）もここで流す。
+          // 土台が壊れると、原因から遠いファイルが落ちて読み解けなくなる。
+          include: ['packages/*/src/**/*.test.ts', 'test/**/*.test.ts'],
           // 2 つをまとめて流すとき（`pnpm test`）は、単体を先に、統合を後に流す。
           // 並べる数が違うものを同じ組へ入れると、vitest はどちらに合わせるかを
           // 決められず、1 件も実行しないまま終わる。
