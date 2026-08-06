@@ -120,6 +120,7 @@ async function buildContext(
     day: {
       businessDate,
       employeeId,
+      timeZone,
       state: summary.state,
       firstClockInAt: summary.firstClockInAt?.toISOString() ?? null,
       lastClockOutAt: summary.lastClockOutAt?.toISOString() ?? null,
