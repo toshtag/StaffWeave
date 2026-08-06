@@ -302,11 +302,11 @@ fi
 # Action は完全なコミット SHA で固定する。
 # tag は同じ名前のまま指す先が変わりうるため、版として当てにできない。
 # 指す先が変われば、確かめずに他人のコードを動かすことになる。
-SBOM_WORKFLOW='.github/workflows/sbom.yml'
-if [ ! -f "$SBOM_WORKFLOW" ]; then
-  fail "$SBOM_WORKFLOW がありません"
+WORKFLOW_FILES=$(git ls-files '.github/workflows/*')
+if [ -z "$WORKFLOW_FILES" ]; then
+  fail '.github/workflows にワークフローがありません'
 else
-  UNPINNED=$(git ls-files '.github/workflows/*' | xargs grep -hE 'uses:' \
+  UNPINNED=$(printf '%s\n' "$WORKFLOW_FILES" | xargs grep -hE 'uses:' \
     | grep -vE 'uses: [^@]+@[0-9a-f]{40}( |$)' || true)
   if [ -n "$UNPINNED" ]; then
     printf '%s\n' "$UNPINNED"
@@ -324,6 +324,7 @@ echo 'ワークフロー'
 #   sbom.yml     配布物の構成一覧
 ALWAYS_WORKFLOW='.github/workflows/ci.yml'
 RUNTIME_WORKFLOW='.github/workflows/runtime.yml'
+SBOM_WORKFLOW='.github/workflows/sbom.yml'
 for required in "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW"; do
   if [ -f "$required" ]; then
     pass "$required があります"
