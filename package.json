@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "\u30bb\u30eb\u30d5\u30db\u30b9\u30c8\u53ef\u80fd\u306a\u52e4\u6020\u7ba1\u7406\u57fa\u76e4",
+  "description": "セルフホスト可能な勤怠管理基盤",
   "license": "MIT",
   "engines": {
     "node": ">=22.12.0"
@@ -22,7 +22,7 @@
     "webhook:worker": "pnpm --filter \"@staffweave/api\" webhook-worker",
     "db:migrate": "pnpm --filter \"@staffweave/db\" migrate",
     "db:status": "pnpm --filter \"@staffweave/db\" status",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm db:verify && pnpm check:policy && pnpm check:audit",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm db:verify && pnpm verify:upgrade && pnpm verify:restore && pnpm check:policy && pnpm check:audit",
     "test:e2e": "playwright test",
     "agent": "pnpm --filter \"@staffweave/agent\" start",
     "seed:demo": "pnpm --filter \"@staffweave/api\" seed:demo",
@@ -31,12 +31,15 @@
     "check:policy": "./scripts/check-policy.sh",
     "check:balance": "node scripts/check-test-balance.mjs",
     "check:audit": "./scripts/check-audit.sh",
+    "verify:upgrade": "./scripts/verify-upgrade.sh",
+    "verify:restore": "./scripts/verify-restore.sh",
     "sbom:generate": "./scripts/generate-sbom.sh",
     "sbom:validate": "./scripts/validate-sbom.sh",
     "sbom:verify": "./scripts/validate-sbom.sh && node scripts/verify-sbom.mjs",
     "db:verify": "pnpm --filter \"@staffweave/db\" verify"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@biomejs/biome": "^2.5.6",
     "@playwright/test": "^1.62.1",
     "@staffweave/api": "workspace:*",

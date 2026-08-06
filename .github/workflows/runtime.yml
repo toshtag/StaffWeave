@@ -106,6 +106,15 @@ jobs:
       - name: 適用漏れと内容の変更が無いことを確認
         run: pnpm db:verify
 
+      - name: 既にデータのあるデータベースへ当てられることを確認
+        # まっさらなデータベースへ流すのは上で見ている。
+        # 空のテーブルなら、列を足すときの NOT NULL も期間の重なりの禁止も必ず通る。
+        run: pnpm verify:upgrade
+
+      - name: 書き出して戻したものが元と同じことを確認
+        # 「取れた」「戻せた」だけでは足りない。戻したものが違っていても気付けない。
+        run: pnpm verify:restore
+
       - name: まとめて流せることを確認
         # CI は単体と統合を別のジョブへ分けている。まとめて流す `pnpm test`
         # （`pnpm verify` が使う）だけが壊れても、分けたジョブでは気付けない。
@@ -169,7 +178,9 @@ jobs:
 
       - name: ブラウザを取得
         if: steps.browser.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
+        # 3 系統を取る。同じ HTML でも、日付の入力欄・焦点の移り方・
+        # 書字の折り返しは実装ごとに違う。1 つだけでは、他で壊れていても気付けない。
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: 画面テスト
         run: pnpm test:e2e
