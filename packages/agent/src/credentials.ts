@@ -37,7 +37,16 @@ const SHARED_BITS = 0o077;
 /** 資格情報を置くディレクトリの権限。所有者だけが出入りできる。 */
 const OWNER_ONLY_DIRECTORY = 0o700;
 
-/** POSIX の権限が意味を持つ環境か。Windows では mode を安全性の根拠にしない。 */
+/**
+ * POSIX の権限が意味を持つ環境か。
+ *
+ * Windows の `stat()` が返す mode は、実際の権限（ACL）を表さない。
+ * 多くの場合そのまま 0o666 になる。これを根拠に判断すると、
+ * 正しく守られている資格情報を「他人から読める」と誤って断る。
+ *
+ * Windows で守るのは NTFS の ACL。置き場の権限は導入の手順で決める
+ * （docs/operations/device-agent-service.md）。
+ */
 const HAS_POSIX_MODE = process.platform !== 'win32';
 
 export function generateKeyPair(): KeyPair {
@@ -144,7 +153,8 @@ export async function loadCredentials(path: string): Promise<DeviceCredentials> 
   }
   // 他の利用者から読める状態で置かれていたら、その時点で秘密鍵は守れていない。
   // 黙って読み進めず、気付けるようにする。
-  if ((existing.mode & SHARED_BITS) !== 0) {
+  // mode が権限を表さない環境では見ない。見ると、守れているものを断る。
+  if (HAS_POSIX_MODE && (existing.mode & SHARED_BITS) !== 0) {
     throw new Error(
       `資格情報を所有者以外が読める権限で保存しています。chmod 600 で直してください: ${path}`,
     );
