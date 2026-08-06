@@ -5,7 +5,14 @@ import type {
   RequestCategory,
   WorkCategoryType,
 } from '@staffweave/contracts';
-import type { ApiScope, DeviceBrowser, DeviceKind, DeviceOs, Locale } from '@staffweave/domain';
+import type {
+  ApiScope,
+  ClosingFindingKind,
+  DeviceBrowser,
+  DeviceKind,
+  DeviceOs,
+  Locale,
+} from '@staffweave/domain';
 
 /**
  * 画面に出す文言。
@@ -329,6 +336,31 @@ export interface AdminMessages {
   overtimeLimit: string;
   editingRequestType: string;
   stopEditing: string;
+  moduleMonthly: string;
+  sectionMonthlySummaries: string;
+  sectionClosingReadiness: string;
+  monthlySummariesHint: string;
+  closingReadinessHint: string;
+  noMonthlySummaries: string;
+  noClosingReadiness: string;
+  period: string;
+  periodHint: string;
+  workedDays: string;
+  workedMinutes: string;
+  outsideMinutes: string;
+  nightMinutes: string;
+  legalOvertimeMinutes: string;
+  leaveMinutes: string;
+  closingState: string;
+  closingStateLabel: Record<'open' | 'closed', string>;
+  closingOpen: string;
+  closedTotal: string;
+  driftedFromSnapshot: string;
+  blocked: string;
+  remaining: string;
+  nothingRemaining: string;
+  closingFinding: Record<ClosingFindingKind, string>;
+  closingSeverity: Record<'blocking' | 'advisory', string>;
 }
 
 const ja: Messages = {
@@ -711,6 +743,39 @@ const ja: Messages = {
     overtimeLimit: '残業の上限時刻',
     editingRequestType: 'この申請種別を直しています。',
     stopEditing: 'やめて新しく作る',
+    moduleMonthly: '月次',
+    sectionMonthlySummaries: '月次の集計',
+    sectionClosingReadiness: '締める前の確認',
+    monthlySummariesHint:
+      '出ているのは、日次を足し合わせたいまの値です。締めた月は、締めた時点で固めた値も並びます。',
+    closingReadinessHint:
+      '締める前に残っているものです。ここは締めを止めません。止めるかどうかは運用が決めます。',
+    noMonthlySummaries: 'この月の集計はありません。',
+    noClosingReadiness: 'この月に確認することはありません。',
+    period: '対象月',
+    periodHint: '月の 1 日を選びます。',
+    workedDays: '出勤日数',
+    workedMinutes: '実労働（分）',
+    outsideMinutes: '所定外（分）',
+    nightMinutes: '深夜（分）',
+    legalOvertimeMinutes: '法定時間外（分）',
+    leaveMinutes: '休暇（分）',
+    closingState: '締め',
+    closingStateLabel: { open: '未締め', closed: '締め済み' },
+    closingOpen: '未締め',
+    closedTotal: '締めた時点の実労働（分）',
+    driftedFromSnapshot: 'いまの値と違う',
+    blocked: '止まっている',
+    remaining: '残っているもの',
+    nothingRemaining: 'ありません',
+    closingFinding: {
+      open_work_day: '退勤していない',
+      not_requested: '申請していない',
+      not_approved: '承認されていない',
+      returned: '差し戻したまま',
+      flagged: '修正が入っている',
+    },
+    closingSeverity: { blocking: '要対応', advisory: '参考' },
   },
 };
 
@@ -1099,6 +1164,39 @@ const en: Messages = {
     overtimeLimit: 'Overtime limit',
     editingRequestType: 'Editing this request type.',
     stopEditing: 'Stop and add a new one',
+    moduleMonthly: 'Monthly',
+    sectionMonthlySummaries: 'Monthly totals',
+    sectionClosingReadiness: 'Before closing',
+    monthlySummariesHint:
+      'These are the live totals built from daily results. Closed months also show the values fixed at closing.',
+    closingReadinessHint:
+      'What is still outstanding before closing. This does not block closing; the operator decides.',
+    noMonthlySummaries: 'No totals for this month.',
+    noClosingReadiness: 'Nothing to check for this month.',
+    period: 'Month',
+    periodHint: 'Pick the first day of the month.',
+    workedDays: 'Days worked',
+    workedMinutes: 'Worked (minutes)',
+    outsideMinutes: 'Outside schedule (minutes)',
+    nightMinutes: 'Night (minutes)',
+    legalOvertimeMinutes: 'Legal overtime (minutes)',
+    leaveMinutes: 'Leave (minutes)',
+    closingState: 'Closing',
+    closingStateLabel: { open: 'Open', closed: 'Closed' },
+    closingOpen: 'Open',
+    closedTotal: 'Worked at closing (minutes)',
+    driftedFromSnapshot: 'differs from live',
+    blocked: 'Blocked',
+    remaining: 'Outstanding',
+    nothingRemaining: 'None',
+    closingFinding: {
+      open_work_day: 'not clocked out',
+      not_requested: 'not submitted',
+      not_approved: 'not approved',
+      returned: 'returned and not resubmitted',
+      flagged: 'has corrections',
+    },
+    closingSeverity: { blocking: 'Action needed', advisory: 'For reference' },
   },
 };
 

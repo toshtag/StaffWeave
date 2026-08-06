@@ -120,6 +120,10 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | 月次の締めと締め解除 | implemented | `op:closeMonth` `op:reopenMonth` `test:packages/domain/src/approval/monthly-closing.test.ts` | 承認済みの確認を伴う |
+| 締める前の確認（未打刻・未申請・未承認） | implemented | `op:listClosingReadiness` `test:packages/domain/src/approval/closing-readiness.test.ts` | 実務が止まるものと参考のものを分ける。締めは止めない |
+| 締めた時点の集計の固定 | implemented | `migration:0031_create_monthly_snapshots.sql` `test:packages/api/test/integration/monthly-reporting.test.ts` | 追記のみ。締め直すと新しい記録を積む |
+| 月次の集計 | implemented | `op:listMonthlySummaries` `test:packages/domain/src/attendance/monthly.test.ts` | 日次から導く。1 日でも閾値が未設定なら、その区分は 0 ではなく未設定 |
+| 設定を直したあとの再計算 | implemented | `op:recalculateAttendance` `test:packages/api/test/integration/monthly-reporting.test.ts` | 締めた月は動かさない。入力が変わらなければ新しい版を作らない |
 | 締めたあとの編集の制御 | implemented | `migration:0006_create_requests_and_closings.sql` `test:packages/domain/src/approval/monthly-closing.test.ts` | 締め済みの期間は黙って書き換えない |
 | 打刻の修正・取消・追加 | implemented | `op:correctAttendance` `test:packages/domain/src/attendance/corrections.test.ts` `migration:0004_add_attendance_corrections.sql` | 理由必須、元の記録は残る |
 | 過去日の訂正 | implemented | `op:correctAttendance` `test:packages/domain/src/attendance/occurred-at.test.ts` | 400 日前まで遡って直せる。締め済みの期間は断る |
@@ -154,7 +158,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 一覧・写して作る・CSV を同じ形にする | implemented | `ui:packages/web/src/admin/SettingsSection.tsx` `test:packages/web/src/admin/resource.test.ts` | CSV の列は画面の表と同じ定義から作る |
 | 権限と組織の範囲で設定画面の表示を変える | implemented | `ui:packages/web/src/admin/AdminConsole.tsx` `test:e2e/admin-console.spec.ts` | 見られない設定は節ごと出さない。入口も出さない |
 | 設定の一括取り込み（CSV での投入） | partial | `op:importEmployeesCsv` | 従業員だけ。他の設定は 1 件ずつ |
-| 日次・月次の一覧とレポート | planned | - | 締めの進み具合、未申請・未承認、長時間労働の警告を含む（P23） |
+| 日次・月次の一覧とレポート | partial | `ui:packages/web/src/admin/sections/MonthlySummarySettings.tsx` `ui:packages/web/src/admin/sections/ClosingReadinessSettings.tsx` | 月次の合計と締め前の確認を出す。長時間労働の警告は上限の設定が決まってから（P25 以降） |
 | WCAG 2.2 AA | partial | `test:e2e/admin-console.spec.ts` | 見出し・ラベル・焦点・キーボード操作・狭い画面での横はみ出しを画面テストで見る。自動の適合検査と視覚回帰は無い |
 
 ## 外部連携と出力
@@ -166,7 +170,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | API キーとスコープ | implemented | `op:createApiKey` `op:revokeApiKey` `test:packages/domain/src/integration/api-key-usage.test.ts` | 生の鍵は作成時に 1 度だけ返す |
 | Webhook の署名と送信先の制約 | implemented | `op:createWebhookEndpoint` `op:listWebhookDeliveries` `migration:0014_create_webhook_outbox.sql` | 送信待ちは業務処理と同じトランザクションで積む |
 | connector SDK | implemented | `test:packages/connector/src/index.test.ts` | 外部連携を作るための足場 |
-| 給与連携の CSV 出力 | partial | `op:exportPayrollCsv` | 月次の集計は出せる。計算側が法定の区分を持たないため項目が限られる（P23） |
+| 給与連携の CSV 出力 | implemented | `op:exportPayrollCsv` `test:packages/api/test/integration/monthly-reporting.test.ts` | 締めた月は締めた時点の値を出す。既にある列の並びは変えず、締めの回数と締めた日時を後ろへ足した |
 | Webhook の自動再送とデッドレター | planned | - | 失敗は記録するが、到達は保証しない（P25） |
 
 ## 認証と利用者

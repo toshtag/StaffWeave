@@ -11,6 +11,7 @@ import type {
   AttendanceEventType,
   AttendanceSource,
   CalculationBasis,
+  ClosingFindingKind,
   CorrectionAction,
   DailyRequestEventType,
   DailyRequestState,
@@ -1160,4 +1161,84 @@ export interface ResubmitEmployeeRequestRequest {
   endMinutes?: number;
   overtimeLimitMinutes?: number;
   reason?: string;
+}
+
+/** 月次の合計。法定の区分は、閾値が未設定なら null。 */
+export interface MonthlyTotals {
+  attendedMinutes: number;
+  workedMinutes: number;
+  breakMinutes: number;
+  scheduledMinutes: number;
+  withinScheduleMinutes: number;
+  outsideScheduleMinutes: number;
+  nightMinutes: number;
+  nonWorkingDayMinutes: number;
+  leaveMinutes: number;
+  absenceMinutes: number;
+  legalInsideOvertimeMinutes: number | null;
+  legalOvertimeMinutes: number | null;
+  legalHolidayMinutes: number | null;
+  nonLegalHolidayMinutes: number | null;
+  nightOvertimeMinutes: number | null;
+  nightHolidayMinutes: number | null;
+  lateMinutes: number | null;
+  earlyLeaveMinutes: number | null;
+  deemedMinutes: number | null;
+  workedDays: number;
+  leaveDays: number;
+  countedDays: number;
+}
+
+/** 締めた時点で固めた集計。あとから日次を直しても動かない。 */
+export interface MonthlySnapshotRecord extends MonthlyTotals {
+  sequence: number;
+  closedAt: string;
+  closedByUserId: string | null;
+}
+
+export interface MonthlySummaryRecord extends MonthlyTotals {
+  employeeId: string;
+  employeeNumber: string;
+  displayName: string;
+  period: string;
+  closingState: 'open' | 'closed' | null;
+  snapshot: MonthlySnapshotRecord | null;
+  /** 締めた値といまの値が食い違っているか。 */
+  driftedFromSnapshot: boolean;
+}
+
+export interface MonthlySummaryList {
+  summaries: MonthlySummaryRecord[];
+}
+
+export interface ClosingFindingRecord {
+  kind: ClosingFindingKind;
+  severity: 'blocking' | 'advisory';
+  businessDate: string;
+}
+
+export interface ClosingReadiness {
+  employeeId: string;
+  period: string;
+  findings: ClosingFindingRecord[];
+  /** 実務が止まるものが残っているか。 */
+  blocked: boolean;
+}
+
+export interface ClosingReadinessList {
+  readiness: ClosingReadiness[];
+}
+
+export interface RecalculateAttendanceRequest {
+  employeeId: string;
+  from: string;
+  to: string;
+}
+
+export interface RecalculateAttendanceResponse {
+  examinedDays: number;
+  /** 新しい版を作った日の数。入力が変わらなければ作らない。 */
+  recalculatedDays: number;
+  /** 締められていて動かさなかった日。 */
+  skippedClosedDays: string[];
 }
