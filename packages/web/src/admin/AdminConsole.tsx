@@ -2,11 +2,13 @@ import type { Permission } from '@staffweave/domain';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import { CalculationRuleSettings } from './sections/CalculationRuleSettings.tsx';
+import { ClosingReadinessSettings } from './sections/ClosingReadinessSettings.tsx';
 import { DepartmentSettings } from './sections/DepartmentSettings.tsx';
 import { EmployeeSettings } from './sections/EmployeeSettings.tsx';
 import { LaborSystemSettings } from './sections/LaborSystemSettings.tsx';
 import { LeaveLedgerSettings } from './sections/LeaveLedgerSettings.tsx';
 import { LeaveTypeSettings } from './sections/LeaveTypeSettings.tsx';
+import { MonthlySummarySettings } from './sections/MonthlySummarySettings.tsx';
 import { OrganizationSettings } from './sections/OrganizationSettings.tsx';
 import { RequestTypeSettings } from './sections/RequestTypeSettings.tsx';
 import { SiteSettings } from './sections/SiteSettings.tsx';
@@ -112,6 +114,24 @@ function modulesFor(labels: AdminLabels): ModuleDefinition[] {
           label: labels.sectionLaborSystems,
           requires: 'employee.read',
           render: (props) => <LaborSystemSettings {...props} />,
+        },
+      ],
+    },
+    {
+      key: 'monthly',
+      label: labels.moduleMonthly,
+      sections: [
+        {
+          key: 'summaries',
+          label: labels.sectionMonthlySummaries,
+          requires: 'employee.read',
+          render: (props) => <MonthlySummarySettings {...props} />,
+        },
+        {
+          key: 'readiness',
+          label: labels.sectionClosingReadiness,
+          requires: 'attendance.close',
+          render: (props) => <ClosingReadinessSettings {...props} />,
         },
       ],
     },

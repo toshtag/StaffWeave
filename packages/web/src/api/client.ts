@@ -7,6 +7,7 @@ import type {
   CalculationRuleVersionRecord,
   ChangePasswordRequest,
   CloseMonthRequest,
+  ClosingReadinessList,
   CorrectAttendanceRequest,
   CorrectAttendanceResponse,
   CreateApiKeyRequest,
@@ -39,6 +40,7 @@ import type {
   LeaveTypeSettingsRecord,
   LoginRequest,
   MonthlyClosingRecord,
+  MonthlySummaryList,
   Organization,
   OrganizationList,
   RecordAttendanceEventRequest,
@@ -245,6 +247,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  listMonthlySummaries: (query: { period: string; employeeId?: string }) =>
+    request<MonthlySummaryList>(
+      `/monthly-summaries?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  listClosingReadiness: (query: { period: string; employeeId?: string }) =>
+    request<ClosingReadinessList>(
+      `/monthly-closings/readiness?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
   listRequestTypes: () => request<RequestTypeList>('/request-types'),
   createRequestType: (input: CreateRequestTypeRequest) =>
     request<RequestTypeRecord>('/request-types', { method: 'POST', body: JSON.stringify(input) }),
