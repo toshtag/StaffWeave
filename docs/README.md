@@ -5,6 +5,7 @@
 | 文書 | 内容 |
 | --- | --- |
 | [product/capability-matrix.md](product/capability-matrix.md) | 能力ごとの状態。動くもの、一部だけのもの、これから作るもの、作らないもの |
+| [product/v0.1-scope.md](product/v0.1-scope.md) | v0.1 で必須にするものと、次期へ回すもの |
 | [roadmap.md](roadmap.md) | どの順で作るかと、その順にする理由 |
 
 ## 使い方 — `guide/`
@@ -22,6 +23,7 @@
 | --- | --- |
 | [deployment.md](operations/deployment.md) | Docker で立てる。公開する前にやること |
 | [backup.md](operations/backup.md) | バックアップと復元 |
+| [retention.md](operations/retention.md) | どのデータをいつまで持つか。消してはいけないもの |
 | [device-agent-service.md](operations/device-agent-service.md) | 打刻端末の常駐、Windows サービス、実機で確かめること |
 
 ## リリース — `release/`
