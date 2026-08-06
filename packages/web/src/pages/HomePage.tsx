@@ -8,6 +8,7 @@ import {
 } from '../admin/AdminConsole.tsx';
 import { ApiRequestError, api } from '../api/client.ts';
 import { LocaleSwitcher } from '../components/LocaleSwitcher.tsx';
+import { ScrollableTable } from '../components/ScrollableTable.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import { businessToday } from '../session/business-date.ts';
 import { useSession } from '../session/SessionProvider.tsx';
@@ -64,7 +65,7 @@ function OrganizationTable({ session }: { session: SessionResponse }): React.JSX
         <p>{messages.noOrganizations}</p>
       )}
       {state.status === 'ready' && state.organizations.length > 0 && (
-        <table>
+        <ScrollableTable label={messages.organizations}>
           <thead>
             <tr>
               <th scope="col">{messages.organizationCode}</th>
@@ -79,7 +80,7 @@ function OrganizationTable({ session }: { session: SessionResponse }): React.JSX
               </tr>
             ))}
           </tbody>
-        </table>
+        </ScrollableTable>
       )}
     </section>
   );

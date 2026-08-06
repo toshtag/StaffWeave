@@ -2,6 +2,7 @@ import type { ApiKeyRecord, SessionResponse } from '@staffweave/contracts';
 import { API_SCOPES, type ApiScope } from '@staffweave/domain';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
+import { ScrollableTable } from '../components/ScrollableTable.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 
 /**
@@ -154,7 +155,7 @@ export function ApiKeys({ session }: { session: SessionResponse }): React.JSX.El
           {state.apiKeys.length === 0 ? (
             <p>{messages.noApiKeys}</p>
           ) : (
-            <table>
+            <ScrollableTable label={messages.apiKeys}>
               <thead>
                 <tr>
                   <th scope="col">{messages.apiKeyName}</th>
@@ -201,7 +202,7 @@ export function ApiKeys({ session }: { session: SessionResponse }): React.JSX.El
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </ScrollableTable>
           )}
 
           <form onSubmit={(event) => void create(event)}>
