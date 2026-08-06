@@ -43,6 +43,15 @@ export const breakPeriodSchema = objectSchema({
   required: ['startedAt', 'endedAt'],
 });
 
+export const workSessionSchema = objectSchema({
+  description: '出勤から退勤までのひと続き。中抜けや分割シフトでは同じ日に複数ある',
+  properties: {
+    startedAt: timestampSchema,
+    endedAt: { oneOf: [timestampSchema, { type: 'null' }] },
+  },
+  required: ['startedAt', 'endedAt'],
+});
+
 export const workDaySchema = objectSchema({
   description: '一日分の勤務状態と、その根拠となった打刻イベント',
   properties: {
@@ -55,6 +64,7 @@ export const workDaySchema = objectSchema({
     },
     firstClockInAt: { oneOf: [timestampSchema, { type: 'null' }] },
     lastClockOutAt: { oneOf: [timestampSchema, { type: 'null' }] },
+    sessions: arraySchema(workSessionSchema, '勤務の区間。区間の間は勤務時間に数えない'),
     breaks: arraySchema(breakPeriodSchema),
     events: arraySchema(attendanceEventSchema, '修正を適用した後の有効な打刻'),
     history: arraySchema(attendanceEventSchema, '記録されたすべてのイベント（修正を含む）'),
@@ -73,6 +83,7 @@ export const workDaySchema = objectSchema({
     'state',
     'firstClockInAt',
     'lastClockOutAt',
+    'sessions',
     'breaks',
     'events',
     'history',

@@ -200,6 +200,12 @@ export interface AttendanceEventRecord {
   correctionReason: string | null;
 }
 
+/** 出勤から退勤までのひと続き。中抜けや分割シフトでは同じ日に複数ある。 */
+export interface WorkSessionRecord {
+  startedAt: string;
+  endedAt: string | null;
+}
+
 export interface BreakPeriodRecord {
   startedAt: string;
   endedAt: string | null;
@@ -351,6 +357,7 @@ export interface WorkDay {
   state: WorkDayState;
   firstClockInAt: string | null;
   lastClockOutAt: string | null;
+  sessions: WorkSessionRecord[];
   breaks: BreakPeriodRecord[];
   /** 修正を適用した後の有効な打刻。 */
   events: AttendanceEventRecord[];

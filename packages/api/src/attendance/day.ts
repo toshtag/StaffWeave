@@ -123,6 +123,10 @@ async function buildContext(
       state: summary.state,
       firstClockInAt: summary.firstClockInAt?.toISOString() ?? null,
       lastClockOutAt: summary.lastClockOutAt?.toISOString() ?? null,
+      sessions: summary.sessions.map((session) => ({
+        startedAt: session.startedAt.toISOString(),
+        endedAt: session.endedAt?.toISOString() ?? null,
+      })),
       breaks: summary.breaks.map((period) => ({
         startedAt: period.startedAt.toISOString(),
         endedAt: period.endedAt?.toISOString() ?? null,
