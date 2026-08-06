@@ -23,8 +23,17 @@ load_database_url() {
 }
 load_database_url
 
-if ! command -v pg_dump > /dev/null 2>&1 || ! command -v psql > /dev/null 2>&1; then
-  echo 'pg_dump と psql が要ります（postgresql-client）。' >&2
+# 書き出しと戻しは、サーバーと同じか新しい版の道具でないと断られる。
+# 手元の版が古い環境のために、使う道具を差し替えられるようにしておく。
+#
+#   PG_DUMP='docker run --rm --network host postgres:18.4-bookworm pg_dump'
+#
+# 語の区切りをそのまま使うため、展開時に引用符で囲まない。
+PG_DUMP="${PG_DUMP:-pg_dump}"
+PG_RESTORE="${PG_RESTORE:-pg_restore}"
+
+if ! command -v psql > /dev/null 2>&1; then
+  echo 'psql が要ります（postgresql-client）。' >&2
   exit 1
 fi
 
@@ -72,12 +81,14 @@ SELECT id, 'system', 'restore.verified', 'workspace', '復元の確認' FROM wor
 SQL
 
 echo '書き出します'
-pg_dump --format=custom --file "$WORK/source.dump" "$SOURCE_URL"
+# 出力はファイル名ではなく標準出力へ。道具を別のコンテナで動かしても、
+# 書き出し先が手元のファイルのままになる。
+$PG_DUMP --format=custom "$SOURCE_URL" > "$WORK/source.dump"
 
 echo '別のデータベースへ戻します'
 psql "$ADMIN_URL" -q -c "DROP DATABASE IF EXISTS $TARGET_DB"
 psql "$ADMIN_URL" -q -c "CREATE DATABASE $TARGET_DB"
-pg_restore --dbname "$TARGET_URL" --single-transaction "$WORK/source.dump"
+$PG_RESTORE --dbname "$TARGET_URL" --single-transaction < "$WORK/source.dump"
 
 # テーブルごとに、行の数と中身の要約を並べる。
 # 中身まで見ないと、行の数が同じで値だけ違う復元を見逃す。

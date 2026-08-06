@@ -113,6 +113,13 @@ jobs:
 
       - name: 書き出して戻したものが元と同じことを確認
         # 「取れた」「戻せた」だけでは足りない。戻したものが違っていても気付けない。
+        #
+        # 走らせる機械に入っている pg_dump は、動かしている PostgreSQL より古い。
+        # 古い道具は新しいサーバーからの書き出しを断るため、
+        # サーバーと同じ版の道具を、同じイメージから借りて使う。
+        env:
+          PG_DUMP: docker run --rm --network host postgres:18.4-bookworm pg_dump
+          PG_RESTORE: docker run --rm -i --network host postgres:18.4-bookworm pg_restore
         run: pnpm verify:restore
 
       - name: まとめて流せることを確認
