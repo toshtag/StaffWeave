@@ -299,18 +299,20 @@ else
   pass 'pnpm verify は SBOM の生成を必要としません'
 fi
 
-# 新しく足した Action は完全なコミット SHA で固定する。
+# Action は完全なコミット SHA で固定する。
 # tag は同じ名前のまま指す先が変わりうるため、版として当てにできない。
+# 指す先が変われば、確かめずに他人のコードを動かすことになる。
 SBOM_WORKFLOW='.github/workflows/sbom.yml'
 if [ ! -f "$SBOM_WORKFLOW" ]; then
   fail "$SBOM_WORKFLOW がありません"
 else
-  UNPINNED=$(grep -E 'uses:' "$SBOM_WORKFLOW" | grep -vE 'uses: [^@]+@[0-9a-f]{40}( |$)' || true)
+  UNPINNED=$(git ls-files '.github/workflows/*' | xargs grep -hE 'uses:' \
+    | grep -vE 'uses: [^@]+@[0-9a-f]{40}( |$)' || true)
   if [ -n "$UNPINNED" ]; then
     printf '%s\n' "$UNPINNED"
-    fail 'SBOM のワークフローに、コミット SHA で固定していない Action があります'
+    fail 'コミット SHA で固定していない Action があります'
   else
-    pass 'SBOM のワークフローの Action はコミット SHA で固定されています'
+    pass 'すべてのワークフローの Action はコミット SHA で固定されています'
   fi
 fi
 

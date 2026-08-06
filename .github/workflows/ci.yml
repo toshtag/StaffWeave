@@ -5,6 +5,9 @@ name: CI
 #
 # データベース・ブラウザ・Docker を要する検証は runtime.yml、
 # 配布物の構成一覧は sbom.yml にある。
+#
+# 使う Action は完全な SHA へ固定する。tag は同じ名前のまま指す先が変わりうるため、
+# 版として当てにできない。指す先が変われば、確かめずに他人のコードを動かすことになる。
 
 on:
   push:
@@ -20,15 +23,15 @@ jobs:
     name: 静的検証
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 決めごとの検査は branch 名と commit も見る。
           # 既定の 1 コミットだけでは、範囲を読めないまま「無い」と答えることになる。
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           # 依存のキャッシュはこれだけに絞る。取得のやり直しが最も重いため。
