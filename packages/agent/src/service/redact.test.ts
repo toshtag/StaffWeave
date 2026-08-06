@@ -10,7 +10,9 @@ describe('ログへ出す値', () => {
   it('秘密らしい名前の値を伏せる', () => {
     expect(
       redact({
-        privateKeyPem: '-----BEGIN PRIVATE KEY-----',
+        // 本物らしい形は書かない。秘密鍵の検査に引っかかり、
+        // 引っかからないよう検査を緩めることになる。
+        privateKeyPem: 'かぎのなかみ',
         token: 'enroll-token',
         cardFingerprintKey: 'k',
         signature: 's',
@@ -60,10 +62,10 @@ describe('ログへ出す値', () => {
     const lines: string[] = [];
     createAgentLogger((line) => lines.push(line)).info('agent.enrolled', {
       deviceId: 'device-1',
-      privateKeyPem: '-----BEGIN PRIVATE KEY-----',
+      privateKeyPem: 'かぎのなかみ',
     });
 
     expect(lines[0]).toContain('device-1');
-    expect(lines[0]).not.toContain('BEGIN PRIVATE KEY');
+    expect(lines[0]).not.toContain('かぎのなかみ');
   });
 });

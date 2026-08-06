@@ -276,9 +276,12 @@ async function runServe(): Promise<void> {
   const spool = createFileSpool(spoolPath());
   const logger = createAgentLogger();
   let running = true;
+  /** 待っている間に停止の合図が来たら、待ちを打ち切る。次の周回まで待たせない。 */
+  let wake: (() => void) | null = null;
   const stop = (): void => {
     running = false;
     logger.info('agent.stopping');
+    wake?.();
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
@@ -289,11 +292,19 @@ async function runServe(): Promise<void> {
     spool,
     logger,
     running: () => running,
+    // 待ちは unref しない。unref すると、待っている間に他へ用が無いプロセスが終了し、
+    // 常駐しているつもりの端末が最初の待ちで落ちる。
     sleep: (ms) =>
-      new Promise((resolve) => {
-        const timer = setTimeout(resolve, ms);
-        // 待っている間に停止の合図が来ても、次の周回まで抜けられないと止まりが遅い。
-        timer.unref?.();
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          wake = null;
+          resolve();
+        }, ms);
+        wake = () => {
+          clearTimeout(timer);
+          wake = null;
+          resolve();
+        };
       }),
     send: async (punch) => {
       // 連番は送るたびに進める。飛ばすとサーバー側の検査に掛かる。

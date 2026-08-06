@@ -12,7 +12,7 @@
  * 統合テストへ置いているのは、実際のプロセスとファイルシステムを使うためで、
  * 手元と CI の検証範囲を揃えるには既存の 2 つのどちらかへ入れる必要がある。
  */
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -112,4 +112,43 @@ describe('打刻端末の配布物', () => {
     expect(after.sort()).toEqual(before.sort());
     expect(afterSizes).toEqual(sizes);
   });
+});
+
+describe('端末の常駐', () => {
+  const AGENT = join(REPOSITORY_ROOT, 'packages/agent');
+
+  /**
+   * 常駐したまま動き続け、合図で止まることを、実際にプロセスを立てて確かめる。
+   *
+   * 待ちの実装を誤ると、他に用の無いプロセスは最初の待ちで終了する。
+   * ログには「開始しました」だけが残るため、落ちたことに気付けない。
+   */
+  it('立ち上げたあと動き続け、停止の合図で止まる', async () => {
+    const store = join(directory, 'agent.json');
+    // 実際のサービスと同じく、間に何も挟まず直接立てる。
+    // 包むものを挟むと、停止の合図が本体まで届かず、止まり方を確かめられない。
+    const child = spawn(
+      join(AGENT, 'node_modules/.bin/tsx'),
+      ['src/cli.ts', 'serve', '--store', store],
+      {
+        cwd: AGENT,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+
+    const lines: string[] = [];
+    child.stdout.on('data', (chunk: Buffer) => lines.push(chunk.toString()));
+
+    const exited = new Promise<number | null>((resolve) => {
+      child.on('exit', (code) => resolve(code));
+    });
+    // 待ちの時間より長く置く。ここで終わっていれば、常駐できていない。
+    await new Promise((resolve) => setTimeout(resolve, 7_000));
+    expect(child.exitCode).toBeNull();
+
+    child.kill('SIGTERM');
+    await exited;
+
+    expect(lines.join('')).toContain('agent.stopped');
+  }, 30_000);
 });
