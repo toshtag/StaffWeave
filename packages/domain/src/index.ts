@@ -240,6 +240,13 @@ export {
 } from './integration/api-key-usage.js';
 export type { CsvParseProblem, CsvParseResult } from './integration/csv.js';
 export { parseCsv, toCsv, toCsvValue } from './integration/csv.js';
+export type { RetryPolicy } from './integration/retry.js';
+export {
+  DEFAULT_RETRY_POLICY,
+  isRetryable,
+  retryDelayMs,
+  shouldAbandon,
+} from './integration/retry.js';
 export type { ApiScope, WebhookEventType } from './integration/scopes.js';
 export {
   API_SCOPES,
