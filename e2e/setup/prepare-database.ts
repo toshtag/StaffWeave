@@ -154,6 +154,20 @@ export const E2E_ADMIN_CONSOLE_EMPLOYEE: SeededAccount = {
   displayName: '検証 十四郎',
 };
 
+/**
+ * 系統ごとの検査と、アクセシビリティの検査で使う管理者。
+ *
+ * 3 つの系統で同じ検査を流すため、状態を変えない操作だけに使う。
+ * 変える操作を混ぜると、二度目からは前提が崩れる。
+ */
+export const E2E_CROSS_BROWSER_ADMIN: SeededAccount = {
+  email: 'cross-browser@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E015',
+  displayName: '検証 十五郎',
+  role: 'workspace_admin',
+};
+
 const SEEDED_ACCOUNTS = [
   E2E_EMPLOYEE,
   E2E_MOBILE_EMPLOYEE,
@@ -169,6 +183,7 @@ const SEEDED_ACCOUNTS = [
   E2E_API_KEY_ADMIN,
   E2E_ADMIN_CONSOLE_ADMIN,
   E2E_ADMIN_CONSOLE_EMPLOYEE,
+  E2E_CROSS_BROWSER_ADMIN,
 ];
 
 export function e2eDatabaseUrl(): string {

@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 import { E2E_ADMIN_CONSOLE_ADMIN, E2E_ADMIN_CONSOLE_EMPLOYEE } from './setup/prepare-database.js';
+import { overflowingElements } from './support/layout.js';
 
 /**
  * 設定の画面を、API や SQL を使わずに一通り触れることを確かめる。
@@ -116,11 +117,7 @@ test.describe('設定の画面', () => {
     await page.goto('/#/admin/organization/organizations');
     await expect(page.getByRole('heading', { level: 2, name: '組織' })).toBeVisible();
 
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-
-    expect(overflow).toBeLessThanOrEqual(1);
+    expect(await overflowingElements(page)).toEqual([]);
   });
 });
 

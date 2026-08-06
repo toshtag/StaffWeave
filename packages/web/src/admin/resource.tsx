@@ -1,6 +1,7 @@
 import { toCsv } from '@staffweave/domain';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiRequestError } from '../api/client.ts';
+import { ScrollableTable } from '../components/ScrollableTable.tsx';
 
 /**
  * 設定画面の共通部品。
@@ -92,6 +93,8 @@ export interface DataTableProps<T> {
   /** 行ごとの操作。見出しは読み上げ用にだけ置く。 */
   actions?: (row: T) => React.ReactNode;
   actionsLabel?: string;
+  /** 横に送る領域の名前。読み上げで「どの表か」を伝えるために要る。 */
+  label: string;
 }
 
 export function DataTable<T>({
@@ -100,37 +103,35 @@ export function DataTable<T>({
   rowKey,
   actions,
   actionsLabel,
+  label,
 }: DataTableProps<T>): React.JSX.Element {
   return (
-    // 列の多い表は、画面が狭いとはみ出す。表だけを横に送れるようにする。
-    <div className="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th key={column.key} scope="col">
-                {column.header}
-              </th>
-            ))}
-            {actions !== undefined && (
-              <th scope="col">
-                <span className="visually-hidden">{actionsLabel}</span>
-              </th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={rowKey(row)}>
-              {columns.map((column) => (
-                <td key={column.key}>{column.cell?.(row) ?? column.value(row)}</td>
-              ))}
-              {actions !== undefined && <td className="row-actions">{actions(row)}</td>}
-            </tr>
+    <ScrollableTable label={label}>
+      <thead>
+        <tr>
+          {columns.map((column) => (
+            <th key={column.key} scope="col">
+              {column.header}
+            </th>
           ))}
-        </tbody>
-      </table>
-    </div>
+          {actions !== undefined && (
+            <th scope="col">
+              <span className="visually-hidden">{actionsLabel}</span>
+            </th>
+          )}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={rowKey(row)}>
+            {columns.map((column) => (
+              <td key={column.key}>{column.cell?.(row) ?? column.value(row)}</td>
+            ))}
+            {actions !== undefined && <td className="row-actions">{actions(row)}</td>}
+          </tr>
+        ))}
+      </tbody>
+    </ScrollableTable>
   );
 }
 

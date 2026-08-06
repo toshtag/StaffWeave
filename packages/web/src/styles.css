@@ -64,6 +64,9 @@ h2 {
 
 .header-actions {
   display: flex;
+  /* 並べるものが増えると、狭い画面では 1 行に収まらない。
+     折り返さないと、収まらないぶんだけ本文ごと横へ広がる。 */
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
 }

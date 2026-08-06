@@ -108,6 +108,7 @@ export function SettingsSection<T>(props: SettingsSectionProps<T>): React.JSX.El
             columns={props.columns}
             rows={rows}
             rowKey={props.rowKey}
+            label={props.title}
             actionsLabel={labels.rowActions}
             {...(props.onCopy === undefined && props.rowActions === undefined
               ? {}

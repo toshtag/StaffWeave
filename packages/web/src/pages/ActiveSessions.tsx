@@ -1,6 +1,7 @@
 import type { SessionDevice, SessionSummary } from '@staffweave/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
+import { ScrollableTable } from '../components/ScrollableTable.tsx';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
 
@@ -109,7 +110,7 @@ export function ActiveSessions(): React.JSX.Element {
 
       {state.status === 'ready' && (
         <>
-          <table>
+          <ScrollableTable label={messages.activeSessions}>
             <thead>
               <tr>
                 <th scope="col">{messages.sessionDevice}</th>
@@ -146,7 +147,7 @@ export function ActiveSessions(): React.JSX.Element {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </ScrollableTable>
 
           {others.length === 0 ? (
             <p>{messages.noOtherSessions}</p>
