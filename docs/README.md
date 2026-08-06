@@ -24,6 +24,12 @@
 | [backup.md](operations/backup.md) | バックアップと復元 |
 | [device-agent-service.md](operations/device-agent-service.md) | 打刻端末の常駐、Windows サービス、実機で確かめること |
 
+## リリース — `release/`
+
+| 文書 | 内容 |
+| --- | --- |
+| [checklist.md](release/checklist.md) | リリース候補と正式リリースの判定。人が確かめる項目の記録欄 |
+
 ## 開発 — `development/`
 
 | 文書 | 内容 |
