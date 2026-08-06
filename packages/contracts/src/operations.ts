@@ -110,6 +110,13 @@ import {
   updateLeaveTypeRequestSchema,
 } from './schemas/leave.js';
 import {
+  closingReadinessListSchema,
+  listMonthlySummariesQuerySchema,
+  monthlySummaryListSchema,
+  recalculateAttendanceRequestSchema,
+  recalculateAttendanceResponseSchema,
+} from './schemas/monthly.js';
+import {
   createDepartmentRequestSchema,
   createEmployeeRequestSchema,
   createOrganizationRequestSchema,
@@ -1774,6 +1781,52 @@ export const operations = {
       forbidden,
       conflict,
       { status: 404, description: '申請が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  listMonthlySummaries: {
+    operationId: 'listMonthlySummaries',
+    method: 'get',
+    path: '/monthly-summaries',
+    summary: '月次の集計を一覧する（締めた月は締めた時点の値も返す）',
+    tags: ['approval'],
+    security: 'sessionOrApiKey',
+    query: listMonthlySummariesQuerySchema,
+    responses: [
+      { status: 200, description: '月次の集計', schema: monthlySummaryListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
+  },
+  listClosingReadiness: {
+    operationId: 'listClosingReadiness',
+    method: 'get',
+    path: '/monthly-closings/readiness',
+    summary: '締める前に残っているものを一覧する',
+    tags: ['approval'],
+    security: 'session',
+    query: listMonthlySummariesQuerySchema,
+    responses: [
+      { status: 200, description: '締め前の確認', schema: closingReadinessListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
+  },
+  recalculateAttendance: {
+    operationId: 'recalculateAttendance',
+    method: 'post',
+    path: '/attendance/recalculations',
+    summary: '日次の集計をやり直す（締めた月は動かさない）',
+    tags: ['attendance'],
+    security: 'session',
+    requestBody: recalculateAttendanceRequestSchema,
+    responses: [
+      { status: 200, description: 'やり直した結果', schema: recalculateAttendanceResponseSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '従業員が見つからない', schema: errorResponseSchema },
     ],
   },
 } as const satisfies Record<string, OperationContract>;
