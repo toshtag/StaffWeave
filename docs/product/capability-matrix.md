@@ -118,7 +118,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 月次の締めと締め解除 | implemented | `op:closeMonth` `op:reopenMonth` `test:packages/domain/src/approval/monthly-closing.test.ts` | 承認済みの確認を伴う |
 | 締めたあとの編集の制御 | implemented | `migration:0006_create_requests_and_closings.sql` `test:packages/domain/src/approval/monthly-closing.test.ts` | 締め済みの期間は黙って書き換えない |
 | 打刻の修正・取消・追加 | implemented | `op:correctAttendance` `test:packages/domain/src/attendance/corrections.test.ts` `migration:0004_add_attendance_corrections.sql` | 理由必須、元の記録は残る |
-| 過去日の訂正 | partial | `op:correctAttendance` | 24 時間以内なら訂正できる。それより前は、オフライン打刻と同じ検証で断られる（P17） |
+| 過去日の訂正 | implemented | `op:correctAttendance` `test:packages/domain/src/attendance/occurred-at.test.ts` | 400 日前まで遡って直せる。締め済みの期間は断る |
 | 監査記録の閲覧 | implemented | `op:listAuditLogs` | 誰がいつ何を変えたかを追える |
 | 異常の検出と根拠つきの表示 | implemented | `op:listAnomalies` `test:packages/domain/src/audit/anomaly.test.ts` `ui:packages/web/src/pages/AnomalyPanel.tsx` | 確定後の変更・大量修正・時計差・連番欠落・重複打刻 |
 
