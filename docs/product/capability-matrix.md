@@ -57,7 +57,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 自動休憩（労働時間の閾値で足す） | implemented | `test:packages/domain/src/attendance/breaks.test.ts` | 閾値と追加分数を持つ。段階が複数でも足し合わせない |
 | みなし労働時間 | implemented | `op:createWorkCategory` `op:assignLaborSystem` | 勤務区分と労働形態の両方に持てる。実績とは別に出す |
 | シフト属性と表示色 | implemented | `op:createWorkCategory` | 勤務区分が持つ。画面での使い方は P22 |
-| マスターの改定・無効化・コピー | partial | `op:createWorkCategory` | 勤務区分は版を重ねて改定できる。休暇種別と勤務周期は作成と一覧のまま（P20） |
+| マスターの改定・無効化・コピー | partial | `op:createWorkCategory` `op:updateLeaveType` `op:updateRequestType` | 勤務区分は版を重ねて改定でき、休暇種別と申請種別は無効化できる。勤務周期は作成と一覧のまま（P22） |
 
 ## 勤務時間の計算
 
@@ -75,7 +75,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 深夜時間外・深夜休日 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 深夜帯は勤務区分で上書きできる |
 | 遅刻・早退・始業前・終業後 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯との差から出す |
 | 週・月の集計 | planned | - | 集計の境界は計算規則の版が持つ。集計そのものは P23 |
-| 認定時間（申請した残業上限の反映） | planned | - | 申請側に上限時刻が無い（P21） |
+| 認定時間（申請した残業上限の反映） | partial | `op:submitEmployeeRequest` | 申請へ上限時刻を持てる。日次の計算へ効かせるのは P23 |
 
 ## 労働形態
 
@@ -91,11 +91,12 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | 休暇・欠勤の日としての記録と分数の集計 | implemented | `op:createLeaveType` `op:listLeaveTypes` `migration:0011_add_leave_minutes_to_calculations.sql` | 勤務予定の日種別として持ち、実労働とは別に数える |
-| 休暇種別 | partial | `migration:0010_create_work_cycles_and_leave.sql` | code・名称・有給無給を持つ。取得単位も有効期限も持たない（P20） |
-| 残数の台帳（付与・消化・失効・調整・取消） | planned | - | 残数そのものを持たない（P20） |
-| 自動付与・一斉付与・CSV 取込 | planned | - | 付与の手段が無い（P20） |
-| 半日・時間単位の取得 | planned | - | 取得の単位が日だけになる（P20） |
-| 申請と残数の原子的な予約・消化・返却 | planned | - | 残数が無いため予約もできない（P20） |
+| 休暇種別 | implemented | `op:listLeaveTypeSettings` `op:updateLeaveType` `migration:0029_create_leave_ledger.sql` | code・名称・有給無給に加え、取得の単位・1 日ぶんの分数・失効までの月数を持つ。既定値は置かない |
+| 残数の台帳（付与・消化・失効・調整・取消） | implemented | `op:grantLeave` `op:adjustLeave` `op:reverseLeaveEntry` `op:listLeaveLedger` `test:packages/domain/src/leave/ledger.test.ts` `test:packages/api/test/integration/leave-ledger.test.ts` | 追記のみ。残数は保存せず、任意の時点の値を台帳から組み立てる |
+| 残数の再構築と失効の反映 | implemented | `op:listLeaveBalances` `test:packages/domain/src/leave/ledger.test.ts` | 期限の近い付与から先に消化する。期限を過ぎた分は残数から外れる |
+| 自動付与・一斉付与・CSV 取込 | planned | - | 手動の付与だけがある。一括の手段は管理画面と同時に作る（P22） |
+| 半日・時間単位の取得 | implemented | `op:updateLeaveType` `test:packages/domain/src/leave/ledger.test.ts` | 取得の単位を分で設定し、その倍数だけを受け付ける |
+| 申請と残数の原子的な予約・消化・返却 | implemented | `op:decideEmployeeRequest` `migration:0029_create_leave_ledger.sql` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった時点で同じトランザクションで消化する。残数不足は承認ごと断る。二重反映は一意制約が止める |
 | 休暇管理簿と失効予定の出力 | planned | - | 台帳のあとに作る（P23） |
 
 ## 申請と承認
@@ -104,12 +105,15 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | --- | --- | --- | --- |
 | 日次勤怠の申請・承認・差し戻し・取消 | implemented | `op:submitDailyRequest` `op:approveDailyRequest` `op:returnDailyRequest` `op:cancelDailyRequest` `test:packages/domain/src/approval/daily-request.test.ts` | 遷移の履歴を追記で残す |
 | 自己承認の禁止 | implemented | `test:packages/domain/src/identity/roles.test.ts` | 承認者と対象者が同じなら断る |
-| 申請区分（休暇・残業・休日出勤・直行直帰・打刻修正など） | planned | - | 従業員と日付ごとに 1 件の日次申請しか無い（P21） |
-| 区分ごとの入力項目と必須の設定 | planned | - | 申請区分のあとに作る（P21） |
-| 1〜4 段階の承認と申請時点の経路の固定 | planned | - | 権限を持つ利用者が 1 度承認すると完了する（P21） |
-| 代理承認・不在対応 | planned | - | 段階承認のあとに判断する（P21） |
-| 承認結果の勤怠・休暇への反映 | planned | - | 承認は申請の状態だけを変え、勤怠へ反映しない（P21） |
-| 利用者への通知 | planned | - | Webhook は外部システム向けで、利用者通知の代わりにはならない（P21） |
+| 申請区分（休暇・残業・休日出勤・打刻修正など） | implemented | `op:createRequestType` `op:listRequestTypes` `op:submitEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 組織が定義する。従業員と日付ごとに 1 件という制限は無い |
+| 区分ごとの入力項目と必須の設定 | partial | `op:createRequestType` `op:updateRequestType` | 理由・休暇種別・時間帯・残業の上限時刻の要否を区分ごとに決められる。添付は P24 |
+| 1〜4 段階の承認と申請時点の経路の固定 | implemented | `op:decideEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` `test:packages/api/test/integration/employee-request.test.ts` | 段数は提出時に写す。あとで定義を変えても進行中の申請の経路は変わらない |
+| 決裁の再送で段が進まないこと | implemented | `migration:0030_create_request_types_and_approvals.sql` `test:packages/api/test/integration/employee-request.test.ts` | 何段目・何回目の提出かを添えさせ、同じ組み合わせの二度目は一意制約が断る |
+| 代理承認・不在対応 | partial | `op:decideEmployeeRequest` | 本来の承認者を決裁へ残せる。不在時の自動委任は無い |
+| 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
+| 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった休暇の申請だけを、同じトランザクションで消化する |
+| 承認結果の勤怠への反映 | planned | - | 残業・休日出勤・打刻修正の申請は、まだ日次の計算へ効かない（P23） |
+| 利用者への通知 | planned | - | Webhook は外部システム向けで、利用者通知の代わりにはならない（P24） |
 
 ## 締めと監査
 
