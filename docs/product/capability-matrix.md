@@ -75,7 +75,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 深夜時間外・深夜休日 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 深夜帯は勤務区分で上書きできる |
 | 遅刻・早退・始業前・終業後 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯との差から出す |
 | 週・月の集計 | partial | `op:listMonthlySummaries` `test:packages/domain/src/attendance/monthly.test.ts` | 月の集計は出る。週の集計は未実装（境界は計算規則の版が持つ） |
-| 認定時間（申請した残業上限の反映） | partial | `op:submitEmployeeRequest` | 申請へ上限時刻を持てる。日次の計算へ効かせるのは未実装 |
+| 認定時間（申請した残業上限の反映） | implemented | `op:decideEmployeeRequest` `test:packages/domain/src/attendance/approved-adjustments.test.ts` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 承認しきった上限時刻までを認定し、超えた分を分けて出す。所定終業が未設定なら 0 ではなく未設定 |
 
 ## 労働形態
 
@@ -112,7 +112,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 代理承認・不在対応 | partial | `op:decideEmployeeRequest` | 本来の承認者を決裁へ残せる。不在時の自動委任は無い |
 | 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
 | 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった休暇の申請だけを、同じトランザクションで消化する |
-| 承認結果の勤怠への反映 | planned | - | 残業・休日出勤・打刻修正の申請は、まだ日次の計算へ効かない |
+| 承認結果の勤怠への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 残業・休日出勤・打刻修正を、承認しきった時点だけ日次へ効かせる。締め済みの期間を含む申請は承認を断る |
 | 利用者への通知 | planned | - | Webhook は外部システム向けで、利用者通知の代わりにはならない |
 
 ## 締めと監査
