@@ -1,4 +1,8 @@
-import type { DailyRequestRecord, SessionResponse } from '@staffweave/contracts';
+import type {
+  EmployeeRequestRecord,
+  RequestTypeRecord,
+  SessionResponse,
+} from '@staffweave/contracts';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
@@ -8,8 +12,14 @@ import { recentBusinessDateRange } from '../session/business-date.ts';
 const APPROVAL_RANGE_DAYS = 90;
 
 /**
- * 承認待ちの申請。
- * 承認権限を持つ利用者にだけ表示する。
+ * 決裁を待っている申請。
+ *
+ * 出すのは、いまの段が自分の番のものだけです。全部を出すと、押しても断られる
+ * 申請が混ざり、列として使えません。判断はサーバーが段ごとの承認者で行い、
+ * 画面はその結果を並べます。
+ *
+ * 決裁は段と提出回数を添えて送ります。添えないと、古い画面から送り直した
+ * 決裁が次の段へ進めてしまいます。
  */
 export function PendingApprovals({
   session,
@@ -17,7 +27,9 @@ export function PendingApprovals({
   session: SessionResponse;
 }): React.JSX.Element | null {
   const { messages } = useLocale();
-  const [requests, setRequests] = useState<DailyRequestRecord[] | null>(null);
+  const labels = messages.requests;
+  const [requests, setRequests] = useState<EmployeeRequestRecord[] | null>(null);
+  const [types, setTypes] = useState<RequestTypeRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [returning, setReturning] = useState<{ id: string; reason: string } | null>(null);
   const reasonId = useId();
@@ -27,22 +39,47 @@ export function PendingApprovals({
   const load = useCallback(() => {
     if (!canApprove) return;
     api
-      .listDailyRequests({
+      .listEmployeeRequests({
         ...recentBusinessDateRange(session, APPROVAL_RANGE_DAYS),
         state: 'submitted',
+        // いまの段が自分の番のものだけを出す。全部を出すと、押しても断られる
+        // 申請が混ざり、列として使えない。
+        awaitingMe: 'true',
       })
       .then((body) => setRequests(body.requests))
       .catch(() => setRequests([]));
   }, [canApprove, session]);
 
+  useEffect(() => {
+    if (!canApprove) return;
+    api
+      .listRequestTypes()
+      .then((body) => setTypes(body.requestTypes))
+      .catch(() => setTypes([]));
+  }, [canApprove]);
+
   useEffect(load, [load]);
 
   if (!canApprove) return null;
 
-  function decide(requestId: string, decision: 'approve' | 'return', comment?: string): void {
+  const nameOfType = (id: string): string =>
+    types.find((candidate) => candidate.id === id)?.name ?? id;
+
+  function decide(
+    request: EmployeeRequestRecord,
+    decision: 'approved' | 'returned',
+    comment?: string,
+  ): void {
     setError(null);
     api
-      .decideDailyRequest(requestId, decision, comment === undefined ? {} : { comment })
+      // 段と提出回数を添える。添えないと、古い画面から送り直した決裁が
+      // 次の段へ進めてしまう。
+      .decideEmployeeRequest(request.id, {
+        decision,
+        step: request.currentStep,
+        submission: request.submissions,
+        ...(comment === undefined ? {} : { comment }),
+      })
       .then(() => {
         setReturning(null);
         load();
@@ -70,8 +107,12 @@ export function PendingApprovals({
           {requests.map((request) => (
             <li key={request.id}>
               <span>{request.businessDate}</span>
+              <span>{nameOfType(request.requestTypeId)}</span>
+              <span>
+                {labels.progress(request.currentStep, request.totalSteps, request.submissions)}
+              </span>
               <span className="punch-actions">
-                <button type="button" onClick={() => decide(request.id, 'approve')}>
+                <button type="button" onClick={() => decide(request, 'approved')}>
                   {messages.approve}
                 </button>
                 <button type="button" onClick={() => setReturning({ id: request.id, reason: '' })}>
@@ -88,7 +129,8 @@ export function PendingApprovals({
           className="correction-form"
           onSubmit={(event) => {
             event.preventDefault();
-            decide(returning.id, 'return', returning.reason);
+            const target = requests?.find((request) => request.id === returning.id);
+            if (target !== undefined) decide(target, 'returned', returning.reason);
           }}
         >
           <div className="field">

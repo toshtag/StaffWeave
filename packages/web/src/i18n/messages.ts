@@ -186,6 +186,33 @@ export interface Messages {
   severityInfo: string;
   /** 設定の画面。項目が多いため、他と混ぜず 1 つのまとまりとして持つ。 */
   admin: AdminMessages;
+  requests: RequestMessages;
+}
+
+/** 従業員の申請センターの文言。 */
+export interface RequestMessages {
+  title: string;
+  hint: string;
+  requestType: string;
+  businessDate: string;
+  endsOn: string;
+  leaveType: string;
+  startMinutes: string;
+  endMinutes: string;
+  overtimeLimit: string;
+  reason: string;
+  submit: string;
+  submitted: string;
+  myRequests: string;
+  noRequests: string;
+  cancel: string;
+  cancelled: string;
+  resubmit: string;
+  resubmitted: string;
+  stateLabel: Record<'submitted' | 'approved' | 'returned' | 'cancelled', string>;
+  decisionLabel: Record<'approved' | 'returned', string>;
+  progress: (step: number, total: number, submissions: number) => string;
+  decisionLine: (step: number, submission: number, decision: string) => string;
 }
 /** 設定の画面の文言。 */
 export interface AdminMessages {
@@ -699,6 +726,37 @@ const ja: Messages = {
   downloadCsv: 'CSV で取り出す',
   severityWarning: '要確認',
   severityInfo: '参考',
+  requests: {
+    title: '申請',
+    hint: '申請の種別を選ぶと、その種別が求める入力だけが出ます。',
+    requestType: '申請の種別',
+    businessDate: '対象日',
+    endsOn: '終了日（期間で出す場合）',
+    leaveType: '休暇種別',
+    startMinutes: '開始（現地 0 時からの分）',
+    endMinutes: '終了（現地 0 時からの分）',
+    overtimeLimit: '残業の上限時刻（現地 0 時からの分）',
+    reason: '理由',
+    submit: '申請する',
+    submitted: '申請しました',
+    myRequests: '自分の申請',
+    noRequests: 'まだ申請していません',
+    cancel: '取り下げる',
+    cancelled: '取り下げました',
+    resubmit: '出し直す',
+    resubmitted: '出し直しました',
+    stateLabel: {
+      submitted: '決裁待ち',
+      approved: '承認済み',
+      returned: '差し戻し',
+      cancelled: '取り下げ',
+    },
+    decisionLabel: { approved: '承認', returned: '差し戻し' },
+    progress: (step: number, total: number, submissions: number) =>
+      `${step} / ${total} 段目・${submissions} 回目の提出`,
+    decisionLine: (step: number, submission: number, decision: string) =>
+      `${step} 段目（${submission} 回目）: ${decision}`,
+  },
   admin: {
     title: '設定',
     openConsole: '設定を開く',
@@ -1282,6 +1340,37 @@ const en: Messages = {
   downloadCsv: 'Download as CSV',
   severityWarning: 'Needs review',
   severityInfo: 'For reference',
+  requests: {
+    title: 'Requests',
+    hint: 'Pick a type and only the inputs that type requires appear.',
+    requestType: 'Request type',
+    businessDate: 'Business date',
+    endsOn: 'End date (for a range)',
+    leaveType: 'Leave type',
+    startMinutes: 'Start (minutes from local midnight)',
+    endMinutes: 'End (minutes from local midnight)',
+    overtimeLimit: 'Overtime limit (minutes from local midnight)',
+    reason: 'Reason',
+    submit: 'Submit',
+    submitted: 'Submitted',
+    myRequests: 'My requests',
+    noRequests: 'Nothing submitted yet',
+    cancel: 'Withdraw',
+    cancelled: 'Withdrawn',
+    resubmit: 'Resubmit',
+    resubmitted: 'Resubmitted',
+    stateLabel: {
+      submitted: 'Awaiting a decision',
+      approved: 'Approved',
+      returned: 'Returned',
+      cancelled: 'Withdrawn',
+    },
+    decisionLabel: { approved: 'Approved', returned: 'Returned' },
+    progress: (step: number, total: number, submissions: number) =>
+      `Step ${step} of ${total}, submission ${submissions}`,
+    decisionLine: (step: number, submission: number, decision: string) =>
+      `Step ${step} (submission ${submission}): ${decision}`,
+  },
   admin: {
     title: 'Settings',
     openConsole: 'Open settings',
