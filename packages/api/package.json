@@ -13,6 +13,7 @@
     "bootstrap": "tsx --env-file-if-exists=../../.env src/cli/bootstrap.ts",
     "webhook-worker": "tsx --env-file-if-exists=../../.env src/cli/run-webhook-worker.ts",
     "leave-grants": "tsx --env-file-if-exists=../../.env src/cli/run-leave-grants.ts",
+    "retention": "tsx --env-file-if-exists=../../.env src/cli/run-retention.ts",
     "typecheck": "tsc --noEmit",
     "seed:demo": "tsx --env-file-if-exists=../../.env src/cli/seed-demo.ts"
   },

@@ -211,7 +211,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | メトリクス・アラート | planned | - | v0.1 の範囲外。構造化ログを既存のログ基盤で拾う |
 | Row-Level Security | planned | - | アプリ側の認可が正本。採否を決める（P25） |
 | データの保持の取り決め | implemented | `docs:operations/retention.md` | 何をいつまで持つか、消してはいけないもの、退職者の扱いを決めた |
-| 保持期間を過ぎたデータの自動削除 | planned | - | v0.1 の範囲外。手で消す |
+| 保持期間を過ぎたデータの削除 | implemented | `script:packages/api/src/cli/run-retention.ts` `test:packages/api/test/integration/retention.test.ts` `docs:operations/retention.md` | 事前確認と実行を持つ command。消した件数を同じトランザクションで監査へ残す。保持する日数は渡した値だけを使い、渡さなかった対象は消さない。定期実行の仕組みは cron などに委ねる |
 | 配布物の checksum と出所の対応 | implemented | `script:scripts/release-assets.sh` `script:scripts/verify-release-assets.mjs` `test:test/release-assets.test.ts` | 版・commit・checksum・構成一覧の対応を、配る前に突き合わせる |
 | 配る前の必須ゲート | implemented | `script:scripts/verify-release-checks.mjs` `test:packages/api/test/integration/release-checks.test.ts` | tag の SHA で必須の workflow が成功していることと、tag と package の版の一致を、Release の workflow が確かめる。判断に要るものが欠けていれば通さない |
 | 配布物の署名 | planned | - | 署名には所有者の鍵が要る。鍵を持たない者の署名は「誰が配ったか」を示せない |
