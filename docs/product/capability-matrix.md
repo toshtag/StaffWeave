@@ -33,7 +33,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 本人による打刻（出勤・退勤・休憩） | implemented | `op:recordAttendanceEvent` `op:getTodayAttendance` `test:packages/domain/src/attendance/events.test.ts` | 追記のみ・冪等受理・監査記録つき |
 | スマートフォンからの打刻 | implemented | `ui:packages/web/src/pages/TodayAttendance.tsx` `test:packages/web/src/offline/punch-queue.test.ts` | オフライン待機と自動再送を含む |
 | 署名付き端末イベントの受理 | implemented | `op:recordDeviceEvent` `test:packages/domain/src/device/protocol.test.ts` | 署名・連番・時計差を検証して受け取る。送る側はシミュレーター |
-| 実運用できる共有打刻端末 | planned | - | 常駐する実機が無く、シミュレーターから送っている（P24） |
+| 実運用できる共有打刻端末 | partial | `test:packages/agent/src/service/runner.test.ts` `docs:operations/device-agent-service.md` | 常駐・送信待ち・PC/SC の読み取りは動く。**実機での常駐は未確認** |
 | カードイベントの受理と指紋の登録 | implemented | `op:recordCardEvent` `op:registerCard` | 生の識別子は送らず保存もしない |
 | 実カードリーダーからの読み取り | partial | `test:packages/agent/src/card/pcsc.test.ts` `docs:operations/device-agent-service.md` | PC/SC の経路（APDU・状態語・連続タップ・開き直し）はある。装置を叩く部品は端末側で用意する。**実機の読み取り装置では未確認** |
 | PC セッション観測の受理と差異の提示 | implemented | `op:recordSessionObservations` `op:getDiscrepancyReport` `test:packages/domain/src/attendance/session-observations.test.ts` | 勤務時間は自動確定しない |
