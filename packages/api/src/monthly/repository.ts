@@ -179,6 +179,7 @@ interface TotalsRow {
   late_minutes: number | null;
   early_leave_minutes: number | null;
   deemed_minutes: number | null;
+  counts_as_working_day: boolean;
   recognized_overtime_minutes: number | null;
   unapproved_overtime_minutes: number | null;
   approved_holiday_minutes: number | null;
@@ -188,6 +189,7 @@ interface TotalsRow {
 function toDailyTotals(row: TotalsRow): DailyTotals {
   return {
     businessDate: row.business_date,
+    countsAsWorkingDay: row.counts_as_working_day,
     attendedMinutes: row.attended_minutes,
     workedMinutes: row.worked_minutes,
     breakMinutes: row.break_minutes,
@@ -245,7 +247,8 @@ export function createMonthlyRepository(db: Queryable): MonthlyRepository {
     async listDailyTotals(workspaceId, employeeId, period) {
       // 日ごとに最新の版だけを採る。版を重ねているため、そのまま足すと二重になる。
       const rows = await db.query<TotalsRow>(
-        `SELECT DISTINCT ON (business_date) business_date, version, ${TOTALS_COLUMNS}
+        `SELECT DISTINCT ON (business_date) business_date, version, counts_as_working_day,
+                ${TOTALS_COLUMNS}
            FROM attendance_calculations
           WHERE workspace_id = $1 AND employee_id = $2
             AND business_date >= $3::date
@@ -261,7 +264,8 @@ export function createMonthlyRepository(db: Queryable): MonthlyRepository {
 
     async listDailyTotalsBetween(workspaceId, employeeId, from, to) {
       const rows = await db.query<TotalsRow>(
-        `SELECT DISTINCT ON (business_date) business_date, version, ${TOTALS_COLUMNS}
+        `SELECT DISTINCT ON (business_date) business_date, version, counts_as_working_day,
+                ${TOTALS_COLUMNS}
            FROM attendance_calculations
           WHERE workspace_id = $1 AND employee_id = $2
             AND business_date >= $3::date AND business_date <= $4::date

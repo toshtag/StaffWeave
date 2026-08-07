@@ -10,6 +10,7 @@ import type {
   ApiScope,
   ApproverPolicy,
   ClosingFindingKind,
+  DayType,
   DeviceBrowser,
   DeviceKind,
   DeviceOs,
@@ -205,6 +206,44 @@ export interface AdminMessages {
   sectionEmployees: string;
   sectionUserScopes: string;
   sectionWorkCategories: string;
+  sectionWorkPatterns: string;
+  sectionWorkCycles: string;
+  sectionWorkSchedules: string;
+  workPatternsHint: string;
+  workCyclesHint: string;
+  workSchedulesHint: string;
+  noWorkPatterns: string;
+  noWorkCycles: string;
+  noWorkSchedules: string;
+  workPattern: string;
+  workCycle: string;
+  workCategory: string;
+  breakMinutes: string;
+  cycleLength: string;
+  cycleLengthHint: string;
+  cycleWorkingDays: string;
+  cycleWorkingDaysTooMany: string;
+  cycleNeedsPattern: string;
+  cycleCategoryHint: string;
+  anchorDate: string;
+  anchorDateHint: string;
+  assignWorkCycle: string;
+  assigned: string;
+  generateFrom: string;
+  generateTo: string;
+  generateSchedules: string;
+  generatedOutcome: (created: number, skipped: number, uncovered: number) => string;
+  businessDate: string;
+  dayType: string;
+  dayTypeLabel: Record<DayType, string>;
+  dayTypeFromCategory: string;
+  scheduleCategoryHint: string;
+  minutesFromMidnightHint: string;
+  pickEmployeeFirst: string;
+  none: string;
+  locationCapture: string;
+  startLocationCapture: string;
+  stopLocationCapture: string;
   sectionCalculationRules: string;
   sectionLaborSystems: string;
   sectionLeaveTypes: string;
@@ -272,6 +311,17 @@ export interface AdminMessages {
   effectiveFrom: string;
   effectiveFromHint: string;
   effectiveTo: string;
+  prescribedMinutesLabel: string;
+  categoryDeemedMinutes: string;
+  nightStart: string;
+  nightEnd: string;
+  gapTreatmentLabel: string;
+  gapTreatmentType: Record<'non_working' | 'break', string>;
+  countsAsWorkingDay: string;
+  colorLabel: string;
+  autoBreakThreshold: string;
+  autoBreakAdditional: string;
+  workCategoryFieldsHint: string;
   openEnded: string;
   scheduledHours: string;
   scheduledStart: string;
@@ -667,6 +717,52 @@ const ja: Messages = {
     sectionEmployees: '従業員',
     sectionUserScopes: '閲覧範囲',
     sectionWorkCategories: '勤務区分',
+    sectionWorkPatterns: '勤務パターン',
+    sectionWorkCycles: '勤務周期',
+    sectionWorkSchedules: '勤務予定',
+    workPatternsHint: '所定時刻のひな形です。休憩の時間帯やみなしは勤務区分で決めます。',
+    workCyclesHint: '長さの決まった並びを繰り返します。曜日は前提にしません。',
+    workSchedulesHint: '従業員と期間を選ぶと、その範囲の予定を出します。',
+    noWorkPatterns: '勤務パターンはまだありません。',
+    noWorkCycles: '勤務周期はまだありません。',
+    noWorkSchedules: '従業員と期間を選んでください。',
+    workPattern: '勤務パターン',
+    workCycle: '勤務周期',
+    workCategory: '勤務区分',
+    breakMinutes: '休憩（分）',
+    cycleLength: '周期の長さ（日）',
+    cycleLengthHint: '7 なら週単位、4 なら 2 勤 2 休のような回し方になります。',
+    cycleWorkingDays: '勤務日の数',
+    cycleWorkingDaysTooMany: '勤務日の数は、周期の長さ以下にしてください。',
+    cycleNeedsPattern: '勤務日には勤務パターンが要ります。先に作ってください。',
+    cycleCategoryHint: '割り当てると、生成した予定へ引き継ぎます。',
+    anchorDate: '周期の起点日',
+    anchorDateHint: 'この日が周期の 1 日目になります。',
+    assignWorkCycle: '周期を割り当てる',
+    assigned: '割り当てました',
+    generateFrom: '開始日',
+    generateTo: '終了日',
+    generateSchedules: '予定を作る',
+    generatedOutcome: (created: number, skipped: number, uncovered: number) =>
+      `${created} 日分を作りました。既にある予定 ${skipped} 日、割当の無い日 ${uncovered} 日。`,
+    businessDate: '業務日',
+    dayType: '日種別',
+    dayTypeLabel: {
+      working_day: '勤務日',
+      non_working_day: '法定外休日',
+      legal_holiday: '法定休日',
+      public_holiday: '祝日',
+      leave: '休暇',
+      absence: '欠勤',
+    },
+    dayTypeFromCategory: '勤務区分から写す',
+    scheduleCategoryHint: '休憩・みなし・深夜帯・中抜けの扱いは、ここで決まります。',
+    minutesFromMidnightHint: '現地 0 時からの分数で入れます。9:00 なら 540。',
+    pickEmployeeFirst: '先に従業員を選んでください。',
+    none: '指定しない',
+    locationCapture: '打刻時の位置情報',
+    startLocationCapture: '位置情報を取る',
+    stopLocationCapture: '位置情報を取らない',
     sectionCalculationRules: '計算規則の版',
     sectionLaborSystems: '労働形態',
     sectionLeaveTypes: '休暇種別',
@@ -749,6 +845,18 @@ const ja: Messages = {
     effectiveFrom: '適用開始日',
     effectiveFromHint: '同じコードで期間が重なる版は作れません。',
     effectiveTo: '適用終了日',
+    prescribedMinutesLabel: '所定労働分数',
+    categoryDeemedMinutes: 'みなし労働分数',
+    nightStart: '深夜帯の開始（分）',
+    nightEnd: '深夜帯の終了（分）',
+    gapTreatmentLabel: '中抜けの扱い',
+    gapTreatmentType: { non_working: '働いていない時間として扱う', break: '休憩として扱う' },
+    countsAsWorkingDay: '出勤日として数える',
+    colorLabel: '色',
+    autoBreakThreshold: '自動休憩の閾値（分）',
+    autoBreakAdditional: '自動休憩で引く分数',
+    workCategoryFieldsHint:
+      '空にした項目は使いません。所定労働分数を決めると、始業から終業までの長さより優先します。',
     openEnded: '（終了日なし）',
     scheduledHours: '所定の時間帯',
     scheduledStart: '所定の開始',
@@ -1192,6 +1300,53 @@ const en: Messages = {
     sectionEmployees: 'Employees',
     sectionUserScopes: 'Visibility',
     sectionWorkCategories: 'Work categories',
+    sectionWorkPatterns: 'Work patterns',
+    sectionWorkCycles: 'Work cycles',
+    sectionWorkSchedules: 'Work schedules',
+    workPatternsHint:
+      'Templates for scheduled times. Breaks and deemed hours come from work categories.',
+    workCyclesHint: 'A fixed-length sequence that repeats. Weekdays are not assumed.',
+    workSchedulesHint: 'Pick an employee and a range to list the schedules.',
+    noWorkPatterns: 'No work patterns yet.',
+    noWorkCycles: 'No work cycles yet.',
+    noWorkSchedules: 'Pick an employee and a range.',
+    workPattern: 'Work pattern',
+    workCycle: 'Work cycle',
+    workCategory: 'Work category',
+    breakMinutes: 'Break (minutes)',
+    cycleLength: 'Cycle length (days)',
+    cycleLengthHint: '7 for weekly, 4 for two-on two-off, and so on.',
+    cycleWorkingDays: 'Working days',
+    cycleWorkingDaysTooMany: 'Working days cannot exceed the cycle length.',
+    cycleNeedsPattern: 'Working days need a work pattern. Create one first.',
+    cycleCategoryHint: 'Carried over to generated schedules.',
+    anchorDate: 'Cycle anchor date',
+    anchorDateHint: 'This date is day one of the cycle.',
+    assignWorkCycle: 'Assign the cycle',
+    assigned: 'Assigned',
+    generateFrom: 'From',
+    generateTo: 'To',
+    generateSchedules: 'Generate schedules',
+    generatedOutcome: (created: number, skipped: number, uncovered: number) =>
+      `Created ${created} day(s). ${skipped} already existed, ${uncovered} had no assignment.`,
+    businessDate: 'Business date',
+    dayType: 'Day type',
+    dayTypeLabel: {
+      working_day: 'Working day',
+      non_working_day: 'Non-statutory holiday',
+      legal_holiday: 'Statutory holiday',
+      public_holiday: 'Public holiday',
+      leave: 'Leave',
+      absence: 'Absence',
+    },
+    dayTypeFromCategory: 'Take it from the work category',
+    scheduleCategoryHint: 'Breaks, deemed hours, the night band and gaps come from here.',
+    minutesFromMidnightHint: 'Minutes from local midnight. 540 means 9:00.',
+    pickEmployeeFirst: 'Pick an employee first.',
+    none: 'Not set',
+    locationCapture: 'Punch location',
+    startLocationCapture: 'Capture location',
+    stopLocationCapture: 'Stop capturing location',
     sectionCalculationRules: 'Calculation rule versions',
     sectionLaborSystems: 'Labour systems',
     sectionLeaveTypes: 'Leave types',
@@ -1275,6 +1430,18 @@ const en: Messages = {
     effectiveFrom: 'Effective from',
     effectiveFromHint: 'Versions under one code may not overlap.',
     effectiveTo: 'Effective to',
+    prescribedMinutesLabel: 'Prescribed minutes',
+    categoryDeemedMinutes: 'Deemed minutes',
+    nightStart: 'Night band start (minutes)',
+    nightEnd: 'Night band end (minutes)',
+    gapTreatmentLabel: 'Gaps between sessions',
+    gapTreatmentType: { non_working: 'Not worked', break: 'Counted as a break' },
+    countsAsWorkingDay: 'Counts as a working day',
+    colorLabel: 'Colour',
+    autoBreakThreshold: 'Automatic break threshold (minutes)',
+    autoBreakAdditional: 'Automatic break minutes',
+    workCategoryFieldsHint:
+      'Fields left empty are not used. A prescribed minutes value overrides the start-to-end length.',
     openEnded: '(no end date)',
     scheduledHours: 'Scheduled hours',
     scheduledStart: 'Scheduled start',

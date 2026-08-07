@@ -405,3 +405,103 @@ describe('月次と給与への引き渡し', () => {
     expect(columnValue('night_minutes')).toBe('60');
   });
 });
+
+describe('勤務区分の設定が、予定と集計へ効く', () => {
+  it('日種別を勤務区分から写す', async () => {
+    const instance = app();
+    const category = await createCategory(instance, {
+      code: 'LEGAL',
+      categoryType: 'legal_holiday',
+      scheduledStartMinutes: undefined,
+      scheduledEndMinutes: undefined,
+      fixedBreaks: [],
+    });
+
+    // 日種別を明示しなければ、勤務区分の種別が予定の日種別になる。
+    const saved = await scheduleDay(instance, {
+      workCategoryId: category.id,
+      dayType: undefined,
+      startMinutes: undefined,
+      endMinutes: undefined,
+    });
+
+    expect(saved.dayType).toBe('legal_holiday');
+  });
+
+  it('明示した日種別は、勤務区分より優先する', async () => {
+    const instance = app();
+    const category = await createCategory(instance, {
+      code: 'LEGAL2',
+      categoryType: 'legal_holiday',
+    });
+
+    const saved = await scheduleDay(instance, {
+      workCategoryId: category.id,
+      dayType: 'working_day',
+    });
+
+    expect(saved.dayType).toBe('working_day');
+  });
+
+  it('法定休日の勤務区分を割り当てると、法定休日労働として数える', async () => {
+    const instance = app();
+    const category = await createCategory(instance, {
+      code: 'LEGAL3',
+      categoryType: 'legal_holiday',
+      fixedBreaks: [],
+    });
+
+    await scheduleDay(instance, {
+      workCategoryId: category.id,
+      dayType: undefined,
+      startMinutes: undefined,
+      endMinutes: undefined,
+    });
+    await punch(instance, 'clock_in', IN_AT, 'category-legal-in');
+    await punch(instance, 'clock_out', OUT_AT, 'category-legal-out');
+    const day = await workDay(instance);
+
+    expect(day.calculation?.legalHolidayMinutes).toBe(ATTENDED_MINUTES);
+    expect(day.calculation?.nonLegalHolidayMinutes).toBe(0);
+  });
+
+  it('所定労働分数を決めてあれば、所定はその値になる', async () => {
+    const instance = app();
+    // 09:00–18:00 の所定でも、決めた 7 時間を採る。
+    const category = await createCategory(instance, {
+      code: 'PRESCRIBED',
+      prescribedMinutes: 7 * 60,
+      fixedBreaks: [],
+    });
+
+    const day = await workedDayWith(
+      instance,
+      { workCategoryId: category.id },
+      'category-prescribed',
+    );
+
+    expect(day.calculation?.scheduledMinutes).toBe(7 * 60);
+  });
+
+  it('出勤日として数えない勤務区分の日は、月次の出勤日数へ入らない', async () => {
+    const instance = app();
+    const category = await createCategory(instance, {
+      code: 'NOTCOUNTED',
+      countsAsWorkingDay: false,
+      fixedBreaks: [],
+    });
+
+    const day = await workedDayWith(instance, { workCategoryId: category.id }, 'category-notcount');
+    expect(day.calculation?.workedMinutes).toBe(ATTENDED_MINUTES);
+    expect(day.calculation?.countsAsWorkingDay).toBe(false);
+
+    const response = await instance.request(
+      `/api/monthly-summaries?period=${PERIOD}&employeeId=${fixture.employeeId}`,
+      authorized(fixture.adminCookie),
+    );
+    const { summaries } = (await response.json()) as { summaries: { workedDays: number }[] };
+
+    // 実労働はあるが、出勤日としては数えない。
+    expect(summaries[0]?.workedDays).toBe(0);
+  });
+});

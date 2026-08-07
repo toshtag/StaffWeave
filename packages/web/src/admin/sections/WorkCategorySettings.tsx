@@ -1,4 +1,4 @@
-import type { WorkCategoryRecord, WorkCategoryType } from '@staffweave/contracts';
+import type { GapTreatment, WorkCategoryRecord, WorkCategoryType } from '@staffweave/contracts';
 import { WORK_CATEGORY_TYPES } from '@staffweave/contracts';
 import { useCallback, useState } from 'react';
 import { api } from '../../api/client.ts';
@@ -26,6 +26,12 @@ function clockOf(minutes: number | null): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
+/** 空欄は「決めていない」として扱う。0 と空欄を混ぜない。 */
+function numberOrUndefined(text: string): number | undefined {
+  const value = Number(text.trim());
+  return text.trim() === '' || Number.isNaN(value) ? undefined : value;
+}
+
 export function WorkCategorySettings({ permissions }: SectionProps): React.JSX.Element {
   const { messages } = useLocale();
   const labels = messages.admin;
@@ -39,6 +45,18 @@ export function WorkCategorySettings({ permissions }: SectionProps): React.JSX.E
   const [breakStart, setBreakStart] = useState('');
   const [breakEnd, setBreakEnd] = useState('');
   const [shift, setShift] = useState(false);
+  const [effectiveTo, setEffectiveTo] = useState('');
+  const [prescribed, setPrescribed] = useState('');
+  const [deemed, setDeemed] = useState('');
+  const [nightStart, setNightStart] = useState('');
+  const [nightEnd, setNightEnd] = useState('');
+  const [gapTreatment, setGapTreatment] = useState<GapTreatment>('non_working');
+  const [countsAsWorkingDay, setCountsAsWorkingDay] = useState(true);
+  const [color, setColor] = useState('');
+  const [breakStart2, setBreakStart2] = useState('');
+  const [breakEnd2, setBreakEnd2] = useState('');
+  const [autoThreshold, setAutoThreshold] = useState('');
+  const [autoAdditional, setAutoAdditional] = useState('');
 
   const columns: Column<WorkCategoryRecord>[] = [
     { key: 'code', header: labels.code, value: (row) => row.code },
@@ -99,12 +117,42 @@ export function WorkCategorySettings({ permissions }: SectionProps): React.JSX.E
         setBreakStart(clockOf(row.fixedBreaks[0]?.startMinutes ?? null));
         setBreakEnd(clockOf(row.fixedBreaks[0]?.endMinutes ?? null));
         setShift(row.shift);
+        setEffectiveTo(row.effectiveTo ?? '');
+        setPrescribed(row.prescribedMinutes === null ? '' : String(row.prescribedMinutes));
+        setDeemed(row.deemedMinutes === null ? '' : String(row.deemedMinutes));
+        setNightStart(row.nightStartMinutes === null ? '' : String(row.nightStartMinutes));
+        setNightEnd(row.nightEndMinutes === null ? '' : String(row.nightEndMinutes));
+        setGapTreatment(row.gapTreatment);
+        setCountsAsWorkingDay(row.countsAsWorkingDay);
+        setColor(row.color ?? '');
+        setBreakStart2(clockOf(row.fixedBreaks[1]?.startMinutes ?? null));
+        setBreakEnd2(clockOf(row.fixedBreaks[1]?.endMinutes ?? null));
+        setAutoThreshold(
+          row.autoBreaks[0] === undefined ? '' : String(row.autoBreaks[0].thresholdMinutes),
+        );
+        setAutoAdditional(
+          row.autoBreaks[0] === undefined ? '' : String(row.autoBreaks[0].additionalMinutes),
+        );
       }}
       submit={async () => {
         const scheduledStartMinutes = minutesOf(start);
         const scheduledEndMinutes = minutesOf(end);
-        const fixedStart = minutesOf(breakStart);
-        const fixedEnd = minutesOf(breakEnd);
+        // 固定休憩は複数置ける。空の組は送らない。
+        const fixedBreaks = [
+          [minutesOf(breakStart), minutesOf(breakEnd)],
+          [minutesOf(breakStart2), minutesOf(breakEnd2)],
+        ]
+          .filter(
+            (pair): pair is [number, number] => pair[0] !== undefined && pair[1] !== undefined,
+          )
+          .map(([startMinutes, endMinutes]) => ({ startMinutes, endMinutes }));
+
+        const threshold = numberOrUndefined(autoThreshold);
+        const additional = numberOrUndefined(autoAdditional);
+        // 深夜帯は両方そろって初めて上書きになる。片方だけでは意味が決まらない。
+        const nightStartMinutes = numberOrUndefined(nightStart);
+        const nightEndMinutes = numberOrUndefined(nightEnd);
+
         await api.createWorkCategory({
           code,
           internalName,
@@ -112,11 +160,25 @@ export function WorkCategorySettings({ permissions }: SectionProps): React.JSX.E
           categoryType,
           effectiveFrom,
           shift,
+          gapTreatment,
+          countsAsWorkingDay,
+          ...(effectiveTo === '' ? {} : { effectiveTo }),
+          ...(color === '' ? {} : { color }),
           ...(scheduledStartMinutes === undefined ? {} : { scheduledStartMinutes }),
           ...(scheduledEndMinutes === undefined ? {} : { scheduledEndMinutes }),
-          ...(fixedStart === undefined || fixedEnd === undefined
+          ...(numberOrUndefined(prescribed) === undefined
             ? {}
-            : { fixedBreaks: [{ startMinutes: fixedStart, endMinutes: fixedEnd }] }),
+            : { prescribedMinutes: numberOrUndefined(prescribed) }),
+          ...(numberOrUndefined(deemed) === undefined
+            ? {}
+            : { deemedMinutes: numberOrUndefined(deemed) }),
+          ...(nightStartMinutes === undefined || nightEndMinutes === undefined
+            ? {}
+            : { nightStartMinutes, nightEndMinutes }),
+          ...(fixedBreaks.length === 0 ? {} : { fixedBreaks }),
+          ...(threshold === undefined || additional === undefined
+            ? {}
+            : { autoBreaks: [{ thresholdMinutes: threshold, additionalMinutes: additional }] }),
         });
         setCode('');
         setEffectiveFrom('');
@@ -190,6 +252,101 @@ export function WorkCategorySettings({ permissions }: SectionProps): React.JSX.E
             label={labels.fixedBreakEnd}
             value={breakEnd}
             onChange={setBreakEnd}
+          />
+          <TextField
+            id="category-break-start-2"
+            label={`${labels.fixedBreakStart} 2`}
+            value={breakStart2}
+            onChange={setBreakStart2}
+          />
+          <TextField
+            id="category-break-end-2"
+            label={`${labels.fixedBreakEnd} 2`}
+            value={breakEnd2}
+            onChange={setBreakEnd2}
+          />
+          <TextField
+            id="category-auto-threshold"
+            label={labels.autoBreakThreshold}
+            type="number"
+            value={autoThreshold}
+            onChange={setAutoThreshold}
+            min={1}
+            max={1440}
+          />
+          <TextField
+            id="category-auto-additional"
+            label={labels.autoBreakAdditional}
+            type="number"
+            value={autoAdditional}
+            onChange={setAutoAdditional}
+            min={1}
+            max={1440}
+          />
+          <TextField
+            id="category-effective-to"
+            label={labels.effectiveTo}
+            type="date"
+            value={effectiveTo}
+            onChange={setEffectiveTo}
+          />
+          <TextField
+            id="category-prescribed"
+            label={labels.prescribedMinutesLabel}
+            type="number"
+            value={prescribed}
+            onChange={setPrescribed}
+            min={0}
+            max={1440}
+            hint={labels.workCategoryFieldsHint}
+          />
+          <TextField
+            id="category-deemed"
+            label={labels.categoryDeemedMinutes}
+            type="number"
+            value={deemed}
+            onChange={setDeemed}
+            min={0}
+            max={1440}
+          />
+          <TextField
+            id="category-night-start"
+            label={labels.nightStart}
+            type="number"
+            value={nightStart}
+            onChange={setNightStart}
+            min={0}
+            max={1439}
+          />
+          <TextField
+            id="category-night-end"
+            label={labels.nightEnd}
+            type="number"
+            value={nightEnd}
+            onChange={setNightEnd}
+            min={0}
+            max={1439}
+          />
+          <SelectField
+            id="category-gap-treatment"
+            label={labels.gapTreatmentLabel}
+            value={gapTreatment}
+            onChange={(value) => setGapTreatment(value as GapTreatment)}
+            options={(['non_working', 'break'] as const).map((value) => ({
+              value,
+              label: labels.gapTreatmentType[value],
+            }))}
+          />
+          <TextField
+            id="category-color"
+            label={labels.colorLabel}
+            value={color}
+            onChange={setColor}
+          />
+          <CheckboxField
+            label={labels.countsAsWorkingDay}
+            checked={countsAsWorkingDay}
+            onChange={setCountsAsWorkingDay}
           />
           <CheckboxField label={labels.shift} checked={shift} onChange={setShift} />
         </>

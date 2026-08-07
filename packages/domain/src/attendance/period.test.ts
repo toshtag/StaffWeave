@@ -131,6 +131,7 @@ describe('清算期間の区切り', () => {
 
 function day(overrides: Partial<DailyTotals> & { businessDate: string }): DailyTotals {
   return {
+    countsAsWorkingDay: true,
     attendedMinutes: 0,
     workedMinutes: 0,
     breakMinutes: 0,

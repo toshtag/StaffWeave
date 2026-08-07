@@ -45,7 +45,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 日をまたぐ勤務を 1 日として扱う | implemented | `test:packages/domain/src/attendance/calculation.test.ts` `test:packages/domain/src/attendance/business-date.test.ts` | 業務日の開始時刻を基準に 1 日として扱う |
 | 1 日に複数の勤務区間 | implemented | `test:packages/domain/src/attendance/events.test.ts` `test:packages/domain/src/attendance/calculation.test.ts` | 退勤したあと再出勤できる。区間の間は勤務時間に数えない |
 | カードの 1 回のタップで休憩を始める | planned | - | 勤務中のタップは退勤、退勤済みのタップは再出勤に割り当てている（P24） |
-| 打刻時の位置情報 | implemented | `op:recordAttendanceEvent` `op:listAttendanceLocations` `test:packages/api/test/integration/attendance-location.test.ts` `migration:0037_create_attendance_locations.sql` | 組織ごとの opt-in。既定は取らない。取れなくても打刻は残る。読めるのは本人と閲覧範囲の相手だけ |
+| 打刻時の位置情報 | implemented | `op:recordAttendanceEvent` `op:listAttendanceLocations` `op:updateOrganization` `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` `test:packages/api/test/integration/attendance-location.test.ts` `migration:0037_create_attendance_locations.sql` | 組織ごとの opt-in。設定の画面から切り替えられる。既定は取らない。取れなくても打刻は残る。読めるのは本人と閲覧範囲の相手だけ |
 
 > `implemented` は、API の存在ではなく、利用者が使う経路から計算と保存まで
 > 通る証拠があるものだけに付けます。証拠は縦に通す検査（設定 → 打刻 →
@@ -56,16 +56,16 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
-| 勤務パターン（始業・終業・休憩の合計分数） | implemented | `op:createWorkPattern` `op:listWorkPatterns` `migration:0005_create_schedules_and_calculations.sql` | 所定時刻のひな形として持つ |
-| 勤務予定の登録 | implemented | `op:upsertWorkSchedule` `op:listWorkSchedules` `test:packages/api/test/integration/work-category-calculation.test.ts` | 従業員と業務日ごとに持つ。勤務区分を割り当てられ、その設定が計算まで効く |
-| 勤務周期による予定の生成 | implemented | `op:generateWorkSchedules` `op:createWorkCycle` `test:packages/domain/src/schedule/work-cycle.test.ts` | 曜日を前提にしない |
+| 勤務パターン（始業・終業・休憩の合計分数） | implemented | `op:createWorkPattern` `op:listWorkPatterns` `ui:packages/web/src/admin/sections/WorkPatternSettings.tsx` `e2e:e2e/work-settings-console.spec.ts` `migration:0005_create_schedules_and_calculations.sql` | 所定時刻のひな形として持つ。設定の画面から作れる |
+| 勤務予定の登録 | implemented | `op:upsertWorkSchedule` `op:listWorkSchedules` `ui:packages/web/src/admin/sections/WorkScheduleSettings.tsx` `test:packages/api/test/integration/work-category-calculation.test.ts` `e2e:e2e/work-settings-console.spec.ts` | 従業員と業務日ごとに持つ。勤務区分を割り当てられ、その設定が計算まで効く。設定の画面から作れる |
+| 勤務周期による予定の生成 | implemented | `op:generateWorkSchedules` `op:createWorkCycle` `ui:packages/web/src/admin/sections/WorkCycleSettings.tsx` `test:packages/domain/src/schedule/work-cycle.test.ts` `e2e:e2e/work-settings-console.spec.ts` | 曜日を前提にしない。周期の作成・割当・生成を設定の画面から行える |
 | 有効期間付きの制度切り替え | implemented | `op:assignWorkCycle` `op:endWorkCycleAssignment` `migration:0019_exclude_overlapping_work_cycles.sql` | 期間の重なりを DB で排他する |
 | 版管理された勤務区分 | implemented | `op:createWorkCategory` `op:listWorkCategories` `migration:0026_create_work_categories_and_rule_versions.sql` | 同じ code で期間を分けて改定する。期間の重なりを DB で排他する |
 | 複数の固定休憩 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` `migration:0026_create_work_categories_and_rule_versions.sql` | 実績と重なる分は二度引かない。勤務予定へ割り当てた勤務区分から効く |
 | 自動休憩（労働時間の閾値で足す） | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` | 閾値と追加分数を持つ。段階が複数でも足し合わせない |
 | みなし労働時間 | implemented | `op:createWorkCategory` `op:assignLaborSystem` `test:packages/api/test/integration/work-category-calculation.test.ts` `test:packages/api/test/integration/labor-system-calculation.test.ts` | 勤務区分と労働形態の両方から日次の計算へ効く。裁量の割当がある日は労働形態を正本にする。実績とは別の値として残す |
-| シフト属性と表示色 | implemented | `op:createWorkCategory` `ui:packages/web/src/admin/sections/WorkCategorySettings.tsx` | 勤務区分が持ち、設定の画面から入れられる |
-| マスターの改定・無効化・コピー | partial | `op:createWorkCategory` `op:updateLeaveType` `op:updateRequestType` | 勤務区分は版を重ねて改定でき、休暇種別と申請種別は無効化できる。勤務周期は作成と一覧のまま |
+| シフト属性と表示色 | implemented | `op:createWorkCategory` `ui:packages/web/src/admin/sections/WorkCategorySettings.tsx` `docs:product/work-category-fields.md` | 勤務区分が持ち、設定の画面から入れられる。計算にも集計にも入れない |
+| マスターの改定・無効化・コピー | partial | `op:createWorkCategory` `op:updateLeaveType` `op:updateRequestType` | 勤務区分は版を重ねて改定でき、休暇種別と申請種別は無効化できる。勤務周期は作成と一覧のまま（作り直しで置き換える） |
 
 ## 勤務時間の計算
 
@@ -171,7 +171,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 申請種別と承認経路の設定画面 | implemented | `ui:packages/web/src/admin/sections/RequestTypeSettings.tsx` `test:e2e/admin-console.spec.ts` | 段ごとの承認者を画面から決められる。段数を直しても提出済みの申請は動かない |
 | 一覧・写して作る・CSV を同じ形にする | implemented | `ui:packages/web/src/admin/SettingsSection.tsx` `test:packages/web/src/admin/resource.test.ts` | CSV の列は画面の表と同じ定義から作る |
 | 権限と組織の範囲で設定画面の表示を変える | implemented | `ui:packages/web/src/admin/AdminConsole.tsx` `test:e2e/admin-console.spec.ts` | 見られない設定は節ごと出さない。入口も出さない |
-| 設定の一括取り込み（CSV での投入） | implemented | `op:importEmployeesCsv` `op:importWorkCategoriesCsv` `op:importRequestTypesCsv` `op:importLeaveGrantsCsv` `test:packages/api/test/integration/settings-import.test.ts` | 従業員・勤務区分・申請種別・休暇の付与。1 行でも読めなければ 1 行も取り込まない |
+| 設定の一括取り込み（CSV での投入） | implemented | `op:importEmployeesCsv` `op:importWorkCategoriesCsv` `op:importRequestTypesCsv` `op:importLeaveGrantsCsv` `ui:packages/web/src/admin/SettingsSection.tsx` `test:packages/api/test/integration/settings-import.test.ts` | 従業員・勤務区分・申請種別・休暇の付与。どれも設定の画面から取り込める。1 行でも読めなければ 1 行も取り込まない |
 | 日次・月次の一覧とレポート | implemented | `op:listMonthlySummaries` `op:listPeriodSummaries` `op:listOvertimeWarnings` `op:listLeaveRegister` `test:packages/api/test/integration/overtime-warnings.test.ts` | 月次・期間の合計、締め前の確認、長時間労働の警告、休暇の管理簿と失効予定。上限は計算規則の版が持ち、未設定なら警告を出さない |
 | WCAG 2.2 AA | partial | `test:e2e/accessibility.spec.ts` | axe で AA まで機械的に見る（違反 0 件）。色の意味・読み上げの分かりやすさ・操作の順序は人が確かめる必要がある |
 | 主要な系統での動作 | implemented | `test:e2e/cross-browser.spec.ts` | Chromium・Firefox・WebKit の 3 系統。系統差が出る操作に絞って流す |

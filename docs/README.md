@@ -7,6 +7,7 @@
 | [product/capability-matrix.md](product/capability-matrix.md) | 能力ごとの状態。動くもの、一部だけのもの、これから作るもの、作らないもの |
 | [product/v0.1-scope.md](product/v0.1-scope.md) | v0.1 で必須にするものと、次期へ回すもの |
 | [product/work-category-precedence.md](product/work-category-precedence.md) | 勤務パターン・勤務予定・勤務区分で重なる設定の、正本と優先順位 |
+| [product/work-category-fields.md](product/work-category-fields.md) | 勤務区分の設定が、予定・計算・表示のどこへ効くか |
 | [roadmap.md](roadmap.md) | どの順で作るかと、その順にする理由 |
 
 ## 使い方 — `guide/`

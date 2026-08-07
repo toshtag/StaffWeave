@@ -291,6 +291,10 @@ export const attendanceCalculationSchema = objectSchema({
       oneOf: [{ type: 'integer' }, { type: 'null' }],
       description: '給与向けのみなし労働。設定が無ければ null',
     },
+    countsAsWorkingDay: {
+      type: 'boolean',
+      description: 'その日を出勤日として数えるか。勤務区分が決める',
+    },
     recognizedOvertimeMinutes: {
       oneOf: [{ type: 'integer' }, { type: 'null' }],
       description:
