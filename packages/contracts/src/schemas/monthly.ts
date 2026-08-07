@@ -1,6 +1,7 @@
-import { CLOSING_FINDING_KINDS } from '@staffweave/domain';
+import { CLOSING_FINDING_KINDS, PERIOD_KINDS } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
 import { businessDateSchema, timestampSchema, uuidSchema } from './common.js';
+import { LABOR_SYSTEM_TYPES } from './labor-system.js';
 
 /**
  * 月次の集計と、締め前の確認。
@@ -144,4 +145,89 @@ export const recalculateAttendanceResponseSchema = objectSchema({
     skippedClosedDays: arraySchema(businessDateSchema),
   },
   required: ['examinedDays', 'recalculatedDays', 'skippedClosedDays'],
+});
+
+/**
+ * 月より長い（あるいは短い）期間の集計。
+ *
+ * 週の区切りは計算規則の版が、清算期間と対象期間は労働形態の割当が持つ。
+ * 決まっていない期間は返さない。製品が既定値で区切ると、
+ * 誰も決めていない期間の合計が結果として残る。
+ */
+export const periodSummarySchema = objectSchema({
+  description: '週・清算期間・変形労働の対象期間の集計。日次から導く',
+  properties: {
+    employeeId: uuidSchema,
+    kind: {
+      type: 'string',
+      enum: [...PERIOD_KINDS],
+      description: 'week は週、settlement は清算期間と対象期間',
+    },
+    from: businessDateSchema,
+    to: businessDateSchema,
+    laborSystemType: {
+      oneOf: [{ type: 'string', enum: [...LABOR_SYSTEM_TYPES] }, { type: 'null' }],
+      description: '清算期間のとき、その制度。週では null',
+    },
+    workedMinutes: { type: 'integer' },
+    scheduledMinutes: { type: 'integer' },
+    outsideScheduleMinutes: { type: 'integer' },
+    nightMinutes: { type: 'integer' },
+    nonWorkingDayMinutes: { type: 'integer' },
+    leaveMinutes: { type: 'integer' },
+    absenceMinutes: { type: 'integer' },
+    recognizedOvertimeMinutes: nullableMinutes,
+    legalOvertimeMinutes: nullableMinutes,
+    workedDays: { type: 'integer' },
+    countedDays: { type: 'integer' },
+    totalMinutes: {
+      ...nullableMinutes,
+      description: '期間の総枠。週は法定の週の閾値、清算期間は割当の総枠。未設定なら null',
+    },
+    differenceMinutes: {
+      ...nullableMinutes,
+      description: '総枠との差（実労働 − 総枠）。総枠が未設定なら null',
+    },
+    includesClosedMonth: {
+      type: 'boolean',
+      description: '締め済みの月を含むか。含む期間の合計は、締めた時点の日次から出ている',
+    },
+  },
+  required: [
+    'employeeId',
+    'kind',
+    'from',
+    'to',
+    'laborSystemType',
+    'workedMinutes',
+    'scheduledMinutes',
+    'outsideScheduleMinutes',
+    'nightMinutes',
+    'nonWorkingDayMinutes',
+    'leaveMinutes',
+    'absenceMinutes',
+    'recognizedOvertimeMinutes',
+    'legalOvertimeMinutes',
+    'workedDays',
+    'countedDays',
+    'totalMinutes',
+    'differenceMinutes',
+    'includesClosedMonth',
+  ],
+});
+
+export const periodSummaryListSchema = objectSchema({
+  properties: { summaries: arraySchema(periodSummarySchema) },
+  required: ['summaries'],
+});
+
+export const listPeriodSummariesQuerySchema = objectSchema({
+  description: '期間の集計を読む。区切りは設定から決まるため、範囲だけを渡す',
+  properties: {
+    employeeId: uuidSchema,
+    from: businessDateSchema,
+    to: businessDateSchema,
+    kind: { type: 'string', enum: [...PERIOD_KINDS] },
+  },
+  required: ['employeeId', 'from', 'to'],
 });

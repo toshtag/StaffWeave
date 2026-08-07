@@ -1,6 +1,7 @@
 import type { RecalculateAttendanceRequest } from '@staffweave/contracts';
 import {
   listMonthlySummariesQuerySchema,
+  listPeriodSummariesQuerySchema,
   operations,
   recalculateAttendanceRequestSchema,
 } from '@staffweave/contracts';
@@ -8,15 +9,17 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
 import { readBody, readQuery } from '../shared/request.js';
+import type { PeriodService } from './period-service.js';
 import type { MonthlyService } from './service.js';
 
 export interface MonthlyRouteDependencies {
   service: MonthlyService;
+  periods: PeriodService;
 }
 
 export function createMonthlyRoutes(deps: MonthlyRouteDependencies): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  const { service } = deps;
+  const { service, periods } = deps;
 
   app.get(operations.listMonthlySummaries.path, async (c) => {
     const auth = currentAuth(c);
@@ -25,6 +28,17 @@ export function createMonthlyRoutes(deps: MonthlyRouteDependencies): Hono<AppEnv
       listMonthlySummariesQuerySchema,
     );
     return c.json({ summaries: await service.listSummaries(auth, query) }, 200);
+  });
+
+  app.get(operations.listPeriodSummaries.path, async (c) => {
+    const auth = currentAuth(c);
+    const query = readQuery<{
+      employeeId: string;
+      from: string;
+      to: string;
+      kind?: 'week' | 'settlement';
+    }>(c, listPeriodSummariesQuerySchema);
+    return c.json({ summaries: await periods.listSummaries(auth, query) }, 200);
   });
 
   app.get(operations.listClosingReadiness.path, async (c) => {

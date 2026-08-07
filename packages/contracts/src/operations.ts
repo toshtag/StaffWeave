@@ -115,7 +115,9 @@ import {
 import {
   closingReadinessListSchema,
   listMonthlySummariesQuerySchema,
+  listPeriodSummariesQuerySchema,
   monthlySummaryListSchema,
+  periodSummaryListSchema,
   recalculateAttendanceRequestSchema,
   recalculateAttendanceResponseSchema,
 } from './schemas/monthly.js';
@@ -1784,6 +1786,21 @@ export const operations = {
       forbidden,
       conflict,
       { status: 404, description: '申請が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  listPeriodSummaries: {
+    operationId: 'listPeriodSummaries',
+    method: 'get',
+    path: '/period-summaries',
+    summary: '週・清算期間・変形労働の対象期間の集計を一覧する',
+    tags: ['approval'],
+    security: 'sessionOrApiKey',
+    query: listPeriodSummariesQuerySchema,
+    responses: [
+      { status: 200, description: '期間の集計', schema: periodSummaryListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
     ],
   },
   listMonthlySummaries: {

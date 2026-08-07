@@ -41,6 +41,7 @@ import {
 import { createLeaveRepository } from './leave/repository.js';
 import { createLeaveRoutes } from './leave/routes.js';
 import { createLeaveService } from './leave/service.js';
+import { createPeriodService } from './monthly/period-service.js';
 import { createMonthlyRepository } from './monthly/repository.js';
 import { createMonthlyRoutes } from './monthly/routes.js';
 import { createMonthlyService } from './monthly/service.js';
@@ -280,6 +281,13 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     transaction: withTransaction,
   });
 
+  const periodService = createPeriodService({
+    repository: createMonthlyRepository(deps.db),
+    laborSystems: laborSystemRepository,
+    categories: workCategoryRepository,
+    visibility,
+  });
+
   const requestService = createRequestService({
     repository: createRequestRepository(deps.db),
     visibility,
@@ -334,7 +342,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));
-  api.route('/', createMonthlyRoutes({ service: monthlyService }));
+  api.route('/', createMonthlyRoutes({ service: monthlyService, periods: periodService }));
   api.route('/', createLeaveRoutes({ service: leaveService }));
   api.route('/', createRequestRoutes({ service: requestService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));
