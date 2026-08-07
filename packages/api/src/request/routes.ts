@@ -1,17 +1,21 @@
 import type {
+  CreateApprovalDelegationRequest,
   CreateRequestTypeRequest,
   DecideEmployeeRequestRequest,
   EmployeeRequestRecord,
+  ReplaceApprovalRouteRequest,
   ResubmitEmployeeRequestRequest,
   SubmitEmployeeRequestRequest,
   UpdateRequestTypeRequest,
 } from '@staffweave/contracts';
 import {
+  createApprovalDelegationRequestSchema,
   createRequestTypeRequestSchema,
   decideEmployeeRequestRequestSchema,
   honoPath,
   listEmployeeRequestsQuerySchema,
   operations,
+  replaceApprovalRouteRequestSchema,
   resubmitEmployeeRequestRequestSchema,
   submitEmployeeRequestRequestSchema,
   updateRequestTypeRequestSchema,
@@ -52,6 +56,31 @@ export function createRequestRoutes(deps: RequestRouteDependencies): Hono<AppEnv
     const auth = currentAuth(c);
     const body = await readBody<UpdateRequestTypeRequest>(c, updateRequestTypeRequestSchema);
     return c.json(await service.updateType(auth, pathParam(c, 'requestTypeId'), body), 200);
+  });
+
+  app.get(honoPath(operations.getApprovalRoute), async (c) => {
+    const auth = currentAuth(c);
+    return c.json(await service.getRoute(auth, pathParam(c, 'requestTypeId')), 200);
+  });
+
+  app.put(honoPath(operations.replaceApprovalRoute), async (c) => {
+    const auth = currentAuth(c);
+    const body = await readBody<ReplaceApprovalRouteRequest>(c, replaceApprovalRouteRequestSchema);
+    return c.json(await service.replaceRoute(auth, pathParam(c, 'requestTypeId'), body), 200);
+  });
+
+  app.get(operations.listApprovalDelegations.path, async (c) => {
+    const auth = currentAuth(c);
+    return c.json({ delegations: await service.listDelegations(auth) }, 200);
+  });
+
+  app.post(operations.createApprovalDelegation.path, async (c) => {
+    const auth = currentAuth(c);
+    const body = await readBody<CreateApprovalDelegationRequest>(
+      c,
+      createApprovalDelegationRequestSchema,
+    );
+    return c.json(await service.createDelegation(auth, body), 201);
   });
 
   app.get(operations.listEmployeeRequests.path, async (c) => {

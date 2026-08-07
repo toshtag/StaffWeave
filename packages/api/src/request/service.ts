@@ -1,15 +1,26 @@
 import type {
+  ApprovalDelegationRecord,
+  ApprovalRouteResponse,
+  CreateApprovalDelegationRequest,
   CreateRequestTypeRequest,
   DecideEmployeeRequestRequest,
   EmployeeRequestRecord,
+  ReplaceApprovalRouteRequest,
   RequestTypeRecord,
   ResubmitEmployeeRequestRequest,
   SubmitEmployeeRequestRequest,
   UpdateRequestTypeRequest,
 } from '@staffweave/contracts';
-import type { StagedRequest, StagedRequestProblem } from '@staffweave/domain';
+import type {
+  ApprovalDenial,
+  ApprovalStep,
+  StagedRequest,
+  StagedRequestProblem,
+} from '@staffweave/domain';
 import {
   applyStagedRequestEvent,
+  authorizeApproval,
+  businessDateOf,
   closingPeriodOf,
   hasPermission,
   instantFromLocal,
@@ -57,6 +68,20 @@ export interface RequestService {
     input: UpdateRequestTypeRequest,
   ): Promise<RequestTypeRecord>;
 
+  /** 申請種別の段ごとの承認者。 */
+  getRoute(context: AuthenticatedContext, requestTypeId: string): Promise<ApprovalRouteResponse>;
+  replaceRoute(
+    context: AuthenticatedContext,
+    requestTypeId: string,
+    input: ReplaceApprovalRouteRequest,
+  ): Promise<ApprovalRouteResponse>;
+
+  listDelegations(context: AuthenticatedContext): Promise<ApprovalDelegationRecord[]>;
+  createDelegation(
+    context: AuthenticatedContext,
+    input: CreateApprovalDelegationRequest,
+  ): Promise<ApprovalDelegationRecord>;
+
   list(
     context: AuthenticatedContext,
     query: {
@@ -95,6 +120,13 @@ const REFLECTED_CATEGORIES: readonly RequestTypeRecord['category'][] = [
   'attendance_correction',
 ];
 
+/** 決裁を断る理由を、利用者に伝わる言葉へ直す。 */
+const APPROVAL_DENIAL_MESSAGES: Record<ApprovalDenial, string> = {
+  not_approver: 'この段の承認者ではありません',
+  not_delegating_approver: '代理として指定した相手は、この段の承認者ではありません',
+  no_delegation: 'この相手からの委任がありません',
+};
+
 /** 進められない理由を、利用者に伝わる言葉へ直す。 */
 const PROBLEM_MESSAGES: Record<StagedRequestProblem, string> = {
   not_pending: 'この申請はいま決裁を待っていません',
@@ -125,6 +157,45 @@ function periodOf(record: EmployeeRequestRecord): { from: string; to: string } {
  * ここを引くと、申請した本人が使っていない残数まで減る。
  */
 const NON_WORKING_DAY_TYPES = new Set(['non_working_day', 'legal_holiday', 'public_holiday']);
+
+/**
+ * 申請種別の経路を読む。
+ *
+ * 段の設定が足りない場合は、足りない段を「承認の権限を持つ利用者なら誰でも」で埋める。
+ * 埋めずに断ると、経路を置いていない既存の申請種別で提出そのものができなくなる。
+ * 埋めた段は設定の画面に出るため、置き換えれば済む。
+ */
+async function routeOf(
+  requests: RequestRepository,
+  workspaceId: string,
+  type: RequestTypeRecord,
+): Promise<ApprovalStep[]> {
+  const configured = await requests.listTypeSteps(workspaceId, type.id);
+  const byStep = new Map(configured.map((step) => [step.step, step]));
+  return Array.from({ length: type.approvalSteps }, (_unused, index) => {
+    const step = index + 1;
+    return (
+      byStep.get(step) ?? {
+        step,
+        approverUserId: null,
+        // 置いていない段は、段ごとの承認者を持たなかった頃と同じ扱いにする。
+        // 断ると、経路を置いていない申請種別で提出そのものができなくなる。
+        approverPolicy: 'any_approver' as const,
+      }
+    );
+  });
+}
+
+/**
+ * その段の通知を送る相手。
+ *
+ * 承認者を指名している段は、その人だけ。方針で決まる段は空を返し、
+ * 呼ぶ側でこれまでどおり決裁できる相手すべてへ送らせる。
+ */
+function stageApproversOf(steps: readonly ApprovalStep[], step: number): string[] {
+  const target = steps.find((candidate) => candidate.step === step);
+  return target?.approverUserId === null || target === undefined ? [] : [target.approverUserId];
+}
 
 export function createRequestService(deps: RequestServiceDependencies): RequestService {
   const requireTypeManager = (context: AuthenticatedContext): void => {
@@ -501,6 +572,100 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
       });
     },
 
+    async getRoute(context, requestTypeId) {
+      requireTypeManager(context);
+      const type = await deps.repository.findRequestType(context.workspace.id, requestTypeId);
+      if (!type) throw notFound('申請種別');
+      return {
+        requestTypeId,
+        steps: await routeOf(deps.repository, context.workspace.id, type),
+      };
+    },
+
+    async replaceRoute(context, requestTypeId, input) {
+      requireTypeManager(context);
+      return deps.transaction(async ({ requests, audit }) => {
+        const type = await requests.findRequestType(context.workspace.id, requestTypeId);
+        if (!type) throw notFound('申請種別');
+
+        const problems = [];
+        const seen = new Set<number>();
+        for (const step of input.steps) {
+          if (step.step < 1 || step.step > type.approvalSteps) {
+            problems.push({ field: 'steps', message: 'この申請種別に無い段が含まれています' });
+          }
+          if (seen.has(step.step)) {
+            problems.push({ field: 'steps', message: '同じ段が二度出てきます' });
+          }
+          seen.add(step.step);
+          if ((step.approverPolicy === 'user') !== (step.approverUserId !== null)) {
+            problems.push({
+              field: 'steps',
+              message: '承認者を指名する段では利用者を、方針で決める段では空を指定してください',
+            });
+          }
+        }
+        if (problems.length > 0) throw invalidRequest(problems);
+
+        try {
+          await requests.replaceTypeSteps(context.workspace.id, requestTypeId, input.steps);
+        } catch (error) {
+          if (isForeignKeyViolation(error)) throw notFound('承認者');
+          throw error;
+        }
+
+        await audit.record(context.workspace.id, {
+          actorKind: 'user',
+          actorUserId: context.user.id,
+          action: 'request_type.route_replaced',
+          targetType: 'request_type',
+          targetId: requestTypeId,
+          summary: `${type.name}の承認経路を置き換えました`,
+          detail: { steps: input.steps },
+        });
+
+        return {
+          requestTypeId,
+          steps: await routeOf(requests, context.workspace.id, type),
+        };
+      });
+    },
+
+    async listDelegations(context) {
+      requireTypeManager(context);
+      return deps.repository.listDelegations(context.workspace.id);
+    },
+
+    async createDelegation(context, input) {
+      requireTypeManager(context);
+      return deps.transaction(async ({ requests, audit }) => {
+        let created: ApprovalDelegationRecord;
+        try {
+          created = await requests.createDelegation(context.workspace.id, {
+            fromUserId: input.fromUserId,
+            toUserId: input.toUserId,
+            effectiveFrom: input.effectiveFrom,
+            effectiveTo: input.effectiveTo ?? null,
+            createdByUserId: context.user.id,
+          });
+        } catch (error) {
+          if (isForeignKeyViolation(error)) throw notFound('利用者');
+          throw error;
+        }
+
+        await audit.record(context.workspace.id, {
+          actorKind: 'user',
+          actorUserId: context.user.id,
+          action: 'approval_delegation.created',
+          targetType: 'user',
+          targetId: input.fromUserId,
+          summary: '承認の委任を作りました',
+          detail: { ...input },
+        });
+        return created;
+      });
+    },
+
     async list(context, query) {
       const requests = await deps.repository.listRequests(context.workspace.id, query);
       return deps.visibility.filterVisible(
@@ -542,6 +707,15 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           throw error;
         }
 
+        // 提出した時点の経路を写す。定義を参照したままだと、承認の途中で
+        // 経路を変えられたときに、決裁済みの段の承認者が入れ替わる。
+        await requests.snapshotRequestSteps(
+          context.workspace.id,
+          created.id,
+          created.submissions,
+          await routeOf(requests, context.workspace.id, type),
+        );
+
         await audit.record(context.workspace.id, {
           actorKind: 'user',
           actorUserId: context.user.id,
@@ -556,12 +730,18 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           },
         });
 
+        const route = await requests.listRequestSteps(
+          context.workspace.id,
+          created.id,
+          created.submissions,
+        );
         await notifyRequestEvent(notifications, context.workspace.id, {
           event: { type: 'submitted' },
           request: created,
           typeName: type.name,
           occurredAt: deps.now(),
           actorUserId: context.user.id,
+          stageApprovers: stageApproversOf(route, created.currentStep),
         });
         return created;
       });
@@ -587,6 +767,35 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           periodOf(existing),
         );
 
+        // 承認の権限だけでは通さない。提出のときに写した経路で、
+        // その段の承認者かどうかを確かめる。
+        //
+        // ここを緩めると、権限と閲覧範囲を持つ利用者が 1 段目も 4 段目も
+        // 同じように通せる。段を分けた意味が無くなる。
+        const steps = await requests.listRequestSteps(
+          context.workspace.id,
+          existing.id,
+          existing.submissions,
+        );
+        const step = steps.find((candidate) => candidate.step === input.step);
+        if (step === undefined) {
+          throw new ApiError('conflict', 'この申請には、その段の承認者が決まっていません');
+        }
+
+        const delegatedFrom = await requests.listDelegationsTo(
+          context.workspace.id,
+          context.user.id,
+          businessDateOf(deps.now(), context.workspace.timeZone),
+        );
+        const authorized = authorizeApproval({
+          step,
+          actor: { userId: context.user.id, roles: context.roles, delegatedFrom },
+          onBehalfOfUserId: input.onBehalfOfUserId ?? null,
+        });
+        if (!authorized.ok) {
+          throw new ApiError('forbidden', APPROVAL_DENIAL_MESSAGES[authorized.problem]);
+        }
+
         const next = applyStagedRequestEvent(stateOf(existing), {
           type: input.decision === 'approved' ? 'APPROVE' : 'RETURN',
           step: input.step,
@@ -602,7 +811,9 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
             submission: input.submission,
             decision: input.decision,
             decidedByUserId: context.user.id,
-            onBehalfOfUserId: input.onBehalfOfUserId ?? null,
+            // 帰属は認可の結果から取る。名乗らずに代理で決裁した場合も、
+            // 本来の承認者を残す。
+            onBehalfOfUserId: authorized.onBehalfOfUserId,
             comment: input.comment ?? null,
           });
         } catch (error) {
@@ -655,7 +866,7 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
             submission: input.submission,
             fromState: existing.state,
             toState: saved.state,
-            onBehalfOfUserId: input.onBehalfOfUserId ?? null,
+            onBehalfOfUserId: authorized.onBehalfOfUserId,
             comment: input.comment ?? null,
             // どの日の計算をやり直したか。承認と計算の対応をあとから辿れるようにする。
             recalculatedDates: affectedDates,
@@ -671,9 +882,21 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
             actorUserId: context.user.id,
           });
         }
-        if (type !== null && input.onBehalfOfUserId !== undefined) {
+        // 段が進んだら、次の段の相手へ知らせる。
+        // ここで送らないと、次の承認者は自分の番になったことを知る手立てが無い。
+        if (type !== null && saved.state === 'submitted') {
           await notifyRequestEvent(notifications, context.workspace.id, {
-            event: { type: 'decided_on_behalf', onBehalfOfUserId: input.onBehalfOfUserId },
+            event: { type: 'stage_advanced' },
+            request: saved,
+            typeName: type.name,
+            occurredAt: now,
+            actorUserId: context.user.id,
+            stageApprovers: stageApproversOf(steps, saved.currentStep),
+          });
+        }
+        if (type !== null && authorized.onBehalfOfUserId !== null) {
+          await notifyRequestEvent(notifications, context.workspace.id, {
+            event: { type: 'decided_on_behalf', onBehalfOfUserId: authorized.onBehalfOfUserId },
             request: saved,
             typeName: type.name,
             occurredAt: now,
@@ -735,6 +958,15 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           submittedAt: deps.now(),
         });
         if (!saved) throw notFound('申請');
+
+        // 出し直しは新しい提出として経路を写し直す。差し戻したあとに経路を
+        // 直した場合、直した経路で承認し直せることを期待する運用が自然なため。
+        await requests.snapshotRequestSteps(
+          context.workspace.id,
+          saved.id,
+          saved.submissions,
+          await routeOf(requests, context.workspace.id, type),
+        );
 
         await audit.record(context.workspace.id, {
           actorKind: 'user',

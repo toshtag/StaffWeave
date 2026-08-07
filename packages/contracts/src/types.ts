@@ -8,6 +8,7 @@ import type {
   AnomalyKind,
   AnomalySeverity,
   ApiScope,
+  ApproverPolicy,
   AttendanceEventType,
   AttendanceSource,
   CalculationBasis,
@@ -1306,6 +1307,50 @@ export type RequestCategory =
 export type RequestDecision = 'approved' | 'returned';
 
 /** 組織が定義する申請種別。 */
+/**
+ * 段ごとの承認者。
+ *
+ * 段数だけを決めても、経路を決めたことにはならない。段ごとの承認者が
+ * 無ければ、承認の権限を持つ利用者はどの段も同じように通せる。
+ *
+ * `approverPolicy` が `user` のときだけ利用者を指す。
+ */
+export interface ApprovalStepRecord {
+  step: number;
+  approverUserId: string | null;
+  approverPolicy: ApproverPolicy;
+}
+
+export interface ApprovalRouteResponse {
+  requestTypeId: string;
+  steps: ApprovalStepRecord[];
+}
+
+export interface ReplaceApprovalRouteRequest {
+  steps: ApprovalStepRecord[];
+}
+
+/** 承認の委任。代理で決裁するには、任せた側の記録が要る。 */
+export interface ApprovalDelegationRecord {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  createdAt: string;
+}
+
+export interface ApprovalDelegationList {
+  delegations: ApprovalDelegationRecord[];
+}
+
+export interface CreateApprovalDelegationRequest {
+  fromUserId: string;
+  toUserId: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+}
+
 export interface RequestTypeRecord {
   id: string;
   code: string;

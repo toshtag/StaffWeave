@@ -1,4 +1,4 @@
-import { STAGED_REQUEST_STATES } from '@staffweave/domain';
+import { APPROVER_POLICIES, STAGED_REQUEST_STATES } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
 import {
   businessDateSchema,
@@ -208,4 +208,56 @@ export const resubmitEmployeeRequestRequestSchema = objectSchema({
     reason: { type: 'string', minLength: 1, maxLength: 1000 },
   },
   required: [],
+});
+
+export const approvalStepSchema = objectSchema({
+  description: '段ごとの承認者。approverPolicy が user のときだけ利用者を指す',
+  properties: {
+    step: { type: 'integer', minimum: 1, maximum: 4 },
+    approverUserId: { oneOf: [uuidSchema, { type: 'null' }] },
+    approverPolicy: { type: 'string', enum: [...APPROVER_POLICIES] },
+  },
+  required: ['step', 'approverUserId', 'approverPolicy'],
+});
+
+export const approvalRouteSchema = objectSchema({
+  properties: {
+    requestTypeId: uuidSchema,
+    steps: arraySchema(approvalStepSchema),
+  },
+  required: ['requestTypeId', 'steps'],
+});
+
+export const replaceApprovalRouteRequestSchema = objectSchema({
+  description: '段ごとの承認者を置き換える。段を足し引きするたびに差分を取ると、消し忘れた段が残る',
+  properties: { steps: arraySchema(approvalStepSchema) },
+  required: ['steps'],
+});
+
+export const approvalDelegationSchema = objectSchema({
+  description: '承認の委任。代理で決裁するには、任せた側の記録が要る',
+  properties: {
+    id: uuidSchema,
+    fromUserId: uuidSchema,
+    toUserId: uuidSchema,
+    effectiveFrom: { type: 'string', format: 'date' },
+    effectiveTo: { oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+    createdAt: timestampSchema,
+  },
+  required: ['id', 'fromUserId', 'toUserId', 'effectiveFrom', 'effectiveTo', 'createdAt'],
+});
+
+export const approvalDelegationListSchema = objectSchema({
+  properties: { delegations: arraySchema(approvalDelegationSchema) },
+  required: ['delegations'],
+});
+
+export const createApprovalDelegationRequestSchema = objectSchema({
+  properties: {
+    fromUserId: uuidSchema,
+    toUserId: uuidSchema,
+    effectiveFrom: { type: 'string', format: 'date' },
+    effectiveTo: { oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+  },
+  required: ['fromUserId', 'toUserId', 'effectiveFrom'],
 });
