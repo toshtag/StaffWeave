@@ -38,6 +38,7 @@ import {
   createWebhookNetworkPolicy,
   createWebhookTargetValidator,
 } from './integration/webhook-network-policy.js';
+import { createLeaveGrantScheduler } from './leave/grant-scheduler.js';
 import { createLeaveGrantService } from './leave/grant-service.js';
 import { createLeaveRepository } from './leave/repository.js';
 import { createLeaveRoutes } from './leave/routes.js';
@@ -287,11 +288,29 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     transaction: withTransaction,
   });
 
+  // 定期実行と同じ実装を、画面からも呼べるようにする。別々に持つと、
+  // 画面から動かしたときだけ違う結果になる。
+  const leaveGrantScheduler = createLeaveGrantScheduler({
+    listWorkspaces: async () =>
+      (
+        await deps.db.query<{ id: string; slug: string; time_zone: string }>(
+          'SELECT id, slug, time_zone FROM workspaces ORDER BY slug',
+        )
+      ).map((row) => ({ id: row.id, slug: row.slug, timeZone: row.time_zone })),
+    now,
+    transaction: (fn) =>
+      deps.db.transaction((tx) =>
+        fn({ leave: createLeaveRepository(tx), audit: createAuditRepository(tx) }),
+      ),
+    logger,
+  });
+
   const leaveGrantService = createLeaveGrantService({
     repository: createLeaveRepository(deps.db),
     visibility,
     now,
     transaction: withTransaction,
+    scheduler: leaveGrantScheduler,
   });
 
   const leaveService = createLeaveService({

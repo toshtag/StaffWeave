@@ -4,7 +4,9 @@ import type {
   GrantLeaveInBulkResponse,
   ImportResult,
   LeaveExpirationRecord,
+  LeaveGrantPreview,
   LeaveGrantRuleRecord,
+  LeaveGrantRunRecord,
   LeaveRegisterRecord,
 } from '@staffweave/contracts';
 import {
@@ -20,6 +22,7 @@ import type { AuthenticatedContext } from '../identity/service.js';
 import { isUniqueViolation } from '../shared/database-errors.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.js';
+import type { LeaveGrantScheduler } from './grant-scheduler.js';
 import type { LeaveRepository } from './repository.js';
 import { expiryOf } from './service.js';
 
@@ -35,6 +38,9 @@ import { expiryOf } from './service.js';
 /** 一度に取り込める行数。1 回の要求で数万行を受けると、応答が返らなくなる。 */
 export const MAXIMUM_IMPORT_ROWS = 2_000;
 
+/** 画面へ返す実行の記録の件数。追いつきで日が並ぶため、直近だけを返す。 */
+const RUN_HISTORY_LIMIT = 50;
+
 export interface LeaveGrantRepositories {
   leave: LeaveRepository;
   audit: AuditRepository;
@@ -45,10 +51,21 @@ export interface LeaveGrantServiceDependencies {
   visibility: EmployeeVisibilityGuard;
   now: () => Date;
   transaction<T>(fn: (repositories: LeaveGrantRepositories) => Promise<T>): Promise<T>;
+  /**
+   * 自動付与の実行。定期実行と同じ実装を、画面からも呼べるようにする。
+   * 別々に持つと、画面から動かしたときだけ違う結果になる。
+   */
+  scheduler: LeaveGrantScheduler;
 }
 
 export interface LeaveGrantService {
   listRules(context: AuthenticatedContext, leaveTypeId?: string): Promise<LeaveGrantRuleRecord[]>;
+  /** 自動付与を処理した日。管理の画面が「いつ、何件」を出すために読む。 */
+  listRuns(context: AuthenticatedContext, leaveTypeId: string): Promise<LeaveGrantRunRecord[]>;
+  /** 次に対象となる日と人数。処理はしない。 */
+  previewRuns(context: AuthenticatedContext, leaveTypeId: string): Promise<LeaveGrantPreview>;
+  /** 自動付与を、いまの時点で動かす。定期実行と同じ処理を手で呼ぶ。 */
+  runNow(context: AuthenticatedContext): Promise<LeaveGrantRunRecord[]>;
   createRule(
     context: AuthenticatedContext,
     input: CreateLeaveGrantRuleRequest,
@@ -86,6 +103,42 @@ export function createLeaveGrantService(deps: LeaveGrantServiceDependencies): Le
     async listRules(context, leaveTypeId) {
       requireLeaveManager(context);
       return deps.repository.listGrantRules(context.workspace.id, leaveTypeId);
+    },
+
+    async listRuns(context, leaveTypeId) {
+      requireLeaveManager(context);
+      return deps.repository.listGrantRuns(context.workspace.id, leaveTypeId, RUN_HISTORY_LIMIT);
+    },
+
+    async previewRuns(context, leaveTypeId) {
+      requireLeaveManager(context);
+      const leaveType = await deps.repository.findLeaveType(context.workspace.id, leaveTypeId);
+      if (!leaveType) throw notFound('休暇種別');
+
+      const preview = await deps.scheduler.preview(context.workspace.id, leaveTypeId);
+      // 対象の日が無いことは失敗ではない。まだ来ていないだけ。
+      return preview === null
+        ? { leaveTypeId, effectiveOn: null, grantedCount: 0, skippedCount: 0 }
+        : {
+            leaveTypeId,
+            effectiveOn: preview.effectiveOn,
+            grantedCount: preview.grantedCount,
+            skippedCount: preview.skippedCount,
+          };
+    },
+
+    async runNow(context) {
+      requireLeaveManager(context);
+      const summaries = await deps.scheduler.run();
+      return summaries
+        .filter((summary) => summary.workspaceId === context.workspace.id)
+        .map((summary) => ({
+          leaveTypeId: summary.leaveTypeId,
+          effectiveOn: summary.effectiveOn,
+          ranAt: deps.now().toISOString(),
+          grantedCount: summary.grantedCount,
+          skippedCount: summary.skippedCount,
+        }));
     },
 
     async createRule(context, input) {
