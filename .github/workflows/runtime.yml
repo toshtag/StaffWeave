@@ -84,6 +84,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # 決めごとの検査を確かめる統合テストが、commit の範囲を読む。
+          # 既定の 1 コミットだけでは、範囲そのものを作れない。
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 

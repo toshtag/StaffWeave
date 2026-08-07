@@ -81,10 +81,24 @@ function literal(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * commit の範囲。
+ *
+ * 履歴が 1 件しか無ければ範囲を作れない。黙って空の範囲へ落とすと、
+ * commit の経路を見ていないまま「見た」ことになる。読めないなら止める。
+ */
 const range = async (): Promise<{ POLICY_BASE_SHA: string; POLICY_HEAD_SHA: string }> => {
-  const base = await run('git', ['rev-parse', 'HEAD~1'], { cwd: REPOSITORY_ROOT });
+  let base: string;
+  try {
+    base = (await run('git', ['rev-parse', 'HEAD~1'], { cwd: REPOSITORY_ROOT })).stdout.trim();
+  } catch {
+    throw new Error(
+      '履歴が 1 件しかないため、commit の範囲を作れません。' +
+        'checkout の fetch-depth を 0 にしてください',
+    );
+  }
   const head = await run('git', ['rev-parse', 'HEAD'], { cwd: REPOSITORY_ROOT });
-  return { POLICY_BASE_SHA: base.stdout.trim(), POLICY_HEAD_SHA: head.stdout.trim() };
+  return { POLICY_BASE_SHA: base, POLICY_HEAD_SHA: head.stdout.trim() };
 };
 
 describe('禁止語の検査が見る経路', () => {
