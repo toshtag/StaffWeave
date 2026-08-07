@@ -361,11 +361,14 @@ echo 'ワークフロー'
 #   runtime.yml  データベース・ブラウザ・Docker を動かす検証
 #   sbom.yml     配布物の構成一覧
 #   release.yml  tag から正式版を配る
+#   windows-agent.yml  Windows の上でしか確かめられない常駐の経路
 ALWAYS_WORKFLOW='.github/workflows/ci.yml'
 RUNTIME_WORKFLOW='.github/workflows/runtime.yml'
 SBOM_WORKFLOW='.github/workflows/sbom.yml'
 RELEASE_WORKFLOW='.github/workflows/release.yml'
-for required in "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW" "$RELEASE_WORKFLOW"; do
+WINDOWS_WORKFLOW='.github/workflows/windows-agent.yml'
+for required in "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW" "$RELEASE_WORKFLOW" \
+  "$WINDOWS_WORKFLOW"; do
   if [ -f "$required" ]; then
     pass "$required があります"
   else
@@ -374,19 +377,23 @@ for required in "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW" "$RELEAS
 done
 
 # 名前を並べていないワークフローが増えると、この節の検査はその中身を
-# 何も見ないまま通る。分けた意味を保つため、置く場所は上の 4 つに固定する。
+# 何も見ないまま通る。分けた意味を保つため、置く場所は上の 5 つに固定する。
 #
 # release.yml を足したのは、tag から配る経路が要るため。
 # 走る条件（tag と手動）も、Release を作る手順も CI では確かめられないので、
 # 取り決めそのものは test/release-assets.test.ts が固定している。
+#
+# windows-agent.yml を足したのは、Windows でしか確かめられない経路があるため。
+# 常駐の登録・開始・停止・削除は、Linux の runner では動かして確かめられない。
 EXTRA=$(git ls-files '.github/workflows/*' \
   | grep -vxF "$ALWAYS_WORKFLOW" | grep -vxF "$RUNTIME_WORKFLOW" \
-  | grep -vxF "$SBOM_WORKFLOW" | grep -vxF "$RELEASE_WORKFLOW" || true)
+  | grep -vxF "$SBOM_WORKFLOW" | grep -vxF "$RELEASE_WORKFLOW" \
+  | grep -vxF "$WINDOWS_WORKFLOW" || true)
 if [ -n "$EXTRA" ]; then
   printf '  %s\n' "$(printf '%s ' $EXTRA)"
   fail '名前を並べていないワークフローがあります'
 else
-  pass 'ワークフローは決めた 4 つだけです'
+  pass 'ワークフローは決めた 5 つだけです'
 fi
 
 # Secret と、PR が書き換えられるコードを、同じ job へ置かない。
