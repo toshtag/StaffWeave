@@ -15,6 +15,7 @@ import {
 import { LeaveTypeSettings } from './sections/LeaveTypeSettings.tsx';
 import { MonthlySummarySettings } from './sections/MonthlySummarySettings.tsx';
 import { OrganizationSettings } from './sections/OrganizationSettings.tsx';
+import { OvertimeWarningSettings } from './sections/OvertimeWarningSettings.tsx';
 import { PeriodSummarySettings } from './sections/PeriodSummarySettings.tsx';
 import { RequestTypeSettings } from './sections/RequestTypeSettings.tsx';
 import { SiteSettings } from './sections/SiteSettings.tsx';
@@ -132,6 +133,12 @@ function modulesFor(labels: AdminLabels): ModuleDefinition[] {
           label: labels.sectionMonthlySummaries,
           requires: 'employee.read',
           render: (props) => <MonthlySummarySettings {...props} />,
+        },
+        {
+          key: 'overtime-warnings',
+          label: labels.sectionOvertimeWarnings,
+          requires: 'employee.read',
+          render: (props) => <OvertimeWarningSettings {...props} />,
         },
         {
           key: 'periods',

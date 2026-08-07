@@ -901,6 +901,11 @@ export interface CalculationRuleVersionRecord {
   weeklyLegalMinutes: number | null;
   weekStartsOn: number;
   monthStartsOn: number;
+  /** 1 か月の法定時間外の上限。未設定なら警告を出さない。 */
+  monthlyOvertimeLimitMinutes: number | null;
+  /** 複数月の平均の上限と、平均を取る月数。 */
+  averageOvertimeLimitMinutes: number | null;
+  averageOvertimeMonths: number | null;
   createdAt: string;
 }
 
@@ -919,6 +924,9 @@ export interface CreateCalculationRuleVersionRequest {
   weeklyLegalMinutes?: number;
   weekStartsOn: number;
   monthStartsOn: number;
+  monthlyOvertimeLimitMinutes?: number;
+  averageOvertimeLimitMinutes?: number;
+  averageOvertimeMonths?: number;
 }
 
 export interface CalculationRuleVersionList {
@@ -1134,6 +1142,35 @@ export interface LeaveRegisterRecord {
 
 export interface LeaveRegisterList {
   register: LeaveRegisterRecord[];
+}
+
+/**
+ * 長時間労働の警告。
+ *
+ * 上限は事業者が決める。置かないかぎり警告を出さず、
+ * 置いていないことを `monthlyLimitMinutes` などの null で示す。
+ */
+export interface OvertimeWarningRecord {
+  employeeId: string;
+  employeeNumber: string;
+  displayName: string;
+  period: string;
+  /** その月の法定時間外。1 日でも閾値が未設定なら null。 */
+  legalOvertimeMinutes: number | null;
+  /** 1 か月の上限を超えた分。上限が未設定か、判断できなければ null。 */
+  exceededMonthlyBy: number | null;
+  /** 複数月の平均。 */
+  averageMinutes: number | null;
+  /** 平均の上限を超えた分。 */
+  exceededAverageBy: number | null;
+}
+
+export interface OvertimeWarningList {
+  warnings: OvertimeWarningRecord[];
+  /** 見たときの上限。null なら、上限そのものが置かれていない。 */
+  monthlyLimitMinutes: number | null;
+  averageLimitMinutes: number | null;
+  averageMonths: number | null;
 }
 
 /** 通知の種類。 */

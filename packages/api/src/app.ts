@@ -42,6 +42,7 @@ import { createLeaveGrantService } from './leave/grant-service.js';
 import { createLeaveRepository } from './leave/repository.js';
 import { createLeaveRoutes } from './leave/routes.js';
 import { createLeaveService } from './leave/service.js';
+import { createOvertimeReportService } from './monthly/overtime-report.js';
 import { createPeriodService } from './monthly/period-service.js';
 import { createMonthlyRepository } from './monthly/repository.js';
 import { createMonthlyRoutes } from './monthly/routes.js';
@@ -300,6 +301,12 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     transaction: withTransaction,
   });
 
+  const overtimeReportService = createOvertimeReportService({
+    repository: createMonthlyRepository(deps.db),
+    categories: workCategoryRepository,
+    visibility,
+  });
+
   const periodService = createPeriodService({
     repository: createMonthlyRepository(deps.db),
     laborSystems: laborSystemRepository,
@@ -380,7 +387,14 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   );
   api.route('/', createApprovalRoutes({ service: approvalService }));
   api.route('/', createNotificationRoutes({ service: notificationService }));
-  api.route('/', createMonthlyRoutes({ service: monthlyService, periods: periodService }));
+  api.route(
+    '/',
+    createMonthlyRoutes({
+      service: monthlyService,
+      periods: periodService,
+      overtime: overtimeReportService,
+    }),
+  );
   api.route('/', createLeaveRoutes({ service: leaveService, grants: leaveGrantService }));
   api.route('/', createRequestRoutes({ service: requestService, imports: settingsImportService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));

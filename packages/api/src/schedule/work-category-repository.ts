@@ -98,6 +98,9 @@ interface RuleRow {
   weekly_legal_minutes: number | null;
   week_starts_on: number;
   month_starts_on: number;
+  monthly_overtime_limit_minutes: number | null;
+  average_overtime_limit_minutes: number | null;
+  average_overtime_months: number | null;
   created_at: Date;
 }
 
@@ -114,6 +117,9 @@ function toRuleVersion(row: RuleRow): CalculationRuleVersionRecord {
     weeklyLegalMinutes: row.weekly_legal_minutes,
     weekStartsOn: row.week_starts_on,
     monthStartsOn: row.month_starts_on,
+    monthlyOvertimeLimitMinutes: row.monthly_overtime_limit_minutes,
+    averageOvertimeLimitMinutes: row.average_overtime_limit_minutes,
+    averageOvertimeMonths: row.average_overtime_months,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -254,7 +260,9 @@ export function createWorkCategoryRepository(db: Queryable): WorkCategoryReposit
       const rows = await db.query<RuleRow>(
         `SELECT id, effective_from, day_start_minutes, night_start_minutes, night_end_minutes,
                 rounding_minutes, rounding_mode, daily_legal_minutes, weekly_legal_minutes,
-                week_starts_on, month_starts_on, created_at
+                week_starts_on, month_starts_on,
+                monthly_overtime_limit_minutes, average_overtime_limit_minutes,
+                average_overtime_months, created_at
            FROM calculation_rule_versions
           WHERE workspace_id = $1
           ORDER BY effective_from DESC`,
@@ -268,11 +276,15 @@ export function createWorkCategoryRepository(db: Queryable): WorkCategoryReposit
         `INSERT INTO calculation_rule_versions
            (workspace_id, effective_from, day_start_minutes, night_start_minutes, night_end_minutes,
             rounding_minutes, rounding_mode, daily_legal_minutes, weekly_legal_minutes,
-            week_starts_on, month_starts_on)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            week_starts_on, month_starts_on,
+            monthly_overtime_limit_minutes, average_overtime_limit_minutes,
+            average_overtime_months)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING id, effective_from, day_start_minutes, night_start_minutes, night_end_minutes,
                    rounding_minutes, rounding_mode, daily_legal_minutes, weekly_legal_minutes,
-                   week_starts_on, month_starts_on, created_at`,
+                   week_starts_on, month_starts_on,
+                   monthly_overtime_limit_minutes, average_overtime_limit_minutes,
+                   average_overtime_months, created_at`,
         [
           workspaceId,
           input.effectiveFrom,
@@ -285,6 +297,9 @@ export function createWorkCategoryRepository(db: Queryable): WorkCategoryReposit
           input.weeklyLegalMinutes ?? null,
           input.weekStartsOn,
           input.monthStartsOn,
+          input.monthlyOvertimeLimitMinutes ?? null,
+          input.averageOvertimeLimitMinutes ?? null,
+          input.averageOvertimeMonths ?? null,
         ],
       );
       const row = rows[0];

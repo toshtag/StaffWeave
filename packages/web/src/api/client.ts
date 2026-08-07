@@ -55,6 +55,7 @@ import type {
   NotificationList,
   Organization,
   OrganizationList,
+  OvertimeWarningList,
   PeriodSummaryList,
   RecordAttendanceEventRequest,
   RecordAttendanceEventResponse,
@@ -316,6 +317,10 @@ export const api = {
   listMonthlySummaries: (query: { period: string; employeeId?: string }) =>
     request<MonthlySummaryList>(
       `/monthly-summaries?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  listOvertimeWarnings: (query: { period: string; employeeId?: string }) =>
+    request<OvertimeWarningList>(
+      `/overtime-warnings?${new URLSearchParams(query as Record<string, string>).toString()}`,
     ),
   listPeriodSummaries: (query: {
     employeeId: string;

@@ -231,3 +231,45 @@ export const listPeriodSummariesQuerySchema = objectSchema({
   },
   required: ['employeeId', 'from', 'to'],
 });
+
+/**
+ * 長時間労働の警告。
+ *
+ * 上限は事業者が決める。置かないかぎり警告を出さず、
+ * 置いていないことを応答の null で示す。0 件と「見ていない」を混ぜない。
+ */
+export const overtimeWarningSchema = objectSchema({
+  properties: {
+    employeeId: uuidSchema,
+    employeeNumber: { type: 'string' },
+    displayName: { type: 'string' },
+    period: { type: 'string', format: 'date' },
+    legalOvertimeMinutes: nullableMinutes,
+    exceededMonthlyBy: nullableMinutes,
+    averageMinutes: nullableMinutes,
+    exceededAverageBy: nullableMinutes,
+  },
+  required: [
+    'employeeId',
+    'employeeNumber',
+    'displayName',
+    'period',
+    'legalOvertimeMinutes',
+    'exceededMonthlyBy',
+    'averageMinutes',
+    'exceededAverageBy',
+  ],
+});
+
+export const overtimeWarningListSchema = objectSchema({
+  properties: {
+    warnings: arraySchema(overtimeWarningSchema),
+    monthlyLimitMinutes: {
+      ...nullableMinutes,
+      description: '見たときの上限。null なら上限そのものが置かれていない',
+    },
+    averageLimitMinutes: nullableMinutes,
+    averageMonths: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+  },
+  required: ['warnings', 'monthlyLimitMinutes', 'averageLimitMinutes', 'averageMonths'],
+});

@@ -9,12 +9,14 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
 import { readBody, readQuery } from '../shared/request.js';
+import type { OvertimeReportService } from './overtime-report.js';
 import type { PeriodService } from './period-service.js';
 import type { MonthlyService } from './service.js';
 
 export interface MonthlyRouteDependencies {
   service: MonthlyService;
   periods: PeriodService;
+  overtime: OvertimeReportService;
 }
 
 export function createMonthlyRoutes(deps: MonthlyRouteDependencies): Hono<AppEnv> {
@@ -28,6 +30,15 @@ export function createMonthlyRoutes(deps: MonthlyRouteDependencies): Hono<AppEnv
       listMonthlySummariesQuerySchema,
     );
     return c.json({ summaries: await service.listSummaries(auth, query) }, 200);
+  });
+
+  app.get(operations.listOvertimeWarnings.path, async (c) => {
+    const auth = currentAuth(c);
+    const query = readQuery<{ employeeId?: string; period: string }>(
+      c,
+      listMonthlySummariesQuerySchema,
+    );
+    return c.json(await deps.overtime.listWarnings(auth, query), 200);
   });
 
   app.get(operations.listPeriodSummaries.path, async (c) => {
