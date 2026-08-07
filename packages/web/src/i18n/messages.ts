@@ -525,6 +525,12 @@ export interface AdminMessages {
   closingReadinessHint: string;
   noMonthlySummaries: string;
   noClosingReadiness: string;
+  closeMonth: string;
+  reopenMonth: string;
+  reopenReason: string;
+  closed: string;
+  reopened: string;
+  downloadPayrollCsv: string;
   period: string;
   periodHint: string;
   workedDays: string;
@@ -1146,6 +1152,12 @@ const ja: Messages = {
       '締める前に残っているものです。ここは締めを止めません。止めるかどうかは運用が決めます。',
     noMonthlySummaries: 'この月の集計はありません。',
     noClosingReadiness: 'この月に確認することはありません。',
+    closeMonth: '締める',
+    reopenMonth: '締めを解除する',
+    reopenReason: '解除の理由',
+    closed: '締めました',
+    reopened: '締めを解除しました',
+    downloadPayrollCsv: '給与の CSV を取り出す',
     period: '対象月',
     periodHint: '月の 1 日を選びます。',
     workedDays: '出勤日数',
@@ -1783,6 +1795,12 @@ const en: Messages = {
       'What is still outstanding before closing. This does not block closing; the operator decides.',
     noMonthlySummaries: 'No totals for this month.',
     noClosingReadiness: 'Nothing to check for this month.',
+    closeMonth: 'Close',
+    reopenMonth: 'Reopen',
+    reopenReason: 'Reason for reopening',
+    closed: 'Closed',
+    reopened: 'Reopened',
+    downloadPayrollCsv: 'Download payroll CSV',
     period: 'Month',
     periodHint: 'Pick the first day of the month.',
     workedDays: 'Days worked',
