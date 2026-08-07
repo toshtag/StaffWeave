@@ -11,7 +11,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { useLocale } from '../../i18n/LocaleProvider.tsx';
 import type { SectionProps } from '../AdminConsole.tsx';
-import { CheckboxField, type Column, SelectField, TextField } from '../resource.tsx';
+import {
+  CheckboxField,
+  type Column,
+  FormValidationError,
+  SelectField,
+  TextField,
+} from '../resource.tsx';
 import { SettingsSection } from '../SettingsSection.tsx';
 
 /**
@@ -61,25 +67,30 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
       .catch(() => setApprovers([]));
   }, [canWrite]);
 
-  /** 段数に合わせて経路の行を作る。足りない段は「誰でも」で埋める。 */
-  const routeRows = (count: number): ApprovalStepRecord[] =>
+  /**
+   * 段数に合わせて経路の行を作る。置いていない段は未設定のまま出す。
+   *
+   * 既定の承認者で埋めない。埋めると、決めた覚えのない承認者が保存される。
+   */
+  const routeRows = (count: number): (ApprovalStepRecord | { step: number })[] =>
     Array.from({ length: count }, (_unused, index) => {
       const step = index + 1;
-      return (
-        route.find((entry) => entry.step === step) ?? {
-          step,
-          approverUserId: null,
-          approverPolicy: 'any_approver' as const,
-        }
-      );
+      return route.find((entry) => entry.step === step) ?? { step };
     });
 
+  /** 送れる形になっているか。未設定の段が 1 つでもあれば送らない。 */
+  const completeRoute = (count: number): ApprovalStepRecord[] | null => {
+    const rows = routeRows(count);
+    return rows.every((row): row is ApprovalStepRecord => 'approverPolicy' in row)
+      ? (rows as ApprovalStepRecord[])
+      : null;
+  };
+
   const updateStep = (step: number, change: Partial<ApprovalStepRecord>): void => {
-    setRoute(
-      routeRows(Number(approvalSteps) || 1).map((entry) =>
-        entry.step === step ? { ...entry, ...change } : entry,
-      ),
+    const rows = routeRows(Number(approvalSteps) || 1).map((entry) =>
+      entry.step === step ? { approverUserId: null, ...entry, ...change } : entry,
     );
+    setRoute(rows.filter((row): row is ApprovalStepRecord => 'approverPolicy' in row));
   };
 
   const columns: Column<RequestTypeRecord>[] = [
@@ -155,15 +166,22 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
           requiresTimeRange,
           requiresOvertimeLimit,
         };
+        const steps = completeRoute(Number(approvalSteps) || 1);
+        // 未設定の段があるまま送らない。送れてしまうと、設定の画面では正しく
+        // 見えるのに、その種別では申請を出せない状態が残る。
+        if (steps === null) throw new FormValidationError(labels.approvalRouteIncomplete);
+
         if (editing === null) {
-          await api.createRequestType({ code, category, ...shape });
+          const created = await api.createRequestType({ code, category, ...shape });
+          // 作った直後に経路を置く。置くまでは提出できないため、別の操作にすると
+          // 「作れたのに出せない」状態が残る。
+          await api.replaceApprovalRoute(created.id, { steps });
+          setRoute([]);
         } else {
           await api.updateRequestType(editing, { ...shape, active });
           // 経路は段数と一緒に置き換える。段数を減らしたときに、
           // 消えた段の承認者が残らないようにする。
-          await api.replaceApprovalRoute(editing, {
-            steps: routeRows(Number(approvalSteps) || 1),
-          });
+          await api.replaceApprovalRoute(editing, { steps });
           setEditing(null);
           setRoute([]);
         }
@@ -221,32 +239,42 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
             required
             hint={labels.approvalStepsHint}
           />
-          {editing !== null && (
-            <fieldset className="field">
-              <legend>{labels.approvalRoute}</legend>
-              <p className="hint">{labels.approvalRouteHint}</p>
-              {routeRows(Number(approvalSteps) || 1).map((entry) => (
+          <fieldset className="field">
+            <legend>{labels.approvalRoute}</legend>
+            <p className="hint">{labels.approvalRouteHint}</p>
+            {routeRows(Number(approvalSteps) || 1).map((entry) => {
+              const policy = 'approverPolicy' in entry ? entry.approverPolicy : '';
+              return (
                 <div key={entry.step}>
                   <SelectField
                     id={`request-type-step-${entry.step}-policy`}
                     label={`${labels.stepLabel(entry.step)} ${labels.approverUser}`}
-                    value={entry.approverPolicy}
+                    value={policy}
                     onChange={(value) =>
                       updateStep(entry.step, {
                         approverPolicy: value as ApproverPolicy,
                         approverUserId: value === 'user' ? (approvers[0]?.id ?? null) : null,
                       })
                     }
-                    options={APPROVER_POLICIES.map((policy) => ({
-                      value: policy,
-                      label: labels.approverPolicyLabel[policy],
-                    }))}
+                    options={[
+                      // 未設定を先頭に置く。既定の承認者を選んだ形で出すと、
+                      // 決めた覚えのない相手がそのまま保存される。
+                      { value: '', label: labels.approverUnset },
+                      ...APPROVER_POLICIES
+                        // 「誰でも」は新しく選べないようにする。段を分けた意味が
+                        // 無くなるため。すでにその値の段だけ、置き換えられるよう出す。
+                        .filter((candidate) => candidate !== 'any_approver' || policy === candidate)
+                        .map((candidate) => ({
+                          value: candidate,
+                          label: labels.approverPolicyLabel[candidate],
+                        })),
+                    ]}
                   />
-                  {entry.approverPolicy === 'user' && (
+                  {policy === 'user' && (
                     <SelectField
                       id={`request-type-step-${entry.step}-user`}
                       label={`${labels.stepLabel(entry.step)} ${labels.approverUser}`}
-                      value={entry.approverUserId ?? ''}
+                      value={('approverUserId' in entry ? entry.approverUserId : null) ?? ''}
                       onChange={(value) => updateStep(entry.step, { approverUserId: value })}
                       options={approvers.map((approver) => ({
                         value: approver.id,
@@ -255,9 +283,9 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
                     />
                   )}
                 </div>
-              ))}
-            </fieldset>
-          )}
+              );
+            })}
+          </fieldset>
           <fieldset className="field">
             <legend>{labels.requiredInputs}</legend>
             <CheckboxField

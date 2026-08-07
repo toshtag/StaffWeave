@@ -353,6 +353,8 @@ export interface AdminMessages {
   approvalRouteHint: string;
   approverPolicyLabel: Record<ApproverPolicy, string>;
   approverUser: string;
+  approverUnset: string;
+  approvalRouteIncomplete: string;
   stepLabel: (step: number) => string;
   requiredInputs: string;
   timeRange: string;
@@ -688,7 +690,8 @@ const ja: Messages = {
     leaveLedgerHint:
       '残数は保存していません。ここに出るのは台帳から組み立てた値です。記録は書き換えられないため、間違いは打ち消す行で直します。',
     requestTypesHint:
-      '承認の段数がそのまま経路になります。段数を変えても、すでに提出された申請は提出時の段数のまま進みます。',
+      '段ごとに承認者を決めます。決めるまでは、その種別で申請を出せません。' +
+      '段数や承認者を変えても、すでに提出された申請は提出時の経路のまま進みます。',
     noRecords: 'まだ登録されていません。',
     noSites: '拠点はまだありません。組織を作ってから登録します。',
     noDepartments: '部門はまだありません。',
@@ -844,14 +847,16 @@ const ja: Messages = {
     approvalSteps: '承認の段数',
     approvalRoute: '承認の経路',
     approvalRouteHint:
-      '段ごとに承認者を決めます。決めない段は、承認の権限を持つ利用者なら誰でも通せます。',
+      'すべての段の承認者を決めてください。決めるまでは、この種別で申請を出せません。',
     approverPolicyLabel: {
       user: '指名した利用者',
       organization_manager: '組織の管理者',
       workspace_admin: 'ワークスペースの管理者',
-      any_approver: '承認の権限を持つ利用者なら誰でも',
+      any_approver: '承認の権限を持つ利用者なら誰でも（新しくは選べません）',
     },
     approverUser: '承認者',
+    approverUnset: '未設定',
+    approvalRouteIncomplete: 'すべての段の承認者を決めてください。決めるまでは申請を出せません。',
     stepLabel: (step: number) => `${step} 段目`,
     approvalStepsHint: '1 から 4 まで。提出済みの申請の段数は、ここを変えても動きません。',
     requiredInputs: '入力を求める項目',
@@ -1211,7 +1216,8 @@ const en: Messages = {
     leaveLedgerHint:
       'Balances are not stored; these are built from the ledger. Entries cannot be edited, so mistakes are corrected by adding a reversing entry.',
     requestTypesHint:
-      'The number of approval steps is the route. Changing it does not move requests that were already submitted.',
+      'Set an approver for every step. Until then, this type cannot be used to submit. ' +
+      'Changing the route does not move requests that were already submitted.',
     noRecords: 'Nothing has been registered yet.',
     noSites: 'No sites yet. Create an organization first.',
     noDepartments: 'No departments yet.',
@@ -1367,7 +1373,7 @@ const en: Messages = {
     approvalSteps: 'Approval steps',
     approvalRoute: 'Approval route',
     approvalRouteHint:
-      'Set an approver for each step. Steps left unset can be decided by anyone with approval rights.',
+      'Set an approver for every step. Requests cannot be submitted until every step is set.',
     approverPolicyLabel: {
       user: 'Named user',
       organization_manager: 'Organization manager',
@@ -1375,6 +1381,9 @@ const en: Messages = {
       any_approver: 'Anyone with approval rights',
     },
     approverUser: 'Approver',
+    approverUnset: 'Not set',
+    approvalRouteIncomplete:
+      'Set an approver for every step. Requests cannot be submitted until then.',
     stepLabel: (step: number) => `Step ${step}`,
     approvalStepsHint:
       'One to four. Requests already submitted keep the count they were sent with.',

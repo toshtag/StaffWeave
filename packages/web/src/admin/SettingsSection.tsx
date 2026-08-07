@@ -1,7 +1,14 @@
 import { useCallback, useState } from 'react';
 import { ApiRequestError } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
-import { type Column, csvOf, DataTable, downloadCsv, useLoadable } from './resource.tsx';
+import {
+  type Column,
+  csvOf,
+  DataTable,
+  downloadCsv,
+  FormValidationError,
+  useLoadable,
+} from './resource.tsx';
 
 /**
  * 設定 1 件ぶんの画面。
@@ -103,7 +110,11 @@ export function SettingsSection<T>(props: SettingsSectionProps<T>): React.JSX.El
         setSaved(true);
         await reload();
       } catch (error) {
-        setFormError(error instanceof ApiRequestError ? error.message : labels.saveFailed);
+        setFormError(
+          error instanceof ApiRequestError || error instanceof FormValidationError
+            ? error.message
+            : labels.saveFailed,
+        );
       } finally {
         setPending(false);
       }

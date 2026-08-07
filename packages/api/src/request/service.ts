@@ -159,31 +159,36 @@ function periodOf(record: EmployeeRequestRecord): { from: string; to: string } {
 const NON_WORKING_DAY_TYPES = new Set(['non_working_day', 'legal_holiday', 'public_holiday']);
 
 /**
- * 申請種別の経路を読む。
+ * 申請種別の経路を、全ての段がそろっている前提で読む。
  *
- * 段の設定が足りない場合は、足りない段を「承認の権限を持つ利用者なら誰でも」で埋める。
- * 埋めずに断ると、経路を置いていない既存の申請種別で提出そのものができなくなる。
- * 埋めた段は設定の画面に出るため、置き換えれば済む。
+ * そろっていなければ提出を断る。足りない段を実行時に埋めると、設定した覚えの
+ * ない承認者が現れる。埋める値をどれだけ狭くしても、決めていない経路で
+ * 決裁が進む点は変わらない。
+ *
+ * 断る先は提出であって、決裁ではない。決裁の側で断ると、すでに出ている申請が
+ * 途中で止まり、出した本人には理由が見えない。
  */
-async function routeOf(
+async function completeRouteOf(
   requests: RequestRepository,
   workspaceId: string,
   type: RequestTypeRecord,
 ): Promise<ApprovalStep[]> {
   const configured = await requests.listTypeSteps(workspaceId, type.id);
   const byStep = new Map(configured.map((step) => [step.step, step]));
-  return Array.from({ length: type.approvalSteps }, (_unused, index) => {
-    const step = index + 1;
-    return (
-      byStep.get(step) ?? {
-        step,
-        approverUserId: null,
-        // 置いていない段は、段ごとの承認者を持たなかった頃と同じ扱いにする。
-        // 断ると、経路を置いていない申請種別で提出そのものができなくなる。
-        approverPolicy: 'any_approver' as const,
-      }
+  const missing = Array.from({ length: type.approvalSteps }, (_unused, index) => index + 1).filter(
+    (step) => !byStep.has(step),
+  );
+  if (missing.length > 0) {
+    throw new ApiError(
+      'conflict',
+      `申請種別 ${type.code} の承認経路が決まっていません（${missing.join('・')} 段目）。` +
+        '設定の画面で段ごとの承認者を決めてから提出してください',
     );
-  });
+  }
+  return Array.from(
+    { length: type.approvalSteps },
+    (_unused, index) => byStep.get(index + 1) as ApprovalStep,
+  );
 }
 
 /**
@@ -576,9 +581,11 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
       requireTypeManager(context);
       const type = await deps.repository.findRequestType(context.workspace.id, requestTypeId);
       if (!type) throw notFound('申請種別');
+      // 置いてある段だけを返す。足りない段を埋めて返すと、決まっていないことが
+      // 画面から見えなくなる。
       return {
         requestTypeId,
-        steps: await routeOf(deps.repository, context.workspace.id, type),
+        steps: await deps.repository.listTypeSteps(context.workspace.id, requestTypeId),
       };
     },
 
@@ -605,6 +612,18 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
             });
           }
         }
+        // 全ての段をそろえて受け取る。足りない段を許すと、置いた段と置いていない
+        // 段が混ざり、提出できない申請種別が設定の画面からは正しく見える。
+        const absent = Array.from(
+          { length: type.approvalSteps },
+          (_unused, index) => index + 1,
+        ).filter((step) => !seen.has(step));
+        if (absent.length > 0) {
+          problems.push({
+            field: 'steps',
+            message: `${absent.join('・')} 段目の承認者が決まっていません`,
+          });
+        }
         if (problems.length > 0) throw invalidRequest(problems);
 
         try {
@@ -626,7 +645,7 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
 
         return {
           requestTypeId,
-          steps: await routeOf(requests, context.workspace.id, type),
+          steps: await completeRouteOf(requests, context.workspace.id, type),
         };
       });
     },
@@ -713,7 +732,7 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           context.workspace.id,
           created.id,
           created.submissions,
-          await routeOf(requests, context.workspace.id, type),
+          await completeRouteOf(requests, context.workspace.id, type),
         );
 
         await audit.record(context.workspace.id, {
@@ -965,7 +984,7 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           context.workspace.id,
           saved.id,
           saved.submissions,
-          await routeOf(requests, context.workspace.id, type),
+          await completeRouteOf(requests, context.workspace.id, type),
         );
 
         await audit.record(context.workspace.id, {

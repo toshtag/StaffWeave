@@ -93,6 +93,36 @@ async function createType(
     }),
   );
   if (response.status !== 201) throw new Error(`申請種別を作れませんでした: ${response.status}`);
+  const type = (await response.json()) as RequestTypeRecord;
+
+  // 経路が決まっていない申請種別では提出できない。段の並びそのものを見る検査が
+  // 経路の設定で落ちないよう、既定の経路をここで置く。
+  // 承認者を絞る検査は、その中で経路を置き換える。
+  await setRoute(
+    instance,
+    type.id,
+    Array.from({ length: type.approvalSteps }, (_unused, index) => ({
+      step: index + 1,
+      approverUserId: null,
+      approverPolicy: 'workspace_admin',
+    })),
+  );
+  return type;
+}
+
+/** 経路を置かずに申請種別だけを作る。決まっていない状態を確かめるために使う。 */
+async function createTypeWithoutRoute(
+  instance: TestApp,
+  body: Record<string, unknown> = {},
+): Promise<RequestTypeRecord> {
+  const response = await instance.request(
+    '/api/request-types',
+    authorized(fixture.adminCookie, {
+      method: 'POST',
+      body: { code: 'NOROUTE', name: '経路なし', category: 'overtime', approvalSteps: 1, ...body },
+    }),
+  );
+  if (response.status !== 201) throw new Error(`申請種別を作れませんでした: ${response.status}`);
   return (await response.json()) as RequestTypeRecord;
 }
 
@@ -378,14 +408,103 @@ describe('段ごとの承認者', () => {
     ).toBe(200);
   });
 
-  it('置いていない申請種別では、これまでどおり承認の権限で通せる', async () => {
+  /**
+   * 決まっていない経路を、実行時に埋めない。
+   *
+   * 埋める値をどれだけ狭くしても、決めていない経路で決裁が進む点は変わらない。
+   * 断る先は提出にする。決裁の側で断ると、すでに出ている申請が途中で止まり、
+   * 出した本人には理由が見えない。
+   */
+  it('経路を置いていない申請種別では、提出できない', async () => {
+    const instance = app();
+    const type = await createTypeWithoutRoute(instance);
+
+    const response = await instance.request(
+      '/api/employee-requests',
+      authorized(fixture.employeeCookie, {
+        method: 'POST',
+        body: {
+          requestTypeId: type.id,
+          employeeId: fixture.employeeId,
+          businessDate: '2026-04-10',
+          reason: '対応のため',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.text()).toContain('承認経路');
+  });
+
+  it('段の一部だけ置いた申請種別では、提出できない', async () => {
+    const instance = app();
+    const type = await createTypeWithoutRoute(instance, { code: 'PARTIAL', approvalSteps: 2 });
+
+    // 2 段目を置かずに 1 段目だけを入れようとすると、置く時点で断られる。
+    const route = await instance.request(
+      `/api/request-types/${type.id}/approval-route`,
+      authorized(fixture.adminCookie, {
+        method: 'PUT',
+        body: { steps: [{ step: 1, approverUserId: null, approverPolicy: 'workspace_admin' }] },
+      }),
+    );
+    expect(route.status).toBe(400);
+    expect(await route.text()).toContain('2 段目');
+
+    // 置けていないので、提出も通らない。
+    const response = await instance.request(
+      '/api/employee-requests',
+      authorized(fixture.employeeCookie, {
+        method: 'POST',
+        body: {
+          requestTypeId: type.id,
+          employeeId: fixture.employeeId,
+          businessDate: '2026-04-10',
+          reason: '対応のため',
+        },
+      }),
+    );
+    expect(response.status).toBe(409);
+  });
+
+  it('段数を増やすと、増えた段を置くまで提出できない', async () => {
     const instance = app();
     const type = await createType(instance, {});
-    const request = await submit(instance, type);
 
-    expect(
-      (await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 })).status,
-    ).toBe(200);
+    const updated = await instance.request(
+      `/api/request-types/${type.id}`,
+      authorized(fixture.adminCookie, { method: 'PATCH', body: { approvalSteps: 2 } }),
+    );
+    expect(updated.status).toBe(200);
+
+    const response = await instance.request(
+      '/api/employee-requests',
+      authorized(fixture.employeeCookie, {
+        method: 'POST',
+        body: {
+          requestTypeId: type.id,
+          employeeId: fixture.employeeId,
+          businessDate: '2026-04-10',
+          reason: '対応のため',
+        },
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.text()).toContain('2 段目');
+  });
+
+  it('経路を読むと、置いていない段は現れない', async () => {
+    const instance = app();
+    const type = await createTypeWithoutRoute(instance, { code: 'EMPTY' });
+
+    const response = await instance.request(
+      `/api/request-types/${type.id}/approval-route`,
+      authorized(fixture.adminCookie),
+    );
+    const { steps } = (await response.json()) as { steps: unknown[] };
+
+    // 埋めて返すと、決まっていないことが画面から見えなくなる。
+    expect(steps).toEqual([]);
   });
 });
 
@@ -882,9 +1001,13 @@ describe('権限', () => {
     expect(response.status).toBe(403);
   });
 
-  it('組織管理者は申請種別を作れないが、承認はできる', async () => {
+  it('組織管理者は申請種別を作れないが、経路が指していれば承認はできる', async () => {
     const instance = app();
     const type = await createType(instance, {});
+    // 承認できるかどうかは、権限だけでなく経路が決める。
+    await setRoute(instance, type.id, [
+      { step: 1, approverUserId: null, approverPolicy: 'organization_manager' },
+    ]);
     const request = await submit(instance, type);
 
     const created = await instance.request(
