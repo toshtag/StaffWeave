@@ -35,6 +35,7 @@ interface Fixture {
   adminCookie: string;
   managerCookie: string;
   managerUserId: string;
+  adminUserId: string;
   employeeCookie: string;
   outsiderCookie: string;
 }
@@ -47,7 +48,10 @@ async function setUp(): Promise<Fixture> {
   const organizationId = await createOrganization(db, workspaceId, { code: 'HQ' });
   const branchId = await createOrganization(db, workspaceId, { code: 'BR' });
 
-  await createUser(db, workspaceId, { email: 'admin@example.com', roles: ['workspace_admin'] });
+  const admin = await createUser(db, workspaceId, {
+    email: 'admin@example.com',
+    roles: ['workspace_admin'],
+  });
   const manager = await createUser(db, workspaceId, {
     email: 'manager@example.com',
     roles: ['organization_manager'],
@@ -78,6 +82,7 @@ async function setUp(): Promise<Fixture> {
     adminCookie: await loginAndGetCookie(instance, { email: 'admin@example.com' }),
     managerCookie: await loginAndGetCookie(instance, { email: 'manager@example.com' }),
     managerUserId: manager,
+    adminUserId: admin,
     employeeCookie: await loginAndGetCookie(instance, { email: 'hanako@example.com' }),
     outsiderCookie: await loginAndGetCookie(instance, { email: 'outsider@example.com' }),
   };
@@ -193,6 +198,32 @@ describe('申請の通知', () => {
   it('代理で決裁すると、本来の承認者へ届く', async () => {
     const instance = app();
     const type = await createType(instance);
+
+    // 代理は、任された記録があるときだけ通る。経路と委任を先に置く。
+    const route = await instance.request(
+      `/api/request-types/${type.id}/approval-route`,
+      authorized(fixture.adminCookie, {
+        method: 'PUT',
+        body: {
+          steps: [{ step: 1, approverUserId: fixture.managerUserId, approverPolicy: 'user' }],
+        },
+      }),
+    );
+    expect(route.status).toBe(200);
+
+    const delegation = await instance.request(
+      '/api/approval-delegations',
+      authorized(fixture.adminCookie, {
+        method: 'POST',
+        body: {
+          fromUserId: fixture.managerUserId,
+          toUserId: fixture.adminUserId,
+          effectiveFrom: '2026-01-01',
+        },
+      }),
+    );
+    expect(delegation.status).toBe(201);
+
     const request = await submit(instance, type);
 
     await instance.request(

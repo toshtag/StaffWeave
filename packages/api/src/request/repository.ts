@@ -1,4 +1,5 @@
 import type {
+  ApprovalDelegationRecord,
   CreateRequestTypeRequest,
   EmployeeRequestRecord,
   RequestApprovalRecord,
@@ -6,7 +7,11 @@ import type {
   UpdateRequestTypeRequest,
 } from '@staffweave/contracts';
 import type { Queryable } from '@staffweave/db';
-import type { ApprovedAdjustments } from '@staffweave/domain';
+import type {
+  ApprovalStep as ApprovalStepRecord,
+  ApprovedAdjustments,
+  ApproverPolicy,
+} from '@staffweave/domain';
 
 /**
  * 申請種別と申請の読み書き。
@@ -41,6 +46,60 @@ export interface RequestRepository {
     input: RequestContentChange,
   ): Promise<void>;
   addApproval(workspaceId: string, input: NewRequestApproval): Promise<RequestApprovalRecord>;
+
+  /** 申請種別に設定した段ごとの承認者。 */
+  listTypeSteps(workspaceId: string, requestTypeId: string): Promise<ApprovalStepRecord[]>;
+  /**
+   * 段ごとの承認者を置き換える。
+   *
+   * 段を足し引きするたびに差分を取ると、消し忘れた段が残る。
+   * 丸ごと置き換えて、設定した内容がそのまま経路になるようにする。
+   */
+  replaceTypeSteps(
+    workspaceId: string,
+    requestTypeId: string,
+    steps: readonly ApprovalStepRecord[],
+  ): Promise<void>;
+
+  /**
+   * 提出した時点の経路を写す。
+   *
+   * 定義を参照したままだと、承認の途中で経路を変えられたときに、
+   * 決裁済みの段の承認者が入れ替わる。
+   */
+  snapshotRequestSteps(
+    workspaceId: string,
+    requestId: string,
+    submission: number,
+    steps: readonly ApprovalStepRecord[],
+  ): Promise<void>;
+  /** その提出で写した経路。 */
+  listRequestSteps(
+    workspaceId: string,
+    requestId: string,
+    submission: number,
+  ): Promise<ApprovalStepRecord[]>;
+
+  /** 承認の委任。 */
+  listDelegations(workspaceId: string): Promise<ApprovalDelegationRecord[]>;
+  createDelegation(
+    workspaceId: string,
+    input: {
+      fromUserId: string;
+      toUserId: string;
+      effectiveFrom: string;
+      effectiveTo: string | null;
+      createdByUserId: string;
+    },
+  ): Promise<ApprovalDelegationRecord>;
+
+  /**
+   * その利用者が、その日に代理を任されている相手。
+   *
+   * 有効期間で切ってから返す。期間の外の委任を渡すと、終わった代理で
+   * 決裁できてしまう。
+   */
+  listDelegationsTo(workspaceId: string, userId: string, onDate: string): Promise<string[]>;
 
   /**
    * その業務日に効いている、承認しきった申請の内容。
@@ -217,6 +276,30 @@ function toApproval(row: ApprovalRow): RequestApprovalRecord {
   };
 }
 
+interface DelegationRow {
+  id: string;
+  from_user_id: string;
+  to_user_id: string;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: Date;
+}
+
+const DELEGATION_COLUMNS = `id, from_user_id, to_user_id,
+  to_char(effective_from, 'YYYY-MM-DD') AS effective_from,
+  to_char(effective_to, 'YYYY-MM-DD') AS effective_to, created_at`;
+
+function toDelegation(row: DelegationRow): ApprovalDelegationRecord {
+  return {
+    id: row.id,
+    fromUserId: row.from_user_id,
+    toUserId: row.to_user_id,
+    effectiveFrom: row.effective_from,
+    effectiveTo: row.effective_to,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
 export function createRequestRepository(db: Queryable): RequestRepository {
   /** 申請ごとの決裁をまとめて引く。件数ぶんの問い合わせにしない。 */
   async function approvalsOf(
@@ -350,6 +433,113 @@ export function createRequestRepository(db: Queryable): RequestRepository {
     },
 
     findRequest: loadRequest,
+
+    async listTypeSteps(workspaceId, requestTypeId) {
+      const rows = await db.query<{
+        step: number;
+        approver_user_id: string | null;
+        approver_policy: ApproverPolicy;
+      }>(
+        `SELECT step, approver_user_id, approver_policy
+           FROM request_type_steps
+          WHERE workspace_id = $1 AND request_type_id = $2
+          ORDER BY step`,
+        [workspaceId, requestTypeId],
+      );
+      return rows.map((row) => ({
+        step: row.step,
+        approverUserId: row.approver_user_id,
+        approverPolicy: row.approver_policy,
+      }));
+    },
+
+    async replaceTypeSteps(workspaceId, requestTypeId, steps) {
+      await db.query(
+        'DELETE FROM request_type_steps WHERE workspace_id = $1 AND request_type_id = $2',
+        [workspaceId, requestTypeId],
+      );
+      for (const step of steps) {
+        await db.query(
+          `INSERT INTO request_type_steps
+             (workspace_id, request_type_id, step, approver_user_id, approver_policy)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [workspaceId, requestTypeId, step.step, step.approverUserId, step.approverPolicy],
+        );
+      }
+    },
+
+    async snapshotRequestSteps(workspaceId, requestId, submission, steps) {
+      for (const step of steps) {
+        await db.query(
+          `INSERT INTO employee_request_steps
+             (workspace_id, request_id, submission, step, approver_user_id, approver_policy)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (workspace_id, request_id, submission, step) DO NOTHING`,
+          [workspaceId, requestId, submission, step.step, step.approverUserId, step.approverPolicy],
+        );
+      }
+    },
+
+    async listRequestSteps(workspaceId, requestId, submission) {
+      const rows = await db.query<{
+        step: number;
+        approver_user_id: string | null;
+        approver_policy: ApproverPolicy;
+      }>(
+        `SELECT step, approver_user_id, approver_policy
+           FROM employee_request_steps
+          WHERE workspace_id = $1 AND request_id = $2 AND submission = $3
+          ORDER BY step`,
+        [workspaceId, requestId, submission],
+      );
+      return rows.map((row) => ({
+        step: row.step,
+        approverUserId: row.approver_user_id,
+        approverPolicy: row.approver_policy,
+      }));
+    },
+
+    async listDelegations(workspaceId) {
+      const rows = await db.query<DelegationRow>(
+        `SELECT ${DELEGATION_COLUMNS} FROM approval_delegations
+          WHERE workspace_id = $1
+          ORDER BY effective_from DESC`,
+        [workspaceId],
+      );
+      return rows.map(toDelegation);
+    },
+
+    async createDelegation(workspaceId, input) {
+      const rows = await db.query<DelegationRow>(
+        `INSERT INTO approval_delegations
+           (workspace_id, from_user_id, to_user_id, effective_from, effective_to,
+            created_by_user_id)
+         VALUES ($1, $2, $3, $4::date, $5::date, $6)
+         RETURNING ${DELEGATION_COLUMNS}`,
+        [
+          workspaceId,
+          input.fromUserId,
+          input.toUserId,
+          input.effectiveFrom,
+          input.effectiveTo,
+          input.createdByUserId,
+        ],
+      );
+      const row = rows[0];
+      if (!row) throw new Error('承認の委任を作成できませんでした');
+      return toDelegation(row);
+    },
+
+    async listDelegationsTo(workspaceId, userId, onDate) {
+      const rows = await db.query<{ from_user_id: string }>(
+        `SELECT from_user_id FROM approval_delegations
+          WHERE workspace_id = $1 AND to_user_id = $2
+            AND effective_from <= $3::date
+            AND (effective_to IS NULL OR effective_to >= $3::date)`,
+        [workspaceId, userId, onDate],
+      );
+      return rows.map((row) => row.from_user_id);
+    },
 
     async insertRequest(workspaceId, input) {
       const rows = await db.query<RequestRow>(

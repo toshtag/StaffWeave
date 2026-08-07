@@ -69,6 +69,7 @@ export async function notifyRequestEvent(
   input: {
     event:
       | { type: 'submitted' }
+      | { type: 'stage_advanced' }
       | { type: 'approved' }
       | { type: 'returned' }
       | { type: 'cancelled' }
@@ -78,6 +79,15 @@ export async function notifyRequestEvent(
     occurredAt: Date;
     /** 出来事を起こした利用者。自分の操作の通知は自分へ送らない。 */
     actorUserId: string;
+    /**
+     * いま決裁を待っている段の相手。
+     *
+     * 段ごとの承認者が決まっていれば、その相手だけへ送る。決まっていない
+     * 段では空にし、これまでどおり決裁できる相手すべてへ送る。
+     * 全員へ送り続けると、自分の番ではない通知が積み上がり、
+     * 本当に自分の番の通知が埋もれる。
+     */
+    stageApprovers?: readonly string[];
   },
 ): Promise<void> {
   const { request, event } = input;
@@ -85,8 +95,10 @@ export async function notifyRequestEvent(
   // 決裁の再送や画面からの二度押しで通知が並ばないようにする。
   const key = `${request.id}:${request.submissions}:${request.currentStep}:${event.type}`;
 
-  if (event.type === 'submitted') {
-    const approvers = await repository.listApprovers(workspaceId, request.employeeId);
+  if (event.type === 'submitted' || event.type === 'stage_advanced') {
+    const stage = input.stageApprovers ?? [];
+    const approvers =
+      stage.length > 0 ? stage : await repository.listApprovers(workspaceId, request.employeeId);
     for (const userId of approvers) {
       if (userId === input.actorUserId) continue;
       await repository.enqueue(workspaceId, {

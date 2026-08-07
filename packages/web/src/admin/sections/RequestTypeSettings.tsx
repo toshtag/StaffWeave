@@ -1,6 +1,13 @@
-import type { RequestCategory, RequestTypeRecord } from '@staffweave/contracts';
+import type {
+  ApprovalStepRecord,
+  Employee,
+  RequestCategory,
+  RequestTypeRecord,
+} from '@staffweave/contracts';
 import { REQUEST_CATEGORIES } from '@staffweave/contracts';
-import { useCallback, useState } from 'react';
+import type { ApproverPolicy } from '@staffweave/domain';
+import { APPROVER_POLICIES } from '@staffweave/domain';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { useLocale } from '../../i18n/LocaleProvider.tsx';
 import type { SectionProps } from '../AdminConsole.tsx';
@@ -10,9 +17,12 @@ import { SettingsSection } from '../SettingsSection.tsx';
 /**
  * 申請種別と承認経路。
  *
- * 承認の段数がそのまま経路になる。段数を変えても、すでに提出された申請は
- * 提出したときの段数のまま進む。進行中の申請の経路が動くと、
- * 承認した段が消えたり、承認していない段が現れたりする。
+ * 段数だけを決めても、経路を決めたことにはならない。段ごとの承認者が無ければ、
+ * 承認の権限を持つ利用者はどの段も同じように通せる。段を分けた意味が無い。
+ *
+ * 段数を変えても、すでに提出された申請は提出したときの経路のまま進む。
+ * 進行中の申請の経路が動くと、承認した段が消えたり、
+ * 承認していない段が現れたりする。
  */
 export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.Element {
   const { messages } = useLocale();
@@ -27,6 +37,50 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
   const [requiresTimeRange, setRequiresTimeRange] = useState(false);
   const [requiresOvertimeLimit, setRequiresOvertimeLimit] = useState(false);
   const [active, setActive] = useState(true);
+  const [route, setRoute] = useState<ApprovalStepRecord[]>([]);
+  const [approvers, setApprovers] = useState<{ id: string; label: string }[]>([]);
+
+  const canWrite = permissions.includes('request.manage');
+
+  // 承認者に指名できるのは、この画面を扱える相手と同じ範囲の利用者。
+  // 従業員の一覧から、利用者が紐づいているものだけを出す。
+  useEffect(() => {
+    if (!canWrite) return;
+    void api
+      .listEmployees()
+      .then(({ employees }) =>
+        setApprovers(
+          employees
+            .filter((employee: Employee) => employee.userId !== null)
+            .map((employee: Employee) => ({
+              id: employee.userId as string,
+              label: `${employee.employeeNumber} ${employee.displayName}`,
+            })),
+        ),
+      )
+      .catch(() => setApprovers([]));
+  }, [canWrite]);
+
+  /** 段数に合わせて経路の行を作る。足りない段は「誰でも」で埋める。 */
+  const routeRows = (count: number): ApprovalStepRecord[] =>
+    Array.from({ length: count }, (_unused, index) => {
+      const step = index + 1;
+      return (
+        route.find((entry) => entry.step === step) ?? {
+          step,
+          approverUserId: null,
+          approverPolicy: 'any_approver' as const,
+        }
+      );
+    });
+
+  const updateStep = (step: number, change: Partial<ApprovalStepRecord>): void => {
+    setRoute(
+      routeRows(Number(approvalSteps) || 1).map((entry) =>
+        entry.step === step ? { ...entry, ...change } : entry,
+      ),
+    );
+  };
 
   const columns: Column<RequestTypeRecord>[] = [
     { key: 'code', header: labels.code, value: (row) => row.code },
@@ -72,7 +126,7 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
       load={load}
       canRead={permissions.includes('request.manage')}
       importCsv={api.importRequestTypesCsv}
-      canWrite={permissions.includes('request.manage')}
+      canWrite={canWrite}
       emptyMessage={labels.noRequestTypes}
       copyLabel={labels.editRow}
       formTitle={editing === null ? labels.addNew : labels.editSettings}
@@ -87,6 +141,10 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
         setRequiresTimeRange(row.requiresTimeRange);
         setRequiresOvertimeLimit(row.requiresOvertimeLimit);
         setActive(row.active);
+        void api
+          .getApprovalRoute(row.id)
+          .then((response) => setRoute(response.steps))
+          .catch(() => setRoute([]));
       }}
       submit={async () => {
         const shape = {
@@ -101,7 +159,13 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
           await api.createRequestType({ code, category, ...shape });
         } else {
           await api.updateRequestType(editing, { ...shape, active });
+          // 経路は段数と一緒に置き換える。段数を減らしたときに、
+          // 消えた段の承認者が残らないようにする。
+          await api.replaceApprovalRoute(editing, {
+            steps: routeRows(Number(approvalSteps) || 1),
+          });
           setEditing(null);
+          setRoute([]);
         }
         setCode('');
         setName('');
@@ -157,6 +221,43 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
             required
             hint={labels.approvalStepsHint}
           />
+          {editing !== null && (
+            <fieldset className="field">
+              <legend>{labels.approvalRoute}</legend>
+              <p className="hint">{labels.approvalRouteHint}</p>
+              {routeRows(Number(approvalSteps) || 1).map((entry) => (
+                <div key={entry.step}>
+                  <SelectField
+                    id={`request-type-step-${entry.step}-policy`}
+                    label={`${labels.stepLabel(entry.step)} ${labels.approverUser}`}
+                    value={entry.approverPolicy}
+                    onChange={(value) =>
+                      updateStep(entry.step, {
+                        approverPolicy: value as ApproverPolicy,
+                        approverUserId: value === 'user' ? (approvers[0]?.id ?? null) : null,
+                      })
+                    }
+                    options={APPROVER_POLICIES.map((policy) => ({
+                      value: policy,
+                      label: labels.approverPolicyLabel[policy],
+                    }))}
+                  />
+                  {entry.approverPolicy === 'user' && (
+                    <SelectField
+                      id={`request-type-step-${entry.step}-user`}
+                      label={`${labels.stepLabel(entry.step)} ${labels.approverUser}`}
+                      value={entry.approverUserId ?? ''}
+                      onChange={(value) => updateStep(entry.step, { approverUserId: value })}
+                      options={approvers.map((approver) => ({
+                        value: approver.id,
+                        label: approver.label,
+                      }))}
+                    />
+                  )}
+                </div>
+              ))}
+            </fieldset>
+          )}
           <fieldset className="field">
             <legend>{labels.requiredInputs}</legend>
             <CheckboxField

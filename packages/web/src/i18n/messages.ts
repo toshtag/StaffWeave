@@ -8,6 +8,7 @@ import type {
 } from '@staffweave/contracts';
 import type {
   ApiScope,
+  ApproverPolicy,
   ClosingFindingKind,
   DeviceBrowser,
   DeviceKind,
@@ -348,6 +349,11 @@ export interface AdminMessages {
   requestCategoryHint: string;
   approvalSteps: string;
   approvalStepsHint: string;
+  approvalRoute: string;
+  approvalRouteHint: string;
+  approverPolicyLabel: Record<ApproverPolicy, string>;
+  approverUser: string;
+  stepLabel: (step: number) => string;
   requiredInputs: string;
   timeRange: string;
   overtimeLimit: string;
@@ -836,6 +842,17 @@ const ja: Messages = {
     },
     requestCategoryHint: '休暇の区分は、承認しきったときに休暇の台帳へ反映されます。',
     approvalSteps: '承認の段数',
+    approvalRoute: '承認の経路',
+    approvalRouteHint:
+      '段ごとに承認者を決めます。決めない段は、承認の権限を持つ利用者なら誰でも通せます。',
+    approverPolicyLabel: {
+      user: '指名した利用者',
+      organization_manager: '組織の管理者',
+      workspace_admin: 'ワークスペースの管理者',
+      any_approver: '承認の権限を持つ利用者なら誰でも',
+    },
+    approverUser: '承認者',
+    stepLabel: (step: number) => `${step} 段目`,
     approvalStepsHint: '1 から 4 まで。提出済みの申請の段数は、ここを変えても動きません。',
     requiredInputs: '入力を求める項目',
     timeRange: '時間帯',
@@ -1348,6 +1365,17 @@ const en: Messages = {
     },
     requestCategoryHint: 'Leave requests post to the leave ledger once fully approved.',
     approvalSteps: 'Approval steps',
+    approvalRoute: 'Approval route',
+    approvalRouteHint:
+      'Set an approver for each step. Steps left unset can be decided by anyone with approval rights.',
+    approverPolicyLabel: {
+      user: 'Named user',
+      organization_manager: 'Organization manager',
+      workspace_admin: 'Workspace admin',
+      any_approver: 'Anyone with approval rights',
+    },
+    approverUser: 'Approver',
+    stepLabel: (step: number) => `Step ${step}`,
     approvalStepsHint:
       'One to four. Requests already submitted keep the count they were sent with.',
     requiredInputs: 'Required inputs',
