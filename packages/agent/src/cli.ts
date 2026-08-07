@@ -438,6 +438,7 @@ async function runStation(): Promise<void> {
     log: (entry) => logger.info(`agent.${entry.event}`, entry.detail ?? {}),
   });
 
+  await warnOnNodeMismatch(logger);
   logger.info('agent.started', { store: storePath(), spool: spoolPath(), reader: reader.name });
 
   // 読み取りと送信を並べて動かす。読み取りが待っている間も送信は進む。
@@ -469,6 +470,12 @@ async function runDiagnose(): Promise<void> {
   const build = await loadBuildInfo();
   console.log(`版: ${build.version}`);
   if (build.sourceSha !== '') console.log(`元の commit: ${build.sourceSha}`);
+  if (build.nodeMajor !== '') {
+    const running = process.versions.node.split('.')[0] ?? '';
+    const suffix = running === build.nodeMajor ? '' : `（いま動いているのは ${running}）`;
+    console.log(`対応する Node: ${build.nodeMajor}${suffix}`);
+  }
+  console.log(`読み取りの部品: ${build.reader === '' ? '（同梱していません）' : build.reader}`);
 
   const spool = createFileSpool(spoolPath());
   const pending = await spool.list();
@@ -517,6 +524,24 @@ async function runStatus(): Promise<void> {
 async function runVersion(): Promise<void> {
   const build = await loadBuildInfo();
   console.log(build.sourceSha === '' ? build.version : `${build.version} (${build.sourceSha})`);
+}
+
+/**
+ * 動かしている Node の版が、組み立てたときの版と合っているか。
+ *
+ * 読み取り装置の部品は Node の版ごとの ABI に合わせて組み立てられている。
+ * 別の版で動かすと、装置を開こうとした時点で落ちる。落ちてから理由を探すより、
+ * 先に言ったほうがよい。止めはしない。合っていなくても、送信だけは続けられる。
+ */
+async function warnOnNodeMismatch(logger: ReturnType<typeof createAgentLogger>): Promise<void> {
+  const build = await loadBuildInfo();
+  if (build.nodeMajor === '' || build.reader === '') return;
+  const running = process.versions.node.split('.')[0] ?? '';
+  if (running === build.nodeMajor) return;
+  logger.error('agent.node_version_mismatch', {
+    expected: build.nodeMajor,
+    running,
+  });
 }
 
 async function main(): Promise<void> {

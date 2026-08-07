@@ -26,6 +26,14 @@ VERSION=$(cd "$ROOT" && node -p "require('./package.json').version")
 # 取れなければ空にする。空の値を書くより、項目ごと置かないほうが読み違えない。
 SOURCE_SHA=$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null || echo '')
 
+# 読み取り装置の部品。組み立てが要るため、動かす OS の上でしか作れない。
+# 指定されたときだけ同梱する。Windows 向けの配布物を組むときに渡す。
+READER_MODULE="${AGENT_READER_MODULE-}"
+
+# 対応する Node の版。組み立てた部品は、この版の ABI に合わせて作られる。
+# 別の版で動かすと、読み込みの時点で落ちる。
+NODE_MAJOR=$(cd "$ROOT" && cat .nvmrc | tr -d '[:space:]')
+
 # 同梱する他所の部品。版はリポジトリの lockfile と合わせる。
 # ずれると、確かめた組み合わせと配るものが別になる。
 FSMXJS_VERSION="1.5.0"
@@ -110,7 +118,9 @@ JSON
 cat > "$BUNDLE/agent/build-info.json" <<JSON
 {
   "version": "$VERSION",
-  "sourceSha": "$SOURCE_SHA"
+  "sourceSha": "$SOURCE_SHA",
+  "nodeMajor": "$NODE_MAJOR",
+  "reader": "$READER_MODULE"
 }
 JSON
 
@@ -120,6 +130,21 @@ echo '要る部品を取り寄せます'
 (cd "$BUNDLE" && npm install --omit=dev --no-audit --no-fund --loglevel=error > /dev/null)
 # 取り寄せの記録は配らない。中身は package.json と同梱の node_modules が示す。
 rm -f "$BUNDLE/package-lock.json"
+
+# 読み取り装置の部品は、組み立てが要る。組み立て済みのものを別の OS で作れないため、
+# 動かす OS の上で組むときにだけ入れる。端末では取り寄せない。現場の端末は
+# 通信できないことがあり、組み立ての道具も無い。
+if [ -n "$READER_MODULE" ]; then
+  echo "読み取り装置の部品を組み込みます（$READER_MODULE）"
+  (cd "$BUNDLE" && npm install --omit=dev --no-audit --no-fund --loglevel=error "$READER_MODULE")
+  rm -f "$BUNDLE/package-lock.json"
+  # 組み立てた結果が入っていることを、ここで確かめる。無いまま配ると、
+  # 端末の前で初めて読めないと分かる。
+  if ! find "$BUNDLE/node_modules" -name '*.node' | head -1 | grep -q . ; then
+    echo '読み取り装置の部品を組み立てられませんでした。' >&2
+    exit 1
+  fi
+fi
 
 # 自分たちのパッケージは、取り寄せのあとに置く。
 # 先に置くと、npm が「依存に無いもの」として取り除く。
@@ -139,33 +164,6 @@ for package in contracts domain; do
 }
 JSON
 done
-
-cat > "$BUNDLE/install-reader.ps1" <<'PS1'
-# 読み取り装置の部品を、この端末へ入れる。
-#
-# 装置のドライバを叩く部分は OS ごとに組み立てが要る。組み立て済みのものを
-# Linux で作って Windows へ配ることはできないため、端末の側で取り寄せる。
-# 取り寄せるのはこの 1 つだけで、利用者がコードを書く必要はない。
-#
-# 管理者として実行すること。組み立てには Windows のビルドツールが要る。
-param([string] $AgentRoot = $PSScriptRoot)
-
-$ErrorActionPreference = 'Stop'
-
-if (-not (Test-Path (Join-Path $AgentRoot 'package.json'))) {
-  throw "配布物が見つかりません: $AgentRoot"
-}
-
-Push-Location $AgentRoot
-try {
-  npm install --omit=dev --no-audit --no-fund pcsclite@1.0.1
-} finally {
-  Pop-Location
-}
-
-Write-Host "読み取り装置の部品を入れました。"
-Write-Host "確かめるには: node agent/cli.js diagnose"
-PS1
 
 # 端末の起動時に常駐させる手順。実行はしない。実行すると、この場の権限で登録される。
 #

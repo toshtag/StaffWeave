@@ -56,12 +56,59 @@ jobs:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: node scripts/verify-release-checks.mjs
 
+  # Windows 向けの配布物は、Windows の上でしか組めない。読み取り装置の部品に
+  # 組み立てが要り、組み立て済みのものを Linux で作って配ることはできない。
+  windows-agent:
+    name: Windows 向けの配布物を組む
+    runs-on: windows-latest
+    needs: gate
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 配布物を組む
+        shell: bash
+        env:
+          AGENT_READER_MODULE: pcsclite@1.0.1
+        run: ./scripts/package-agent.sh artifacts/windows-agent-bundle
+
+      - name: まとめて構成一覧を書き出す
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          New-Item -ItemType Directory -Force -Path artifacts/windows-agent | Out-Null
+          Compress-Archive -Path artifacts/windows-agent-bundle/staffweave-agent `
+            -DestinationPath "artifacts/windows-agent/staffweave-agent-windows-x64-$version.zip" `
+            -CompressionLevel Optimal -Force
+          npx --yes @cyclonedx/cyclonedx-npm@4.0.2 --omit dev --output-format json `
+            --output-file artifacts/windows-agent/staffweave-agent-windows.cdx.json `
+            -- artifacts/windows-agent-bundle/staffweave-agent/package.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-agent
+          path: artifacts/windows-agent
+          if-no-files-found: error
+          retention-days: 1
+
   assets:
     name: 成果物を組み、元との対応を確かめる
     runs-on: ubuntu-latest
     # ゲートを通らなければ、成果物を組むところまで行かない。
     # 手動の確認でも同じ順序にする。確かめる経路と本番の経路を別物にしない。
-    needs: gate
+    needs: [gate, windows-agent]
 
     # tag から Release を作るときだけ書き込みが要る。
     # 手動の確認では読み取りだけで足りるが、job を分けると
@@ -81,11 +128,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - uses: actions/download-artifact@448e3f862ab3ef47aa50ff917776823c9946035b # v6.0.0
+        with:
+          name: windows-agent
+          path: artifacts/windows-agent
+
       # 生成物へ混ざってはいけない値を、実際に環境へ置いて確かめる。
       # 実在しない目印を使う。実在する秘密情報は置かない。
       - name: 成果物を組む
         env:
           SBOM_CANARY: SBOM_MUST_NOT_CONTAIN_THIS_VALUE
+          # Windows 向けの配布物が無ければ、そこで止める。読み取り装置を使う
+          # 端末へ配るものが欠けたまま「配れる」と言わない。
+          RELEASE_REQUIRE_WINDOWS_AGENT: '1'
         run: pnpm release:assets
 
       - name: 構成一覧の中身を確かめる
@@ -101,6 +156,7 @@ jobs:
         env:
           RELEASE_EXPECTED_SOURCE_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          RELEASE_REQUIRE_WINDOWS_AGENT: '1'
         run: pnpm release:verify
 
       - name: 成果物を残す
