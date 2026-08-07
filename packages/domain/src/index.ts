@@ -1,4 +1,16 @@
 export type {
+  ApprovalActor,
+  ApprovalAuthorization,
+  ApprovalDenial,
+  ApprovalStep,
+  ApproverPolicy,
+} from './approval/approval-route.js';
+export {
+  APPROVER_POLICIES,
+  authorizeApproval,
+  isApproverPolicy,
+} from './approval/approval-route.js';
+export type {
   ClosingDayState,
   ClosingFinding,
   ClosingFindingKind,
