@@ -43,6 +43,7 @@ import type {
   MonthlySummaryList,
   Organization,
   OrganizationList,
+  PeriodSummaryList,
   RecordAttendanceEventRequest,
   RecordAttendanceEventResponse,
   ReopenMonthRequest,
@@ -250,6 +251,15 @@ export const api = {
   listMonthlySummaries: (query: { period: string; employeeId?: string }) =>
     request<MonthlySummaryList>(
       `/monthly-summaries?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  listPeriodSummaries: (query: {
+    employeeId: string;
+    from: string;
+    to: string;
+    kind?: 'week' | 'settlement';
+  }) =>
+    request<PeriodSummaryList>(
+      `/period-summaries?${new URLSearchParams(query as Record<string, string>).toString()}`,
     ),
   listClosingReadiness: (query: { period: string; employeeId?: string }) =>
     request<ClosingReadinessList>(

@@ -10,6 +10,7 @@ import { LeaveLedgerSettings } from './sections/LeaveLedgerSettings.tsx';
 import { LeaveTypeSettings } from './sections/LeaveTypeSettings.tsx';
 import { MonthlySummarySettings } from './sections/MonthlySummarySettings.tsx';
 import { OrganizationSettings } from './sections/OrganizationSettings.tsx';
+import { PeriodSummarySettings } from './sections/PeriodSummarySettings.tsx';
 import { RequestTypeSettings } from './sections/RequestTypeSettings.tsx';
 import { SiteSettings } from './sections/SiteSettings.tsx';
 import { UserScopeSettings } from './sections/UserScopeSettings.tsx';
@@ -126,6 +127,12 @@ function modulesFor(labels: AdminLabels): ModuleDefinition[] {
           label: labels.sectionMonthlySummaries,
           requires: 'employee.read',
           render: (props) => <MonthlySummarySettings {...props} />,
+        },
+        {
+          key: 'periods',
+          label: labels.sectionPeriodSummaries,
+          requires: 'employee.read',
+          render: (props) => <PeriodSummarySettings {...props} />,
         },
         {
           key: 'readiness',

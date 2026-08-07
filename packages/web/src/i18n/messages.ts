@@ -342,6 +342,18 @@ export interface AdminMessages {
   stopEditing: string;
   moduleMonthly: string;
   sectionMonthlySummaries: string;
+  sectionPeriodSummaries: string;
+  periodSummariesHint: string;
+  noPeriodSummaries: string;
+  periodKind: string;
+  periodKindLabel: { week: string; settlement: string };
+  periodFrom: string;
+  periodTo: string;
+  periodTotalMinutes: string;
+  periodDifferenceMinutes: string;
+  periodIncludesClosedMonth: string;
+  periodEmployeeHint: string;
+  employeeId: string;
   sectionClosingReadiness: string;
   monthlySummariesHint: string;
   closingReadinessHint: string;
@@ -755,6 +767,21 @@ const ja: Messages = {
     stopEditing: 'やめて新しく作る',
     moduleMonthly: '月次',
     sectionMonthlySummaries: '月次の集計',
+    sectionPeriodSummaries: '期間の集計',
+    periodSummariesHint:
+      '週・清算期間・変形労働の対象期間の合計です。区切りは計算規則の版と労働形態の割当が決めます。' +
+      '設定が無い区切りは出ません。',
+    noPeriodSummaries:
+      'この範囲に集計する期間がありません。従業員と区切りの設定を確かめてください。',
+    periodKind: '区切り',
+    periodKindLabel: { week: '週', settlement: '清算期間' },
+    periodFrom: '開始日',
+    periodTo: '終了日',
+    periodTotalMinutes: '総枠（分）',
+    periodDifferenceMinutes: '総枠との差（分）',
+    periodIncludesClosedMonth: '締め済みを含む',
+    periodEmployeeHint: '従業員の識別子を入れます。',
+    employeeId: '従業員',
     sectionClosingReadiness: '締める前の確認',
     monthlySummariesHint:
       '出ているのは、日次を足し合わせたいまの値です。締めた月は、締めた時点で固めた値も並びます。',
@@ -1182,6 +1209,22 @@ const en: Messages = {
     stopEditing: 'Stop and add a new one',
     moduleMonthly: 'Monthly',
     sectionMonthlySummaries: 'Monthly totals',
+    sectionPeriodSummaries: 'Period totals',
+    periodSummariesHint:
+      'Totals for weeks, flex settlement periods and variable working-hour periods. ' +
+      'The boundaries come from the calculation rule version and the labor system assignment. ' +
+      'Boundaries that are not configured do not appear.',
+    noPeriodSummaries:
+      'No periods to total in this range. Check the employee and the boundary settings.',
+    periodKind: 'Boundary',
+    periodKindLabel: { week: 'Week', settlement: 'Settlement period' },
+    periodFrom: 'From',
+    periodTo: 'To',
+    periodTotalMinutes: 'Total allowance (minutes)',
+    periodDifferenceMinutes: 'Difference from allowance (minutes)',
+    periodIncludesClosedMonth: 'Includes a closed month',
+    periodEmployeeHint: 'Enter the employee identifier.',
+    employeeId: 'Employee',
     sectionClosingReadiness: 'Before closing',
     monthlySummariesHint:
       'These are the live totals built from daily results. Closed months also show the values fixed at closing.',
