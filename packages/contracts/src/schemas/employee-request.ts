@@ -163,6 +163,13 @@ export const listEmployeeRequestsQuerySchema = objectSchema({
     state: { type: 'string', enum: [...STAGED_REQUEST_STATES] },
     from: businessDateSchema,
     to: businessDateSchema,
+    awaitingMe: {
+      type: 'string',
+      enum: ['true'],
+      description:
+        'いまの段の決裁が自分の番のものだけを返す。承認の列として使う。' +
+        '全部を返すと、自分の番ではない申請が混ざり、押しても断られる',
+    },
   },
   required: [],
 });
