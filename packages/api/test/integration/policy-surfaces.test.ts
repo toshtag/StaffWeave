@@ -20,8 +20,13 @@ const run = promisify(execFile);
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..');
 const POLICY = resolve(REPOSITORY_ROOT, 'scripts/check-policy.sh');
 
-/** どこにも現れない語。これを禁止語として渡すと、通る側の形になる。 */
-const ABSENT = 'zzz-not-present-anywhere-zzz';
+/**
+ * どこにも現れない語。これを禁止語として渡すと、通る側の形になる。
+ *
+ * 組み立ててから使う。この検査そのものも追跡ファイルなので、
+ * 語をそのまま書くと「中身にある」ことになり、通る側の形にならない。
+ */
+const ABSENT = ['zzz', 'absent', 'sentinel', 'zzz'].join('-');
 
 interface PolicyRun {
   code: number;
