@@ -106,6 +106,31 @@ export interface WorkCategorySettings {
   deemedMinutes: number | null;
 }
 
+/**
+ * 承認しきった申請から来る、その日の認定の条件。
+ *
+ * ここへ渡すのは `approved` になった申請だけ。提出しただけの申請、
+ * 差し戻された申請、取り下げた申請は渡さない。
+ * 途中の段で計算が動くと、承認する前に結果が変わってしまう。
+ */
+export interface ApprovedAdjustments {
+  /**
+   * 認定する残業の終わりの時刻（業務日の現地 0 時からの分数）。
+   *
+   * 日をまたぐ残業では 1440 を超える。承認しきった残業の申請が複数あれば、
+   * いちばん遅い時刻を採る。承認が無ければ `null`。
+   */
+  overtimeLimitMinutes: number | null;
+  /** 休日出勤の承認があるか。 */
+  holidayWorkApproved: boolean;
+}
+
+/** 承認が 1 件も無い状態。 */
+export const NO_APPROVED_ADJUSTMENTS: ApprovedAdjustments = {
+  overtimeLimitMinutes: null,
+  holidayWorkApproved: false,
+};
+
 export interface CalculationInput {
   businessDate: BusinessDate;
   timeZone: string;
@@ -113,6 +138,8 @@ export interface CalculationInput {
   schedule: WorkSchedule | null;
   rules: CalculationRules;
   category?: WorkCategorySettings | null;
+  /** 承認しきった申請。渡さない場合は「承認が無い」として扱う。 */
+  approvals?: ApprovedAdjustments | null;
 }
 
 export interface CalculationStep {
@@ -196,6 +223,21 @@ export interface CalculationResult {
 
   /** みなし労働分数。勤務区分または労働形態が持つ場合だけ。 */
   deemedMinutes: number | null;
+
+  /**
+   * 認定した所定外の実労働。
+   *
+   * 承認しきった残業の申請が持つ上限時刻までに収まる、所定終業より後の実労働。
+   * 承認が無ければ 0。0 は「認定した残業は無かった」という確かめられた事実で、
+   * 未設定とは違う。所定の時間帯が決まっていない日だけ `null` になる。
+   */
+  recognizedOvertimeMinutes: number | null;
+  /** 認定の外に出た所定外の実労働。上限を超えた分と、承認の無い所定外。 */
+  unapprovedOvertimeMinutes: number | null;
+  /** 承認のある休日労働。休日でなければ 0。 */
+  approvedHolidayMinutes: number;
+  /** 承認の無い休日労働。 */
+  unapprovedHolidayMinutes: number;
 
   basis: CalculationBasis;
 }
@@ -468,6 +510,44 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
 
   const deemedMinutes = category?.deemedMinutes ?? null;
 
+  // 承認しきった申請だけを見る。提出しただけ・差し戻し・取消は渡ってこない。
+  const approvals = input.approvals ?? NO_APPROVED_ADJUSTMENTS;
+
+  // 認定する残業は、所定終業より後の実労働のうち、上限時刻より前の分だけ。
+  //
+  // 上限は「その時刻まで残業してよい」という終わりの取り決めなので、
+  // 所定始業より前の実労働（早出）は、この上限では認められない。
+  // 早出まで含めると、終業後の上限を承認しただけで早出まで認めたことになる。
+  //
+  // 上限は現地時刻で決まるため、絶対時刻へ直してから比べる。
+  // 「0 時からの分数」のまま比べると、夏時間で長さの変わる日にずれる。
+  let recognizedOvertimeMinutes: number | null = null;
+
+  if (!plannedDay) {
+    // 休日には所定が無い。残業ではなく休日労働として数える。
+    recognizedOvertimeMinutes = 0;
+  } else if (scheduleInterval !== null) {
+    const scheduleEnd = scheduleInterval.end;
+    const limit =
+      approvals.overtimeLimitMinutes === null
+        ? null
+        : localToInstant(approvals.overtimeLimitMinutes);
+    recognizedOvertimeMinutes =
+      limit === null
+        ? 0
+        : workedInstants.filter((instant) => instant >= scheduleEnd && instant < limit).length;
+  } else if (approvals.overtimeLimitMinutes === null) {
+    // 所定終業が無く、承認も無い。認定する残業は無い。
+    recognizedOvertimeMinutes = 0;
+  } else {
+    // 上限は承認されているのに、所定終業が決まっていない。
+    // どこからが残業なのかを誰も決めていないため、0 を返さず未設定として示す。
+    // 0 を返すと「承認したのに認定は 0 分だった」と読め、設定漏れに気付けない。
+    unconfigured.push('所定の時間帯（残業の認定に要る）');
+  }
+
+  const approvedHolidayMinutes = approvals.holidayWorkApproved ? nonWorkingDayMinutes : 0;
+
   const rounded = {
     attendedMinutes: applyRounding(attendedMinutes, rules),
     workedMinutes: applyRounding(workedMinutes, rules),
@@ -492,7 +572,25 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
     beforeScheduleMinutes: applyRounding(beforeScheduleMinutes, rules),
     afterScheduleMinutes: applyRounding(afterScheduleMinutes, rules),
     deemedMinutes,
+    recognizedOvertimeMinutes:
+      recognizedOvertimeMinutes === null ? null : applyRounding(recognizedOvertimeMinutes, rules),
+    approvedHolidayMinutes: applyRounding(approvedHolidayMinutes, rules),
   };
+
+  // 認定の外に出た分は、丸めたあとの所定外から引いて出す。
+  // それぞれを別に丸めると、内訳の合計が所定外と合わなくなる。
+  //
+  // 休日には所定が無い。所定外という区分そのものを当てず、休日労働の側で数える。
+  const unapprovedOvertimeMinutes =
+    rounded.recognizedOvertimeMinutes === null
+      ? null
+      : plannedDay
+        ? Math.max(0, rounded.outsideScheduleMinutes - rounded.recognizedOvertimeMinutes)
+        : 0;
+  const unapprovedHolidayMinutes = Math.max(
+    0,
+    rounded.nonWorkingDayMinutes - rounded.approvedHolidayMinutes,
+  );
 
   const segments: CalculationSegment[] = [];
   if (attendance) segments.push(toSegment('work', attendance));
@@ -528,6 +626,14 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
       { label: '早退', minutes: rounded.earlyLeaveMinutes },
       { label: '始業前', minutes: rounded.beforeScheduleMinutes },
       { label: '終業後', minutes: rounded.afterScheduleMinutes },
+      ...(rounded.recognizedOvertimeMinutes === null
+        ? []
+        : [
+            { label: '認定時間外', minutes: rounded.recognizedOvertimeMinutes },
+            { label: '未承認の所定外', minutes: unapprovedOvertimeMinutes ?? 0 },
+          ]),
+      { label: '承認済みの休日労働', minutes: rounded.approvedHolidayMinutes },
+      { label: '未承認の休日労働', minutes: unapprovedHolidayMinutes },
       ...(deemedMinutes === null ? [] : [{ label: 'みなし労働', minutes: deemedMinutes }]),
     ],
     incomplete: summary.state !== 'finished' && summary.state !== 'not_started',
@@ -549,6 +655,8 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
   return {
     businessDate: input.businessDate,
     ...rounded,
+    unapprovedOvertimeMinutes,
+    unapprovedHolidayMinutes,
     scheduledMinutes,
     basis,
   };
@@ -581,5 +689,15 @@ export function fingerprintSource(input: CalculationInput): string {
     input.rules.roundingMode,
   ].join('|');
 
-  return [input.businessDate, input.timeZone, schedule, rules, events.join(',')].join('\n');
+  // 承認の内容も指紋へ入れる。入れないと、承認しても「入力は変わっていない」と
+  // 判断され、認定を反映しないまま前の版が残る。
+  const approvals = input.approvals ?? NO_APPROVED_ADJUSTMENTS;
+  const approved = [
+    approvals.overtimeLimitMinutes === null ? 'none' : String(approvals.overtimeLimitMinutes),
+    approvals.holidayWorkApproved ? 'holiday' : 'no-holiday',
+  ].join('|');
+
+  return [input.businessDate, input.timeZone, schedule, rules, approved, events.join(',')].join(
+    '\n',
+  );
 }
