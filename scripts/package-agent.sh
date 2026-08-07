@@ -35,7 +35,11 @@ AJV_FORMATS_VERSION="3.0.1"
 rm -rf "$OUTPUT"
 mkdir -p "$BUNDLE"
 
-WORK=$(mktemp -d)
+# 作業場はリポジトリの中へ置く。外（mktemp）へ置くと、Windows の Git Bash では
+# tsc へ渡す道と、そのあと読む道の書き方が食い違い、出来上がったものを見失う。
+WORK="$ROOT/.package-agent-work"
+rm -rf "$WORK"
+mkdir -p "$WORK"
 
 echo 'TypeScript をコンパイルします'
 
@@ -61,7 +65,7 @@ cat > "$CONFIG" <<JSON
     "noEmit": false,
     "declaration": false,
     "sourceMap": false,
-    "outDir": "$WORK/out",
+    "outDir": "./.package-agent-work/out",
     "rootDir": "./packages",
     "paths": {
       "@staffweave/contracts": ["./packages/contracts/src/index.ts"],
@@ -136,46 +140,6 @@ for package in contracts domain; do
 JSON
 done
 
-# サービスとして登録する手順。実行はしない。実行すると、この場の権限で登録される。
-cat > "$BUNDLE/install-service.ps1" <<'PS1'
-# StaffWeave の打刻 Agent を Windows サービスとして登録する。
-#
-# 管理者として実行すること。登録の前に、この端末で enroll を済ませておく。
-# 資格情報のファイルは、サービスを動かす利用者だけが読める場所へ置く。
-#
-# 既定では、読み取り装置と送信を 1 つのサービスで動かす（station）。
-# 分けると、登録した側だけが動き、もう一方は誰も起動しない。
-# 読み取り装置を付けない端末では -NoReader を付ける。
-param(
-  [Parameter(Mandatory = $true)][string] $NodePath,
-  [Parameter(Mandatory = $true)][string] $AgentRoot,
-  [string] $ServiceName = 'StaffWeaveAgent',
-  [string] $Store = 'C:\ProgramData\StaffWeave\agent.json',
-  [switch] $NoReader
-)
-
-$ErrorActionPreference = 'Stop'
-
-if (-not (Test-Path $NodePath)) { throw "Node.js が見つかりません: $NodePath" }
-if (-not (Test-Path $AgentRoot)) { throw "配布物が見つかりません: $AgentRoot" }
-
-# 起動するのはコンパイル済みの JS。Node は .ts を読めない。
-$cli = Join-Path $AgentRoot 'agent/cli.js'
-if (-not (Test-Path $cli)) { throw "配布物が壊れています。agent/cli.js がありません: $cli" }
-
-# 読み取りと送信を 1 つのプロセスで持つ。station は同梱の受け渡しを既定で読む。
-$mode = if ($NoReader) { 'serve' } else { 'station' }
-$binaryPath = "`"$NodePath`" `"$cli`" $mode --store `"$Store`""
-
-sc.exe create $ServiceName binPath= $binaryPath start= auto | Out-Null
-# 落ちたら間を空けて上げ直す。上げ続けると、直らない不具合で電源を使い切る。
-sc.exe failure $ServiceName reset= 86400 actions= restart/30000/restart/60000/restart/300000 | Out-Null
-sc.exe description $ServiceName "StaffWeave 打刻端末のカード読み取りと送信を行います" | Out-Null
-
-Write-Host "登録しました: $ServiceName（$mode）"
-Write-Host "開始するには: sc.exe start $ServiceName"
-PS1
-
 cat > "$BUNDLE/install-reader.ps1" <<'PS1'
 # 読み取り装置の部品を、この端末へ入れる。
 #
@@ -203,19 +167,98 @@ Write-Host "読み取り装置の部品を入れました。"
 Write-Host "確かめるには: node agent/cli.js diagnose"
 PS1
 
-cat > "$BUNDLE/uninstall-service.ps1" <<'PS1'
-# StaffWeave の打刻 Agent のサービス登録を外す。
+# 端末の起動時に常駐させる手順。実行はしない。実行すると、この場の権限で登録される。
 #
-# 資格情報と送信待ちのファイルは消さない。送れていない打刻が残っている可能性があるため、
-# 消すかどうかは README の手順で確かめてから決める。
-param([string] $ServiceName = 'StaffWeaveAgent')
+# Windows のサービスとしては登録しない。サービスとして動くプロセスは SCM と話す
+# 入口を持っている必要があり、node.exe も私たちの cli.js も持っていない。
+# 詳しくは docs/decisions/0002-windows-residency.md。
+cat > "$BUNDLE/install-startup.ps1" <<'PS1'
+# StaffWeave の打刻 Agent を、端末の起動時に常駐させる。
+#
+# 管理者として実行すること。登録の前に、この端末で enroll を済ませておく。
+# 資格情報のファイルは、動かす利用者だけが読める場所へ置く。
+#
+# Windows のサービスとしては登録しない（docs/decisions/0002-windows-residency.md）。
+# 求めているのは起動時の自動常駐で、サービスの一覧に出ること自体ではない。
+#
+# 読み取り装置を付けない端末では -NoReader を付ける。
+param(
+  [Parameter(Mandatory = $true)][string] $NodePath,
+  [Parameter(Mandatory = $true)][string] $AgentRoot,
+  [string] $TaskName = 'StaffWeaveAgent',
+  [string] $Store = 'C:\ProgramData\StaffWeave\agent.json',
+  [switch] $NoReader
+)
 
 $ErrorActionPreference = 'Stop'
 
-sc.exe stop $ServiceName | Out-Null
-sc.exe delete $ServiceName | Out-Null
+if (-not (Test-Path $NodePath)) { throw "Node.js が見つかりません: $NodePath" }
+if (-not (Test-Path $AgentRoot)) { throw "配布物が見つかりません: $AgentRoot" }
 
-Write-Host "登録を外しました: $ServiceName"
+# 起動するのはコンパイル済みの JS。Node は .ts を読めない。
+$cli = Join-Path $AgentRoot 'agent/cli.js'
+if (-not (Test-Path $cli)) { throw "配布物が壊れています。agent/cli.js がありません: $cli" }
+
+# 読み取りと送信を 1 つのプロセスで持つ。分けると、登録した側だけが動く。
+$mode = if ($NoReader) { 'serve' } else { 'station' }
+
+$action = New-ScheduledTaskAction -Execute $NodePath `
+  -Argument "`"$cli`" $mode --store `"$Store`"" -WorkingDirectory $AgentRoot
+
+# 端末の起動時に始める。利用者のログオンは待たない。据え置きの端末は
+# 誰もログオンしないまま置かれる。
+$trigger = New-ScheduledTaskTrigger -AtStartup
+
+# SYSTEM として動かす。ログオンしている利用者に依存させない。
+$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount `
+  -RunLevel Highest
+
+$settings = New-ScheduledTaskSettingsSet `
+  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -DontStopOnIdleEnd `
+  -MultipleInstances IgnoreNew `
+  -RestartInterval (New-TimeSpan -Minutes 1) -RestartCount 3 `
+  -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
+
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
+  -Principal $principal -Settings $settings -Force | Out-Null
+
+Write-Host "登録しました: $TaskName（$mode）"
+Write-Host "開始するには: Start-ScheduledTask -TaskName $TaskName"
+Write-Host "状態を見るには: Get-ScheduledTask -TaskName $TaskName | Get-ScheduledTaskInfo"
+PS1
+
+cat > "$BUNDLE/uninstall-startup.ps1" <<'PS1'
+# StaffWeave の打刻 Agent の常駐を外す。
+#
+# 資格情報と送信待ちのファイルは消さない。送れていない打刻が残っている可能性があるため、
+# 消すかどうかは README の手順で確かめてから決める。
+param(
+  [string] $TaskName = 'StaffWeaveAgent',
+  [Parameter(Mandatory = $true)][string] $NodePath,
+  [Parameter(Mandatory = $true)][string] $AgentRoot,
+  [string] $Store = 'C:\ProgramData\StaffWeave\agent.json',
+  [int] $StopTimeoutSeconds = 30
+)
+
+$ErrorActionPreference = 'Stop'
+
+# まず行儀よく終わらせる。タスクスケジューラの停止はプロセスを強制的に
+# 終わらせるだけで、Windows には「行儀よく終われ」という合図が無い。
+$cli = Join-Path $AgentRoot 'agent/cli.js'
+if (Test-Path $cli) {
+  & $NodePath $cli stop --store $Store
+  $deadline = (Get-Date).AddSeconds($StopTimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    $info = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $info -or $info.State -ne 'Running') { break }
+    Start-Sleep -Seconds 1
+  }
+}
+
+Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+Write-Host "常駐を外しました: $TaskName"
 Write-Host "資格情報と送信待ちのファイルは残しています。"
 PS1
 

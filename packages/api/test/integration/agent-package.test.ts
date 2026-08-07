@@ -81,33 +81,70 @@ describe('打刻端末の配布物', () => {
     }
   });
 
-  it('サービスの登録は、コンパイル済みの JS を起動する', async () => {
-    const script = await readFile(join(bundle, 'install-service.ps1'), 'utf8');
+  it('常駐の登録は、コンパイル済みの JS を起動する', async () => {
+    const script = await readFile(join(bundle, 'install-startup.ps1'), 'utf8');
 
     expect(script).toContain('agent/cli.js');
     // .ts を Node へ渡す形が残っていれば、登録しても起動しない。
     // 見るのは登録する道筋だけ。説明の文へ .ts が出るのは構わない。
     expect(script).not.toContain('cli.ts');
-    expect(script).not.toMatch(/binPath[\s\S]*\.ts/);
+    expect(script).not.toMatch(/New-ScheduledTaskAction[\s\S]*\.ts/);
   });
 
-  it('サービスとして登録・削除する手順を同梱する', async () => {
+  /**
+   * Windows のサービスとしては登録しないこと。
+   *
+   * サービスとして動くプロセスは SCM と話す入口を持っている必要があり、
+   * node.exe も私たちの cli.js も持っていない。`sc.exe create` は登録の情報を
+   * 作るだけなので登録は通り、`sc.exe start` で初めて落ちる。実機で初めて
+   * 分かる場所だった（docs/decisions/0002-windows-residency.md）。
+   */
+  it('Windows のサービスとしては登録しない', async () => {
+    const files = await filesUnder(bundle);
+    expect(files).not.toContain('install-service.ps1');
+    expect(files).not.toContain('uninstall-service.ps1');
+
+    for (const name of ['install-startup.ps1', 'uninstall-startup.ps1']) {
+      const script = await readFile(join(bundle, name), 'utf8');
+      expect(script).not.toMatch(/sc\.exe\s+create/);
+      expect(script).not.toMatch(/New-Service/);
+    }
+  });
+
+  it('起動時に常駐させ、外す手順を同梱する', async () => {
     const files = await filesUnder(bundle);
 
-    expect(files).toContain('install-service.ps1');
-    expect(files).toContain('uninstall-service.ps1');
+    expect(files).toContain('install-startup.ps1');
+    expect(files).toContain('uninstall-startup.ps1');
+
+    const install = await readFile(join(bundle, 'install-startup.ps1'), 'utf8');
+    // 端末の起動時に始める。利用者のログオンを待つ形にすると、誰も
+    // ログオンしない据え置きの端末では上がらない。
+    expect(install).toContain('-AtStartup');
+    expect(install).toContain('ServiceAccount');
+    // 実行時間の上限を置くと、常駐が途中で打ち切られる。
+    expect(install).toMatch(/ExecutionTimeLimit[\s\S]*Seconds 0/);
   });
 
-  it('登録の手順は、落ちたときに間を空けて上げ直す', async () => {
-    const script = await readFile(join(bundle, 'install-service.ps1'), 'utf8');
+  it('常駐の登録は、落ちたときに間を空けて上げ直す', async () => {
+    const script = await readFile(join(bundle, 'install-startup.ps1'), 'utf8');
 
     // 上げ続けると、直らない不具合で端末の電源を使い切る。
-    expect(script).toContain('sc.exe failure');
-    expect(script).toMatch(/restart\/\d+/);
+    expect(script).toContain('-RestartInterval');
+    expect(script).toContain('-RestartCount');
   });
 
-  it('登録を外しても、資格情報と送信待ちを消さない', async () => {
-    const script = await readFile(join(bundle, 'uninstall-service.ps1'), 'utf8');
+  it('外す手順は、まず行儀よく終わらせてから止める', async () => {
+    const script = await readFile(join(bundle, 'uninstall-startup.ps1'), 'utf8');
+
+    // タスクスケジューラの停止はプロセスを強制的に終わらせるだけで、
+    // Windows には「行儀よく終われ」という合図が無い。
+    expect(script).toMatch(/cli\.js stop|\$cli stop/);
+    expect(script).toContain('Stop-ScheduledTask');
+  });
+
+  it('常駐を外しても、資格情報と送信待ちを消さない', async () => {
+    const script = await readFile(join(bundle, 'uninstall-startup.ps1'), 'utf8');
 
     // 送れていない打刻が残っている可能性がある。消すかどうかは人が決める。
     expect(script).toContain('残しています');
@@ -115,19 +152,19 @@ describe('打刻端末の配布物', () => {
   });
 
   /**
-   * 登録したサービス 1 つで、読み取りから送信まで完結すること。
+   * 登録した常駐 1 つで、読み取りから送信まで完結すること。
    *
-   * これまで登録していたのは送信だけで、カードの読み取りはサービスに入って
+   * これまで登録していたのは送信だけで、カードの読み取りは常駐に入って
    * いなかった。実機で #194 と #195 を別々に通しても、「配った端末が物理カードを
    * 読み、回線断でも失わず、復旧後に送る」という経路は証明できない。
    */
-  it('サービスは、読み取りと送信を 1 つのプロセスで起動する', async () => {
-    const script = await readFile(join(bundle, 'install-service.ps1'), 'utf8');
+  it('常駐は、読み取りと送信を 1 つのプロセスで起動する', async () => {
+    const script = await readFile(join(bundle, 'install-startup.ps1'), 'utf8');
 
     expect(script).toContain("'station'");
     // 読み取り装置を付けない端末のために、送信だけの道も残す。
     expect(script).toContain("'serve'");
-    expect(script).toMatch(/binPath[\s\S]*\$mode/);
+    expect(script).toMatch(/-Argument[\s\S]*\$mode/);
   });
 
   /**

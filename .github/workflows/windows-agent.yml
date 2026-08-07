@@ -1,0 +1,109 @@
+name: Windows の常駐
+
+# 配った Agent が、Windows で本当に常駐できるかを確かめる。
+#
+# これまで確かめていたのは、登録する script の文字列だけだった。
+# 文字列は読めても、Windows がその通りに動くとは限らない。実際、
+# `sc.exe create` で node.exe を登録する形は、登録は通っても起動できなかった
+# （docs/decisions/0002-windows-residency.md）。
+#
+# 登録 → 開始 → 動作中 → 停止 → 停止済み → 削除までを、Windows の上で通す。
+# 実機でしか確かめられないもの（読み取り装置、端末の再起動）は #194 と #195 に残る。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/agent/**'
+      - 'scripts/package-agent.sh'
+      - '.github/workflows/windows-agent.yml'
+  pull_request:
+    paths:
+      - 'packages/agent/**'
+      - 'scripts/package-agent.sh'
+      - '.github/workflows/windows-agent.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  startup:
+    name: 登録から削除までを Windows で通す
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # 組むのは Linux と同じ手順。Windows の runner にも bash がある。
+      - name: 配布物を組む
+        shell: bash
+        run: ./scripts/package-agent.sh artifacts/agent
+
+      # 常駐そのものを試す前に、送信だけの形で登録する。
+      # 読み取り装置は runner に無く、あっても物理カードは置けない。
+      - name: 起動時の常駐として登録する
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
+          $node = (Get-Command node).Source
+          & "$root/install-startup.ps1" -NodePath $node -AgentRoot $root `
+            -Store "$PWD/agent-store.json" -NoReader
+          $task = Get-ScheduledTask -TaskName 'StaffWeaveAgent'
+          if ($task.State -eq 'Disabled') { throw '登録した作業が無効になっています' }
+
+      # 端末の再起動は runner では起こせない。手で開始して、動き続けることを見る。
+      - name: 開始して、動き続けることを確かめる
+        shell: pwsh
+        run: |
+          Start-ScheduledTask -TaskName 'StaffWeaveAgent'
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-Date) -lt $deadline) {
+            if ((Get-ScheduledTask -TaskName 'StaffWeaveAgent').State -eq 'Running') { break }
+            Start-Sleep -Seconds 1
+          }
+          $state = (Get-ScheduledTask -TaskName 'StaffWeaveAgent').State
+          if ($state -ne 'Running') { throw "開始できていません: $state" }
+
+          # すぐ落ちていないこと。落ちる形なら、この待ちの後に Ready へ戻る。
+          Start-Sleep -Seconds 10
+          $state = (Get-ScheduledTask -TaskName 'StaffWeaveAgent').State
+          if ($state -ne 'Running') { throw "動き続けていません: $state" }
+
+      # 行儀よく終わること。Windows には「行儀よく終われ」という合図が無いため、
+      # 製品側の合図（agent stop）で終わらせる。
+      - name: 行儀よく止まることを確かめる
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
+          $node = (Get-Command node).Source
+          & $node "$root/agent/cli.js" stop --store "$PWD/agent-store.json"
+
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-Date) -lt $deadline) {
+            if ((Get-ScheduledTask -TaskName 'StaffWeaveAgent').State -ne 'Running') { break }
+            Start-Sleep -Seconds 1
+          }
+          $state = (Get-ScheduledTask -TaskName 'StaffWeaveAgent').State
+          if ($state -eq 'Running') { throw '止まりませんでした（強制終了に頼らせない）' }
+
+      - name: 常駐を外す
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
+          $node = (Get-Command node).Source
+          & "$root/uninstall-startup.ps1" -NodePath $node -AgentRoot $root `
+            -Store "$PWD/agent-store.json"
+
+          $task = Get-ScheduledTask -TaskName 'StaffWeaveAgent' -ErrorAction SilentlyContinue
+          if ($task) { throw '登録が残っています' }
