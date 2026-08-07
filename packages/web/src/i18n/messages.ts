@@ -3,6 +3,7 @@ import type {
   LaborSystemType,
   LeaveEntryTypeValue,
   RequestCategory,
+  SettlementBasis,
   WorkCategoryType,
 } from '@staffweave/contracts';
 import type {
@@ -305,6 +306,14 @@ export interface AdminMessages {
   settlementPeriod: string;
   settlementMonths: string;
   settlementStartsOn: string;
+  settlementTotalMinutes: string;
+  settlementBasis: string;
+  settlementBasisType: Record<SettlementBasis, string>;
+  coreStartMinutes: string;
+  coreEndMinutes: string;
+  flexibleStartMinutes: string;
+  flexibleEndMinutes: string;
+  coreTimeHint: string;
   settlementHint: string;
   deemedMinutes: string;
   deemedHint: string;
@@ -762,7 +771,16 @@ const ja: Messages = {
     settlementPeriod: '清算期間',
     settlementMonths: '清算期間の月数',
     settlementStartsOn: '清算期間の起算日',
-    settlementHint: 'フレックスと変形では、清算期間がそろっていないと割り当てられません。',
+    settlementTotalMinutes: '清算期間の総枠（分）',
+    settlementBasis: '総枠の決め方',
+    settlementBasisType: { legal: '法定労働時間', prescribed: '所定労働時間' },
+    coreStartMinutes: 'コアタイムの開始（分）',
+    coreEndMinutes: 'コアタイムの終了（分）',
+    flexibleStartMinutes: 'フレキシブルタイムの開始（分）',
+    flexibleEndMinutes: 'フレキシブルタイムの終了（分）',
+    coreTimeHint: '現地 0 時からの分数で入れます。空のままにすると帯を設けません。',
+    settlementHint:
+      'フレックスと変形では、清算期間の月数・起算日・総枠がそろっていないと割り当てられません。',
     deemedMinutes: 'みなし分数',
     deemedHint: '裁量では、実績にかかわらずこの分数を働いたものとして扱います。',
     months: 'か月',
@@ -1253,7 +1271,16 @@ const en: Messages = {
     settlementPeriod: 'Settlement period',
     settlementMonths: 'Settlement months',
     settlementStartsOn: 'Settlement starts on',
-    settlementHint: 'Flexitime and variable systems need a settlement period.',
+    settlementTotalMinutes: 'Settlement total (minutes)',
+    settlementBasis: 'How the total is set',
+    settlementBasisType: { legal: 'Statutory hours', prescribed: 'Prescribed hours' },
+    coreStartMinutes: 'Core time start (minutes)',
+    coreEndMinutes: 'Core time end (minutes)',
+    flexibleStartMinutes: 'Flexible time start (minutes)',
+    flexibleEndMinutes: 'Flexible time end (minutes)',
+    coreTimeHint: 'Minutes from local midnight. Leave empty to set no band.',
+    settlementHint:
+      'Flexitime and variable systems need settlement months, a start date and a total.',
     deemedMinutes: 'Deemed minutes',
     deemedHint: 'Discretionary work counts these minutes regardless of what was recorded.',
     months: ' months',
