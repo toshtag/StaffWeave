@@ -6,7 +6,12 @@ import { ClosingReadinessSettings } from './sections/ClosingReadinessSettings.ts
 import { DepartmentSettings } from './sections/DepartmentSettings.tsx';
 import { EmployeeSettings } from './sections/EmployeeSettings.tsx';
 import { LaborSystemSettings } from './sections/LaborSystemSettings.tsx';
+import { LeaveGrantSettings } from './sections/LeaveGrantSettings.tsx';
 import { LeaveLedgerSettings } from './sections/LeaveLedgerSettings.tsx';
+import {
+  LeaveExpirationSettings,
+  LeaveRegisterSettings,
+} from './sections/LeaveRegisterSettings.tsx';
 import { LeaveTypeSettings } from './sections/LeaveTypeSettings.tsx';
 import { MonthlySummarySettings } from './sections/MonthlySummarySettings.tsx';
 import { OrganizationSettings } from './sections/OrganizationSettings.tsx';
@@ -151,6 +156,24 @@ function modulesFor(labels: AdminLabels): ModuleDefinition[] {
           label: labels.sectionLeaveTypes,
           requires: 'leave.manage',
           render: (props) => <LeaveTypeSettings {...props} />,
+        },
+        {
+          key: 'grant-rules',
+          label: labels.sectionLeaveGrantRules,
+          requires: 'leave.manage',
+          render: (props) => <LeaveGrantSettings {...props} />,
+        },
+        {
+          key: 'register',
+          label: labels.sectionLeaveRegister,
+          requires: 'employee.read',
+          render: (props) => <LeaveRegisterSettings {...props} />,
+        },
+        {
+          key: 'expirations',
+          label: labels.sectionLeaveExpirations,
+          requires: 'employee.read',
+          render: (props) => <LeaveExpirationSettings {...props} />,
         },
         {
           key: 'ledger',

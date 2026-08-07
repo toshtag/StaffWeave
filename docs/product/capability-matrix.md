@@ -94,10 +94,10 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 休暇種別 | implemented | `op:listLeaveTypeSettings` `op:updateLeaveType` `migration:0029_create_leave_ledger.sql` | code・名称・有給無給に加え、取得の単位・1 日ぶんの分数・失効までの月数を持つ。既定値は置かない |
 | 残数の台帳（付与・消化・失効・調整・取消） | implemented | `op:grantLeave` `op:adjustLeave` `op:reverseLeaveEntry` `op:listLeaveLedger` `test:packages/domain/src/leave/ledger.test.ts` `test:packages/api/test/integration/leave-ledger.test.ts` | 追記のみ。残数は保存せず、任意の時点の値を台帳から組み立てる |
 | 残数の再構築と失効の反映 | implemented | `op:listLeaveBalances` `test:packages/domain/src/leave/ledger.test.ts` | 期限の近い付与から先に消化する。期限を過ぎた分は残数から外れる |
-| 自動付与・一斉付与・CSV 取込 | planned | - | 手動の付与だけがある。一括の手段は未実装 |
+| 自動付与・一斉付与・CSV 取込 | implemented | `op:grantLeaveInBulk` `op:importLeaveGrantsCsv` `op:createLeaveGrantRule` `test:packages/domain/src/leave/grant.test.ts` `test:packages/api/test/integration/leave-grants.test.ts` | 勤続の段から分数が決まる。段が無ければ 1 分も付与しない。同じ日への二重付与は DB の制約が止める |
 | 半日・時間単位の取得 | implemented | `op:updateLeaveType` `test:packages/domain/src/leave/ledger.test.ts` | 取得の単位を分で設定し、その倍数だけを受け付ける |
 | 申請と残数の原子的な予約・消化・返却 | implemented | `op:decideEmployeeRequest` `migration:0029_create_leave_ledger.sql` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった時点で同じトランザクションで消化する。残数不足は承認ごと断る。二重反映は一意制約が止める |
-| 休暇管理簿と失効予定の出力 | planned | - | 台帳から作れるが、帳票としては未実装 |
+| 休暇管理簿と失効予定の出力 | implemented | `op:listLeaveRegister` `op:listLeaveExpirations` `ui:packages/web/src/admin/sections/LeaveRegisterSettings.tsx` | 期首・付与・消化・失効・期末を台帳から組み立てる。画面から CSV で持ち出せる |
 
 ## 申請と承認
 

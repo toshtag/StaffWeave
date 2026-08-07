@@ -16,6 +16,7 @@ import type {
   CreateDepartmentRequest,
   CreateEmployeeRequest,
   CreateLaborSystemAssignmentRequest,
+  CreateLeaveGrantRuleRequest,
   CreateOrganizationRequest,
   CreateRequestTypeRequest,
   CreateSiteRequest,
@@ -29,13 +30,19 @@ import type {
   Employee,
   EmployeeList,
   ErrorResponse,
+  GrantLeaveInBulkRequest,
+  GrantLeaveInBulkResponse,
   GrantLeaveRequest,
   GrantUserScopeRequest,
   LaborSystemAssignmentList,
   LaborSystemAssignmentRecord,
   LeaveBalanceList,
+  LeaveExpirationList,
+  LeaveGrantRuleList,
+  LeaveGrantRuleRecord,
   LeaveLedgerEntryRecord,
   LeaveLedgerList,
+  LeaveRegisterList,
   LeaveTypeSettingsList,
   LeaveTypeSettingsRecord,
   LoginRequest,
@@ -219,6 +226,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ effectiveTo }),
     }),
+  listLeaveGrantRules: (query: { leaveTypeId?: string }) =>
+    request<LeaveGrantRuleList>(
+      `/leave-grant-rules?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  createLeaveGrantRule: (input: CreateLeaveGrantRuleRequest) =>
+    request<LeaveGrantRuleRecord>('/leave-grant-rules', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  grantLeaveInBulk: (input: GrantLeaveInBulkRequest) =>
+    request<GrantLeaveInBulkResponse>('/leave-ledger/bulk-grants', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listLeaveExpirations: (query: { asOf: string; through: string; employeeId?: string }) =>
+    request<LeaveExpirationList>(
+      `/leave-expirations?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  listLeaveRegister: (query: { from: string; to: string; employeeId?: string }) =>
+    request<LeaveRegisterList>(
+      `/leave-register?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
   listLeaveTypeSettings: () => request<LeaveTypeSettingsList>('/leave-type-settings'),
   updateLeaveType: (leaveTypeId: string, input: UpdateLeaveTypeRequest) =>
     request<LeaveTypeSettingsRecord>(`/leave-type-settings/${leaveTypeId}`, {
