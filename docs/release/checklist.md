@@ -25,7 +25,7 @@
 | リポジトリの決めごと | `pnpm check:policy` | 静的検証 |
 | 依存の勧告 | `pnpm check:audit` | 静的検証 |
 | まっさらな DB への移行 | `pnpm db:migrate` と `pnpm db:verify` | マイグレーションと統合テスト |
-| 既存 DB への移行 | `pnpm verify:upgrade` | マイグレーションと統合テスト |
+| 既存 DB への移行（0025 から最新まで） | `pnpm verify:upgrade` | マイグレーションと統合テスト |
 | 書き出しと復元 | `pnpm verify:restore` | マイグレーションと統合テスト |
 | 統合 | `pnpm test:integration` | マイグレーションと統合テスト |
 | 画面（3 系統） | `pnpm test:e2e` | 画面テスト |
@@ -34,8 +34,13 @@
 | コンテナが組めること | `docker build` | コンテナのビルド |
 | 構成一覧 | `pnpm sbom:verify` | SBOM |
 
-手元で通しで確かめるときは `pnpm verify` を使います。
-`psql` と `pg_dump`（PostgreSQL クライアント）が要ります。
+手元で通しで確かめるときは `pnpm verify:release-candidate` を使います。
+上の表のすべてを、コンテナのビルドと構成一覧の生成まで含めて通します。
+
+`pnpm verify` は毎日の作業向けで、コンテナのビルドと構成一覧を含みません。
+配れる状態かの判定には使えません。
+
+どちらも `psql` と `pg_dump`（PostgreSQL クライアント）が要ります。
 
 ## 2. 成果物と、元にしたソースの対応
 
@@ -52,8 +57,12 @@
 
 対応は `pnpm release:manifest` でまとめて出せます。
 
-`SBOM_EXPECTED_SOURCE_SHA` を渡すと、SBOM に書いてある commit が
-いま見ているものと同じかを突き合わせます。
+**条件が揃わなければ、一覧を出さずに非 0 で終わります。**
+作業中の変更、branch の上に居ないこと、Docker が無いこと、構成一覧の欠落、
+チェックサムの不一致、書いてある commit の不一致が対象です。
+
+文章で「配れません」と書きながら 0 で終えると、判定へ組み込んだときに
+条件を満たさない commit がそのまま通ります。
 
 ## 3. 署名とタグ
 

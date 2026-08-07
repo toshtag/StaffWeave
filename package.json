@@ -32,6 +32,7 @@
     "check:balance": "node scripts/check-test-balance.mjs",
     "check:audit": "./scripts/check-audit.sh",
     "release:manifest": "./scripts/release-manifest.sh",
+    "verify:release-candidate": "./scripts/verify-release-candidate.sh",
     "verify:upgrade": "./scripts/verify-upgrade.sh",
     "verify:restore": "./scripts/verify-restore.sh",
     "sbom:generate": "./scripts/generate-sbom.sh",

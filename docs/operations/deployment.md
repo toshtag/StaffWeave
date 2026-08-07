@@ -113,3 +113,14 @@ docker builder prune -f              # ビルドの控えを消す（次のビ�
 
 応答のヘッダーは製品の側で付けます。逆プロキシ側で同じヘッダーを重ねる場合の注意と、
 `Origin` を検査する構成の設定は [security/http-hardening.md](../security/http-hardening.md) にあります。
+
+## 支える移行の起点
+
+migration は **0025** まで当たっているデータベースからの移行を支えます。
+
+それより古い版からの移行は確かめていません。0025 より前で止まっている場合は、
+まず 0025 まで上げてから、この版へ上げてください。
+
+起点から最新までを順に当てられることは、`pnpm verify:upgrade` が毎回確かめます。
+確かめ方と、起点を上げる手順は
+[packages/db/fixtures/README.md](../../packages/db/fixtures/README.md) にあります。
