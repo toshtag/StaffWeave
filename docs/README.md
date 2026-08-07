@@ -31,6 +31,7 @@
 | 文書 | 内容 |
 | --- | --- |
 | [checklist.md](release/checklist.md) | リリース候補と正式リリースの判定。人が確かめる項目の記録欄 |
+| [v0.1-candidate.md](release/v0.1-candidate.md) | いま外部の確認へ回している commit と、その間に main へ入れてよいもの |
 
 ## 開発 — `development/`
 
