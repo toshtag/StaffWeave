@@ -26,9 +26,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 配る前に、その commit が確かめられていることを見る。
+  #
+  # これまでは、tag を押すと Release の workflow だけが動き、そのまま配布まで
+  # 進んだ。運用する人が事前にゲートを実行する前提だったため、押し間違えれば
+  # 確かめていない commit がそのまま出ていく。
+  #
+  # 見るのは「その SHA で」必須の workflow が成功していること。branch の最新が
+  # 緑であることは、tag を押した commit が緑であることを意味しない。
+  gate:
+    name: この commit が確かめられているか
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: 必須の workflow がこの SHA で成功しているか
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: node scripts/verify-release-checks.mjs
+
   assets:
     name: 成果物を組み、元との対応を確かめる
     runs-on: ubuntu-latest
+    # ゲートを通らなければ、成果物を組むところまで行かない。
+    # 手動の確認でも同じ順序にする。確かめる経路と本番の経路を別物にしない。
+    needs: gate
 
     # tag から Release を作るときだけ書き込みが要る。
     # 手動の確認では読み取りだけで足りるが、job を分けると

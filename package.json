@@ -35,6 +35,7 @@
     "release:manifest": "./scripts/release-manifest.sh",
     "release:assets": "./scripts/release-assets.sh",
     "release:verify": "node scripts/verify-release-assets.mjs",
+    "release:checks": "node scripts/verify-release-checks.mjs",
     "verify:release-candidate": "./scripts/verify-release-candidate.sh",
     "verify:upgrade": "./scripts/verify-upgrade.sh",
     "verify:restore": "./scripts/verify-restore.sh",
