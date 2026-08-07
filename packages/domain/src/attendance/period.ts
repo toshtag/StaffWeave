@@ -270,7 +270,7 @@ export function summarizeDays(days: readonly DailyTotals[]): PeriodTotals {
       const value = day[key];
       totals[key] = running === null || value === null ? null : running + value;
     }
-    if (day.workedMinutes > 0) totals.workedDays += 1;
+    if (day.workedMinutes > 0 && day.countsAsWorkingDay) totals.workedDays += 1;
   }
   return totals;
 }

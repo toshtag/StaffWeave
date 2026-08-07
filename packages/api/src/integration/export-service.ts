@@ -208,8 +208,12 @@ export function createExportService(db: Queryable): ExportService {
                          sum(latest.leave_minutes)::int, 0) AS leave_minutes,
                 coalesce(snapshot.absence_minutes,
                          sum(latest.absence_minutes)::int, 0) AS absence_minutes,
+                -- 出勤日数は、実労働があるだけでは数えない。勤務区分が
+                -- 「数えない」と決めた日は外す。
                 coalesce(snapshot.worked_days,
-                         count(*) FILTER (WHERE latest.worked_minutes > 0)::int, 0)
+                         count(*) FILTER (
+                           WHERE latest.worked_minutes > 0 AND latest.counts_as_working_day
+                         )::int, 0)
                   AS working_days,
                 -- 認定した分と、認定の外に出た分。
                 -- 1 日でも未設定の日があれば、その月の合計は出さない。
@@ -249,6 +253,7 @@ export function createExportService(db: Queryable): ExportService {
                     calculations.non_working_day_minutes,
                     calculations.leave_minutes,
                     calculations.absence_minutes,
+                    calculations.counts_as_working_day,
                     calculations.recognized_overtime_minutes,
                     calculations.unapproved_overtime_minutes,
                     calculations.approved_holiday_minutes,

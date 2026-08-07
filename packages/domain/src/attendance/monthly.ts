@@ -31,6 +31,8 @@ export interface DailyTotals {
   lateMinutes: number | null;
   earlyLeaveMinutes: number | null;
   deemedMinutes: number | null;
+  /** その日を出勤日として数えるか。勤務区分が決める。 */
+  countsAsWorkingDay: boolean;
   recognizedOvertimeMinutes: number | null;
   unapprovedOvertimeMinutes: number | null;
   approvedHolidayMinutes: number | null;
@@ -153,7 +155,9 @@ export function summarizeMonth(period: string, days: readonly DailyTotals[]): Mo
       summary[key] = total === null || value === null ? null : total + value;
     }
 
-    if (day.workedMinutes > 0) summary.workedDays += 1;
+    // 出勤日数は、実労働があるだけでは数えない。勤務区分が「数えない」と
+    // 決めた日は外す。設定できるのに効かない値は、設定した人を誤らせる。
+    if (day.workedMinutes > 0 && day.countsAsWorkingDay) summary.workedDays += 1;
     if (day.leaveMinutes > 0) summary.leaveDays += 1;
   }
 

@@ -104,6 +104,16 @@ export interface WorkCategorySettings {
   gapTreatment: 'non_working' | 'break';
   /** みなし労働分数。給与向けの値として実績とは別に持つ。 */
   deemedMinutes: number | null;
+  /**
+   * 所定労働分数。
+   *
+   * 所定は取り決めで決まる値であり、始業から終業までの長さから休憩を引いた
+   * ものとは限らない。決めてあればそちらを採る。決めていなければ、
+   * これまでどおり勤務予定の時刻から導く。
+   */
+  prescribedMinutes: number | null;
+  /** その日を出勤日として数えるか。 */
+  countsAsWorkingDay: boolean;
 }
 
 /**
@@ -240,6 +250,14 @@ export interface CalculationResult {
 
   /** みなし労働分数。勤務区分または労働形態が持つ場合だけ。 */
   deemedMinutes: number | null;
+
+  /**
+   * その日を出勤日として数えるか。
+   *
+   * 勤務区分が決める。区分の無い日は数える。月次と給与はこの値を見るため、
+   * あとから区分を直しても、締めた月の日数は動かない。
+   */
+  countsAsWorkingDay: boolean;
 
   /**
    * 認定した所定外の実労働。
@@ -451,14 +469,18 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
   // 休暇と欠勤は「予定はあるが働かない日」。所定労働は残し、働いた時間とは別に数える。
   const plannedDay = dayType === 'working_day' || dayType === 'leave' || dayType === 'absence';
 
-  const scheduledMinutes =
-    plannedDay && scheduleInterval !== null
-      ? Math.max(
-          0,
-          Math.round((scheduleInterval.end - scheduleInterval.start) / MINUTE) -
-            (input.schedule?.breakMinutes ?? 0),
-        )
-      : 0;
+  // 所定は取り決めで決まる値。勤務区分が決めていればそちらを採る。
+  // 決めていなければ、勤務予定の時刻から導く。
+  const scheduledMinutes = !plannedDay
+    ? 0
+    : (category?.prescribedMinutes ??
+      (scheduleInterval === null
+        ? 0
+        : Math.max(
+            0,
+            Math.round((scheduleInterval.end - scheduleInterval.start) / MINUTE) -
+              (input.schedule?.breakMinutes ?? 0),
+          )));
 
   const nonWorkingDayMinutes = plannedDay ? 0 : workedMinutes;
   const leaveMinutes = dayType === 'leave' ? scheduledMinutes : 0;
@@ -687,6 +709,7 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
     unapprovedOvertimeMinutes,
     unapprovedHolidayMinutes,
     scheduledMinutes,
+    countsAsWorkingDay: category?.countsAsWorkingDay ?? true,
     basis,
   };
 }
@@ -739,6 +762,10 @@ export function fingerprintSource(input: CalculationInput): string {
             : `${input.category.nightStartMinutes}-${input.category.nightEndMinutes}`,
           input.category.gapTreatment,
           input.category.deemedMinutes === null ? 'none' : String(input.category.deemedMinutes),
+          input.category.prescribedMinutes === null
+            ? 'none'
+            : String(input.category.prescribedMinutes),
+          input.category.countsAsWorkingDay ? 'counted' : 'not-counted',
         ].join('|');
 
   // 労働形態も指紋へ入れる。裁量のみなし時間は制度の側から来るため、

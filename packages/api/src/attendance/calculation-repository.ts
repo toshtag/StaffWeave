@@ -51,6 +51,7 @@ interface CalculationRow {
   before_schedule_minutes: number | null;
   after_schedule_minutes: number | null;
   deemed_minutes: number | null;
+  counts_as_working_day: boolean;
   recognized_overtime_minutes: number | null;
   unapproved_overtime_minutes: number | null;
   approved_holiday_minutes: number | null;
@@ -67,6 +68,7 @@ const COLUMNS = `version, calculated_at, input_fingerprint, rule_version,
   night_overtime_minutes, night_holiday_minutes,
   late_minutes, early_leave_minutes, before_schedule_minutes, after_schedule_minutes,
   deemed_minutes,
+  counts_as_working_day,
   recognized_overtime_minutes, unapproved_overtime_minutes,
   approved_holiday_minutes, unapproved_holiday_minutes, basis`;
 
@@ -97,6 +99,7 @@ function toRecord(row: CalculationRow): AttendanceCalculationRecord {
     beforeScheduleMinutes: row.before_schedule_minutes,
     afterScheduleMinutes: row.after_schedule_minutes,
     deemedMinutes: row.deemed_minutes,
+    countsAsWorkingDay: row.counts_as_working_day,
     recognizedOvertimeMinutes: row.recognized_overtime_minutes,
     unapprovedOvertimeMinutes: row.unapproved_overtime_minutes,
     approvedHolidayMinutes: row.approved_holiday_minutes,
@@ -130,11 +133,12 @@ export function createCalculationRepository(db: Queryable): CalculationRepositor
             night_overtime_minutes, night_holiday_minutes,
             late_minutes, early_leave_minutes, before_schedule_minutes, after_schedule_minutes,
             deemed_minutes,
+            counts_as_working_day,
             recognized_overtime_minutes, unapproved_overtime_minutes,
             approved_holiday_minutes, unapproved_holiday_minutes, basis)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                 $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-                 $28, $29, $30, $31, $32::jsonb)
+                 $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+                 $29, $30, $31, $32, $33::jsonb)
          RETURNING ${COLUMNS}`,
         [
           workspaceId,
@@ -164,6 +168,7 @@ export function createCalculationRepository(db: Queryable): CalculationRepositor
           result.beforeScheduleMinutes,
           result.afterScheduleMinutes,
           result.deemedMinutes,
+          result.countsAsWorkingDay,
           result.recognizedOvertimeMinutes,
           result.unapprovedOvertimeMinutes,
           result.approvedHolidayMinutes,

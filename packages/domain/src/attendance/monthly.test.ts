@@ -6,6 +6,7 @@ import { type DailyTotals, periodOf, summarizeMonth } from './monthly.js';
 
 function day(overrides: Partial<DailyTotals> & { businessDate: string }): DailyTotals {
   return {
+    countsAsWorkingDay: true,
     attendedMinutes: 0,
     workedMinutes: 0,
     breakMinutes: 0,

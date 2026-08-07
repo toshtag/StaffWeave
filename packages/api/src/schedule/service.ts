@@ -19,7 +19,7 @@ import type {
   WorkPattern,
   WorkScheduleRecord,
 } from '@staffweave/contracts';
-import type { BusinessDate } from '@staffweave/domain';
+import type { BusinessDate, DayType } from '@staffweave/domain';
 import {
   addDaysToBusinessDate,
   isBusinessDate,
@@ -271,6 +271,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
       let breakMinutes = input.breakMinutes ?? 0;
       let workPatternId = input.workPatternId ?? null;
       const workCategoryId = input.workCategoryId ?? null;
+      let categoryDayType: DayType | null = null;
 
       // 勤務区分は、その日に効いている版がある場合だけ受け取る。
       // 効いていない版を割り当てると、計算のときに解決できず、
@@ -289,6 +290,9 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
         // 所定時刻のひな形として使う。勤務パターンと明示の指定はこの後で上書きする。
         startMinutes = input.startMinutes ?? category.scheduledStartMinutes;
         endMinutes = input.endMinutes ?? category.scheduledEndMinutes;
+        // 日種別も勤務区分から写す。写さないと、法定休日や休暇として作った
+        // 勤務区分を割り当てても、予定はふつうの勤務日のままになる。
+        categoryDayType = category.categoryType;
       }
 
       if (workPatternId !== null) {
@@ -300,7 +304,10 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
         breakMinutes = input.breakMinutes ?? pattern.breakMinutes;
       }
 
-      const dayType = input.dayType ?? (startMinutes === null ? 'non_working_day' : 'working_day');
+      const dayType =
+        input.dayType ??
+        categoryDayType ??
+        (startMinutes === null ? 'non_working_day' : 'working_day');
 
       // 休暇と欠勤は「予定はあるが働かない日」。所定の時刻はそのまま残す。
       const plannedDay = dayType === 'working_day' || dayType === 'leave' || dayType === 'absence';
@@ -582,6 +589,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
           // 効いていない版のまま生成すると、計算は勤務区分を解決できず、
           // 生成した日だけ休憩や深夜帯の設定が外れる。
           let workCategoryId = resolved.workCategoryId ?? null;
+          let resolvedDayType: DayType = resolved.dayType;
           if (workCategoryId !== null) {
             const effective = await deps.categories.findWorkCategoryForDate(
               workspaceId,
@@ -595,6 +603,9 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
             workCategoryId = effective.id;
             startMinutes = startMinutes ?? effective.scheduledStartMinutes;
             endMinutes = endMinutes ?? effective.scheduledEndMinutes;
+            // 周期が決めた日種別より、勤務区分の種別を優先する。周期が持つのは
+            // 勤務日か休日かの別だけで、法定休日や休暇は表せない。
+            resolvedDayType = effective.categoryType;
           }
 
           await repositories.schedule.upsertWorkSchedule(workspaceId, {
@@ -602,7 +613,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
             businessDate,
             workPatternId: resolved.workPatternId,
             workCategoryId,
-            dayType: resolved.dayType,
+            dayType: resolvedDayType,
             startMinutes,
             endMinutes,
             breakMinutes,

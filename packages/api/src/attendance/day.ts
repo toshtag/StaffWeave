@@ -91,8 +91,8 @@ function toDomainSchedule(
 /**
  * 勤務区分の版から、計算が使う値だけを取り出す。
  *
- * 所定時刻・日種別・表示のための値はここへ入れない。それらは勤務予定側で
- * 解決済みで、両方から渡すと同じ意味の値が 2 つになる。
+ * 所定の時刻と日種別はここへ入れない。それらは勤務予定側で解決済みで、
+ * 両方から渡すと同じ意味の値が 2 つになる。表示のための値も入れない。
  * 優先順位は docs/product/work-category-precedence.md にある。
  */
 function toDomainCategory(category: WorkCategoryRecord | null): WorkCategorySettings | null {
@@ -105,6 +105,8 @@ function toDomainCategory(category: WorkCategoryRecord | null): WorkCategorySett
     nightEndMinutes: category.nightEndMinutes,
     gapTreatment: category.gapTreatment,
     deemedMinutes: category.deemedMinutes,
+    prescribedMinutes: category.prescribedMinutes,
+    countsAsWorkingDay: category.countsAsWorkingDay,
   };
 }
 

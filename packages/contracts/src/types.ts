@@ -402,6 +402,8 @@ export interface AttendanceCalculationRecord {
   afterScheduleMinutes: number | null;
   /** 給与向けのみなし労働。設定が無ければ null。 */
   deemedMinutes: number | null;
+  /** その日を出勤日として数えるか。勤務区分が決める。 */
+  countsAsWorkingDay: boolean;
   /**
    * 認定した所定外。承認しきった残業の上限時刻までに収まる、所定終業より後の実労働。
    * 所定の時間帯が決まっていない日は null。

@@ -343,6 +343,8 @@ describe('勤務区分の休憩', () => {
     nightEndMinutes: null,
     gapTreatment: 'non_working' as const,
     deemedMinutes: null,
+    prescribedMinutes: null,
+    countsAsWorkingDay: true,
   };
 
   it('固定休憩を、打刻が無くても引く', () => {
