@@ -186,7 +186,14 @@ export const periodSummarySchema = objectSchema({
     },
     differenceMinutes: {
       ...nullableMinutes,
-      description: '総枠との差（実労働 − 総枠）。総枠が未設定なら null',
+      description:
+        '総枠との差（実労働 − 総枠）。総枠が未設定のとき、' +
+        'および期間が割当の有効日で切り詰められているときは null',
+    },
+    partial: {
+      type: 'boolean',
+      description:
+        '期間が割当の有効日で切り詰められているか。true のとき合計は期間の一部だけを表す',
     },
     includesClosedMonth: {
       type: 'boolean',
@@ -212,6 +219,7 @@ export const periodSummarySchema = objectSchema({
     'countedDays',
     'totalMinutes',
     'differenceMinutes',
+    'partial',
     'includesClosedMonth',
   ],
 });
