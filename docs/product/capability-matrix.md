@@ -127,7 +127,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
-| 月次の締めと締め解除 | partial | `op:closeMonth` `op:reopenMonth` `test:packages/domain/src/approval/monthly-closing.test.ts` | API と計算は動く。設定の画面から締め・締め解除を実行する導線が無い（#217） |
+| 月次の締めと締め解除 | implemented | `op:closeMonth` `op:reopenMonth` `ui:packages/web/src/admin/sections/ClosingReadinessSettings.tsx` `test:packages/domain/src/approval/monthly-closing.test.ts` `e2e:e2e/monthly-closing.spec.ts` | 残っているものを見てから締める。締め解除は理由を求める |
 | 締める前の確認（未打刻・未申請・未承認） | implemented | `op:listClosingReadiness` `test:packages/domain/src/approval/closing-readiness.test.ts` | 実務が止まるものと参考のものを分ける。締めは止めない |
 | 締めた時点の集計の固定 | implemented | `migration:0031_create_monthly_snapshots.sql` `test:packages/api/test/integration/monthly-reporting.test.ts` | 追記のみ。締め直すと新しい記録を積む |
 | 月次の集計 | implemented | `op:listMonthlySummaries` `test:packages/domain/src/attendance/monthly.test.ts` | 日次から導く。1 日でも閾値が未設定なら、その区分は 0 ではなく未設定 |
@@ -186,7 +186,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | API キーとスコープ | implemented | `op:createApiKey` `op:revokeApiKey` `test:packages/domain/src/integration/api-key-usage.test.ts` | 生の鍵は作成時に 1 度だけ返す |
 | Webhook の署名と送信先の制約 | implemented | `op:createWebhookEndpoint` `op:listWebhookDeliveries` `migration:0014_create_webhook_outbox.sql` | 送信待ちは業務処理と同じトランザクションで積む |
 | connector SDK | implemented | `test:packages/connector/src/index.test.ts` | 外部連携を作るための足場 |
-| 給与連携の CSV 出力 | partial | `op:exportPayrollCsv` `test:packages/api/test/integration/monthly-reporting.test.ts` | API からは出せる。設定の画面から取り出す導線が無い（#217） |
+| 給与連携の CSV 出力 | implemented | `op:exportPayrollCsv` `ui:packages/web/src/admin/sections/ClosingReadinessSettings.tsx` `test:packages/api/test/integration/monthly-reporting.test.ts` `e2e:e2e/monthly-closing.spec.ts` | 締めた月は締めた時点の値を出す。設定の画面から取り出せる |
 | Webhook の自動再送とデッドレター | implemented | `op:listAbandonedDeliveries` `op:requeueAbandonedDelivery` `test:packages/domain/src/integration/retry.test.ts` `test:packages/api/test/integration/webhook-outbox.test.ts` | 間隔を広げながら送り直し、諦めた行は残す。人が手で送り直せる |
 | 送り直す意味のある失敗の見分け | implemented | `test:packages/domain/src/integration/retry.test.ts` | 要求そのものを断られたものは送り直さない |
 

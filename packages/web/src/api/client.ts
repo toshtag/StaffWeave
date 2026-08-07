@@ -215,6 +215,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  /**
+   * 給与向けの CSV を取り出す。
+   *
+   * 中身は表計算ソフトが開ける形で返る。JSON の経路と分けているのは、
+   * 返るのが本文そのものであり、失敗の形も違うため。
+   */
+  payrollCsv: async (period: string): Promise<string> => {
+    const response = await fetch(`/api/exports/payroll.csv?period=${encodeURIComponent(period)}`, {
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as ErrorResponse | null;
+      throw new ApiRequestError(
+        response.status,
+        body?.error.code ?? 'unknown',
+        body?.error.message ?? 'エラーが発生しました',
+        body?.error.details,
+      );
+    }
+    return response.text();
+  },
   closeMonth: (input: CloseMonthRequest) =>
     request<MonthlyClosingRecord>('/monthly-closings/close', {
       method: 'POST',

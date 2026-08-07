@@ -1,9 +1,9 @@
 import type { ClosingReadiness } from '@staffweave/contracts';
 import { useCallback, useState } from 'react';
-import { api } from '../../api/client.ts';
+import { ApiRequestError, api } from '../../api/client.ts';
 import { useLocale } from '../../i18n/LocaleProvider.tsx';
 import type { SectionProps } from '../AdminConsole.tsx';
-import { type Column, TextField } from '../resource.tsx';
+import { type Column, downloadCsv, TextField } from '../resource.tsx';
 import { SettingsSection } from '../SettingsSection.tsx';
 
 /**
@@ -14,6 +14,10 @@ import { SettingsSection } from '../SettingsSection.tsx';
  * 押す前に「何が残っているか」を見られるようにする。
  *
  * ここは締めを止めない。止めるかどうかは運用が決める。
+ *
+ * 締めと締め解除も、この画面から行います。残っているものを見てから押せる
+ * ようにするためで、別の画面へ分けると「見ずに押す」経路ができます。
+ * 締め解除は理由を求めます。理由の無い解除は、監査から意図を読み取れません。
  */
 function firstOfThisMonth(): string {
   const today = new Date();
@@ -24,6 +28,23 @@ export function ClosingReadinessSettings({ permissions }: SectionProps): React.J
   const { messages } = useLocale();
   const labels = messages.admin;
   const [period, setPeriod] = useState(firstOfThisMonth);
+  const [outcome, setOutcome] = useState<string | null>(null);
+  const [reopening, setReopening] = useState<{ employeeId: string; reason: string } | null>(null);
+
+  const canClose = permissions.includes('attendance.close');
+
+  function run(action: () => Promise<unknown>, done: string, reload: () => Promise<void>): void {
+    setOutcome(null);
+    action()
+      .then(() => {
+        setOutcome(done);
+        setReopening(null);
+        return reload();
+      })
+      .catch((cause: unknown) => {
+        setOutcome(cause instanceof ApiRequestError ? cause.message : labels.saveFailed);
+      });
+  }
 
   const columns: Column<ClosingReadiness>[] = [
     { key: 'employee', header: labels.employee, value: (row) => row.employeeId },
@@ -70,18 +91,95 @@ export function ClosingReadinessSettings({ permissions }: SectionProps): React.J
       columns={columns}
       rowKey={(row) => row.employeeId}
       load={load}
-      canRead={permissions.includes('attendance.close')}
+      canRead={canClose}
       canWrite={false}
       emptyMessage={labels.noClosingReadiness}
+      rowActions={(row, reload) =>
+        canClose ? (
+          <span className="row-inline-form">
+            <button
+              type="button"
+              onClick={() =>
+                run(
+                  () => api.closeMonth({ employeeId: row.employeeId, period }),
+                  labels.closed,
+                  reload,
+                )
+              }
+            >
+              {labels.closeMonth}
+            </button>
+            {reopening?.employeeId === row.employeeId ? (
+              <>
+                <input
+                  type="text"
+                  aria-label={labels.reopenReason}
+                  value={reopening.reason}
+                  onChange={(event) =>
+                    setReopening({ employeeId: row.employeeId, reason: event.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  disabled={reopening.reason.trim() === ''}
+                  onClick={() =>
+                    run(
+                      () =>
+                        api.reopenMonth({
+                          employeeId: row.employeeId,
+                          period,
+                          reason: reopening.reason,
+                        }),
+                      labels.reopened,
+                      reload,
+                    )
+                  }
+                >
+                  {labels.save}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setReopening({ employeeId: row.employeeId, reason: '' })}
+              >
+                {labels.reopenMonth}
+              </button>
+            )}
+          </span>
+        ) : null
+      }
       toolbar={
-        <TextField
-          id="readiness-period"
-          label={labels.period}
-          type="date"
-          value={period}
-          onChange={setPeriod}
-          hint={labels.periodHint}
-        />
+        <>
+          <TextField
+            id="readiness-period"
+            label={labels.period}
+            type="date"
+            value={period}
+            onChange={setPeriod}
+            hint={labels.periodHint}
+          />
+          {/* セッションでの取り出しは、従業員を読める範囲と同じ範囲で返る。 */}
+          {permissions.includes('employee.read') && (
+            <button
+              type="button"
+              onClick={() => {
+                setOutcome(null);
+                void api
+                  .payrollCsv(period)
+                  .then((csv) => downloadCsv(`payroll-${period}.csv`, csv))
+                  .catch((cause: unknown) =>
+                    setOutcome(
+                      cause instanceof ApiRequestError ? cause.message : labels.saveFailed,
+                    ),
+                  );
+              }}
+            >
+              {labels.downloadPayrollCsv}
+            </button>
+          )}
+          {outcome !== null && <p className="notice">{outcome}</p>}
+        </>
       }
     />
   );
