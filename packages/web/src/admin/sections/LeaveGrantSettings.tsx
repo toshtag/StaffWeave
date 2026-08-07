@@ -95,6 +95,7 @@ export function LeaveGrantSettings({ permissions }: SectionProps): React.JSX.Ele
       rowKey={(row) => row.id}
       load={load}
       canRead={canWrite}
+      importCsv={api.importLeaveGrantsCsv}
       canWrite={canWrite}
       emptyMessage={labels.noLeaveGrantRules}
       submit={submit}

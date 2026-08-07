@@ -64,6 +64,7 @@ export function EmployeeSettings({ permissions }: SectionProps): React.JSX.Eleme
       rowKey={(row) => row.id}
       load={load}
       canRead={permissions.includes('employee.read')}
+      importCsv={api.importEmployeesCsv}
       canWrite={permissions.includes('employee.manage')}
       emptyMessage={labels.noEmployees}
       onCopy={(row) => {
