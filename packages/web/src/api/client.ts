@@ -3,6 +3,9 @@ import type {
   AnomalyList,
   ApiKeyList,
   ApiKeyRecord,
+  ApprovalDelegationList,
+  ApprovalDelegationRecord,
+  ApprovalRouteResponse,
   CalculationRuleVersionList,
   CalculationRuleVersionRecord,
   ChangePasswordRequest,
@@ -12,6 +15,7 @@ import type {
   CorrectAttendanceResponse,
   CreateApiKeyRequest,
   CreateApiKeyResponse,
+  CreateApprovalDelegationRequest,
   CreateCalculationRuleVersionRequest,
   CreateDepartmentRequest,
   CreateEmployeeRequest,
@@ -62,6 +66,7 @@ import type {
   RecordAttendanceEventRequest,
   RecordAttendanceEventResponse,
   ReopenMonthRequest,
+  ReplaceApprovalRouteRequest,
   RequestTypeList,
   RequestTypeRecord,
   ReverseLeaveEntryRequest,
@@ -346,6 +351,19 @@ export const api = {
     request<ClosingReadinessList>(
       `/monthly-closings/readiness?${new URLSearchParams(query as Record<string, string>).toString()}`,
     ),
+  getApprovalRoute: (requestTypeId: string) =>
+    request<ApprovalRouteResponse>(`/request-types/${requestTypeId}/approval-route`),
+  replaceApprovalRoute: (requestTypeId: string, input: ReplaceApprovalRouteRequest) =>
+    request<ApprovalRouteResponse>(`/request-types/${requestTypeId}/approval-route`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+  listApprovalDelegations: () => request<ApprovalDelegationList>('/approval-delegations'),
+  createApprovalDelegation: (input: CreateApprovalDelegationRequest) =>
+    request<ApprovalDelegationRecord>('/approval-delegations', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   listRequestTypes: () => request<RequestTypeList>('/request-types'),
   createRequestType: (input: CreateRequestTypeRequest) =>
     request<RequestTypeRecord>('/request-types', { method: 'POST', body: JSON.stringify(input) }),
