@@ -74,7 +74,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 法定内時間外・法定時間外 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 1 日の閾値は事業者が設定する。未設定なら計算せず未設定として示す |
 | 深夜時間外・深夜休日 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` | 深夜帯は勤務区分で上書きでき、上書きが日次と月次と給与の出力まで効く |
 | 遅刻・早退・始業前・終業後 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯との差から出す |
-| 週・月の集計 | implemented | `op:listMonthlySummaries` `op:listPeriodSummaries` `test:packages/domain/src/attendance/period.test.ts` `test:packages/api/test/integration/period-summaries.test.ts` | 週の開始曜日は計算規則の版が決める。月をまたぐ週も 1 つとして数える |
+| 週・月の集計 | implemented | `op:listMonthlySummaries` `op:listPeriodSummaries` `test:packages/domain/src/attendance/period.test.ts` `test:packages/api/test/integration/period-summaries.test.ts` | 週の開始曜日は計算規則の版が決め、版が変わる日で週を区切り直す。返す期間の全日次を読むため、要求より広い清算期間でも合計が欠けない。割当で切り詰めた期間は印を付け、総枠と比べない |
 | 認定時間（申請した残業上限の反映） | implemented | `op:decideEmployeeRequest` `test:packages/domain/src/attendance/approved-adjustments.test.ts` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 承認しきった上限時刻までを認定し、超えた分を分けて出す。所定終業が未設定なら 0 ではなく未設定 |
 
 ## 労働形態

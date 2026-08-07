@@ -132,8 +132,10 @@ export type {
   PeriodBounds,
   PeriodKind,
   PeriodTotals,
+  WeekRuleVersion,
 } from './attendance/period.js';
 export {
+  boundsCovering,
   differenceFromTotal,
   PERIOD_KINDS,
   settlementPeriodOf,
@@ -141,6 +143,7 @@ export {
   summarizeDays,
   weekStartOf,
   weeksBetween,
+  weeksBetweenWithRules,
 } from './attendance/period.js';
 export type {
   ActivePeriod,

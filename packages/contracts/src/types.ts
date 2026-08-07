@@ -1435,8 +1435,20 @@ export interface PeriodSummaryRecord {
   countedDays: number;
   /** 期間の総枠。未設定なら null。 */
   totalMinutes: number | null;
-  /** 総枠との差（実労働 − 総枠）。総枠が未設定なら null。 */
+  /**
+   * 総枠との差（実労働 − 総枠）。総枠が未設定なら null。
+   *
+   * 期間が割当の有効日で切り詰められている場合も null。
+   * 切り詰めた一部の実労働を、期間まるごとの総枠と比べても意味を持たない。
+   */
   differenceMinutes: number | null;
+  /**
+   * 期間が割当の有効日で切り詰められているか。
+   *
+   * 制度の途中で始まった、または途中で終わった清算期間で true になる。
+   * true のとき、この行の合計は期間の一部だけを表す。
+   */
+  partial: boolean;
   /** 締め済みの月を含むか。 */
   includesClosedMonth: boolean;
 }

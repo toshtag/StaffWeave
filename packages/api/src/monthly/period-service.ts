@@ -1,12 +1,13 @@
 import type { LaborSystemAssignmentRecord, PeriodSummaryRecord } from '@staffweave/contracts';
 import type { BusinessDate, DailyTotals, PeriodBounds, PeriodKind } from '@staffweave/domain';
 import {
+  boundsCovering,
   differenceFromTotal,
   isBusinessDate,
+  settlementPeriodOf,
   settlementPeriodsBetween,
   summarizeDays,
-  weekStartOf,
-  weeksBetween,
+  weeksBetweenWithRules,
 } from '@staffweave/domain';
 import type { AuthenticatedContext } from '../identity/service.js';
 import type { LaborSystemRepository } from '../schedule/labor-system-repository.js';
@@ -82,6 +83,7 @@ export function createPeriodService(deps: PeriodServiceDependencies): PeriodServ
       totalMinutes: number | null;
       laborSystemType: LaborSystemAssignmentRecord['systemType'] | null;
       closedDates: ReadonlySet<string>;
+      partial: boolean;
     },
   ): PeriodSummaryRecord => {
     const days = daysWithin(totals, period);
@@ -94,7 +96,12 @@ export function createPeriodService(deps: PeriodServiceDependencies): PeriodServ
       laborSystemType: options.laborSystemType,
       ...summary,
       totalMinutes: options.totalMinutes,
-      differenceMinutes: differenceFromTotal(summary.workedMinutes, options.totalMinutes),
+      // 切り詰めた期間の実労働を、期間まるごとの総枠と比べても意味を持たない。
+      // 差を出さず、切り詰めたことを印として返す。
+      differenceMinutes: options.partial
+        ? null
+        : differenceFromTotal(summary.workedMinutes, options.totalMinutes),
+      partial: options.partial,
       includesClosedMonth: days.some((day) => options.closedDates.has(day.businessDate)),
     };
   };
@@ -111,60 +118,90 @@ export function createPeriodService(deps: PeriodServiceDependencies): PeriodServ
       const ruleVersions = await deps.categories.listCalculationRuleVersions(workspaceId);
       const assignments = await deps.laborSystems.list(workspaceId, query.employeeId);
 
-      // 週は範囲の外へはみ出す。日次はその端まで読む。
-      // 端で切ると、月末で切った週の合計が「その週に働いた時間」ではなくなる。
-      const weekStartsOn = ruleFor(ruleVersions, query.from)?.weekStartsOn ?? 0;
-      const readFrom = weekStartOf(query.from, weekStartsOn);
-      const readTo = weeksBetween(query.from, query.to, weekStartsOn).at(-1)?.to ?? query.to;
+      // 先に返す期間を決める。日次を読む範囲はそのあとで決める。
+      //
+      // 順序を逆にすると、要求された範囲だけを読んだうえで、それより広い
+      // 清算期間の合計を出すことになる。期間の一部しか足していない値を
+      // 期間まるごとの総枠と比べても、差は何も意味しない。
+      const weekVersions = ruleVersions.map((version) => ({
+        effectiveFrom: version.effectiveFrom,
+        weekStartsOn: version.weekStartsOn,
+      }));
+
+      const weeks =
+        query.kind === undefined || query.kind === 'week'
+          ? weeksBetweenWithRules(query.from, query.to, weekVersions)
+          : [];
+
+      const settlements =
+        query.kind === undefined || query.kind === 'settlement'
+          ? assignments
+              .filter(hasSettlementPeriod)
+              .flatMap((assignment) =>
+                settlementPeriodsBetween(
+                  assignment.settlementStartsOn,
+                  assignment.settlementMonths,
+                  query.from,
+                  query.to,
+                  { from: assignment.effectiveFrom, to: assignment.effectiveTo },
+                ).map((period) => ({ assignment, period })),
+              )
+          : [];
+
+      // 返す期間をすべて覆う範囲を読む。週は範囲の外へはみ出し、
+      // 清算期間はさらに広い。端で切ると、返した期間の一部しか足せない。
+      const covering = boundsCovering([...weeks, ...settlements.map((entry) => entry.period)]) ?? {
+        from: query.from,
+        to: query.to,
+      };
 
       const totals = await deps.repository.listDailyTotalsBetween(
         workspaceId,
         query.employeeId,
-        readFrom,
-        readTo,
+        covering.from,
+        covering.to,
       );
       const closedDates = await deps.repository.listClosedDates(
         workspaceId,
         query.employeeId,
-        readFrom,
-        readTo,
+        covering.from,
+        covering.to,
       );
 
       const summaries: PeriodSummaryRecord[] = [];
 
-      if (query.kind === undefined || query.kind === 'week') {
-        for (const week of weeksBetween(query.from, query.to, weekStartsOn)) {
-          summaries.push(
-            toRecord(query.employeeId, 'week', week, totals, {
-              // 週の総枠は、その週の始まりに効いている版が持つ法定の閾値。
-              totalMinutes: ruleFor(ruleVersions, week.from)?.weeklyLegalMinutes ?? null,
-              laborSystemType: null,
-              closedDates,
-            }),
-          );
-        }
+      for (const week of weeks) {
+        summaries.push(
+          toRecord(query.employeeId, 'week', week, totals, {
+            // 週の総枠は、その週の始まりに効いている版が持つ法定の閾値。
+            totalMinutes: ruleFor(ruleVersions, week.from)?.weeklyLegalMinutes ?? null,
+            laborSystemType: null,
+            closedDates,
+            // 週は切り詰めない。規則の切り替えで区切り直した週も、
+            // その区切りが週そのものの定義になる。
+            partial: false,
+          }),
+        );
       }
 
-      if (query.kind === undefined || query.kind === 'settlement') {
-        for (const assignment of assignments) {
-          if (!hasSettlementPeriod(assignment)) continue;
-          const periods = settlementPeriodsBetween(
-            assignment.settlementStartsOn,
-            assignment.settlementMonths,
-            query.from,
-            query.to,
-            { from: assignment.effectiveFrom, to: assignment.effectiveTo },
-          );
-          for (const period of periods) {
-            summaries.push(
-              toRecord(query.employeeId, 'settlement', period, totals, {
-                totalMinutes: assignment.settlementTotalMinutes,
-                laborSystemType: assignment.systemType,
-                closedDates,
-              }),
-            );
-          }
-        }
+      for (const { assignment, period } of settlements) {
+        // 割当の有効日で切り詰められたかを、切り詰める前の期間と比べて決める。
+        const natural = settlementPeriodOf(
+          assignment.settlementStartsOn,
+          assignment.settlementMonths,
+          period.from,
+        );
+        const partial =
+          natural === null || natural.from !== period.from || natural.to !== period.to;
+
+        summaries.push(
+          toRecord(query.employeeId, 'settlement', period, totals, {
+            totalMinutes: assignment.settlementTotalMinutes,
+            laborSystemType: assignment.systemType,
+            closedDates,
+            partial,
+          }),
+        );
       }
 
       return summaries.sort((left, right) =>

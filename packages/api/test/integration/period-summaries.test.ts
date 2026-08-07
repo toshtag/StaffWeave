@@ -401,3 +401,87 @@ describe('認可', () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe('返す期間の全日次を読む', () => {
+  /**
+   * 清算期間は要求した範囲より広い。要求の範囲だけを読むと、期間の一部しか
+   * 足せないまま、期間まるごとの総枠と比べることになる。
+   *
+   * 要求より前の月に実績を置き、その分が清算期間の合計へ入ることを見る。
+   * 要求の範囲だけを読む実装へ戻すと、この検査は落ちる。
+   */
+  it('要求より前の月の実績も、清算期間の合計へ入る', async () => {
+    const instance = app();
+    await ruleVersion(instance);
+    expect((await assignFlex(instance)).status).toBe(201);
+
+    // 清算期間は 2026-01-01 から 3 か月。要求は 3 月からにする。
+    await workedDay(instance, '2026-02-10');
+    await workedDay(instance, '2026-03-30');
+    await recalculate(instance, '2026-02-10', '2026-03-30');
+
+    const settlements = await periods(instance, {
+      from: '2026-03-01',
+      to: '2026-03-31',
+      kind: 'settlement',
+    });
+
+    expect(settlements).toEqual([
+      expect.objectContaining({
+        from: '2026-01-01',
+        to: '2026-03-31',
+        // 2/10 と 3/30 の 2 日ぶん。2 月を読み落とすと 1 日ぶんになる。
+        workedMinutes: 2 * 8 * 60,
+        partial: false,
+        differenceMinutes: 2 * 8 * 60 - 9_000,
+      }),
+    ]);
+  });
+
+  it('割当の途中から始まる期間は、切り詰めたことを示し、総枠と比べない', async () => {
+    const instance = app();
+    await ruleVersion(instance);
+    // 清算期間の起算日は 1/1 のまま、割当は 2/1 から効かせる。
+    expect((await assignFlex(instance, { effectiveFrom: '2026-02-01' })).status).toBe(201);
+    await workedDay(instance, '2026-02-10');
+    await recalculate(instance, '2026-02-10', '2026-02-10');
+
+    const settlements = await periods(instance, {
+      from: '2026-02-01',
+      to: '2026-03-31',
+      kind: 'settlement',
+    });
+
+    expect(settlements).toEqual([
+      expect.objectContaining({
+        from: '2026-02-01',
+        to: '2026-03-31',
+        partial: true,
+        // 期間の一部だけの実労働を、期間まるごとの総枠と比べても意味を持たない。
+        differenceMinutes: null,
+        totalMinutes: 9_000,
+      }),
+    ]);
+  });
+});
+
+describe('週の区切りと規則の版', () => {
+  it('週の開始曜日が変わる日で、週を区切り直す', async () => {
+    const instance = app();
+    // 1/1 から月曜始まり、4/8（水）から水曜始まりへ変える。
+    await ruleVersion(instance);
+    expect(
+      (await ruleVersion(instance, { effectiveFrom: '2026-04-08', weekStartsOn: 3 })).status,
+    ).toBe(201);
+
+    const weeks = await periods(instance, { from: '2026-04-01', to: '2026-04-15', kind: 'week' });
+
+    expect(weeks.map((week) => [week.from, week.to])).toEqual([
+      ['2026-03-30', '2026-04-05'],
+      // 切り替え日の前日で閉じる。
+      ['2026-04-06', '2026-04-07'],
+      ['2026-04-08', '2026-04-14'],
+      ['2026-04-15', '2026-04-21'],
+    ]);
+  });
+});

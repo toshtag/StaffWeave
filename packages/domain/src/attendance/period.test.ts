@@ -8,14 +8,17 @@
  *   割当の外の日を、期間へ混ぜないこと
  */
 import { describe, expect, it } from 'vitest';
+import { addDaysToBusinessDate } from './business-date.js';
 import type { DailyTotals } from './monthly.js';
 import {
+  boundsCovering,
   differenceFromTotal,
   settlementPeriodOf,
   settlementPeriodsBetween,
   summarizeDays,
   weekStartOf,
   weeksBetween,
+  weeksBetweenWithRules,
 } from './period.js';
 
 /** 0 が日曜。 */
@@ -191,5 +194,81 @@ describe('総枠との差', () => {
 
   it('総枠が決まっていなければ、差も出さない', () => {
     expect(differenceFromTotal(10_000, null)).toBeNull();
+  });
+});
+
+describe('規則の版が変わる範囲の週', () => {
+  /** 月曜始まり。2026-04-01 は水曜。 */
+  const mondayFrom2026 = [{ effectiveFrom: '2026-01-01', weekStartsOn: 1 }] as const;
+
+  it('版が 1 つなら、その開始曜日で区切る', () => {
+    const weeks = weeksBetweenWithRules('2026-04-01', '2026-04-10', mondayFrom2026);
+
+    expect(weeks).toEqual([
+      { from: '2026-03-30', to: '2026-04-05' },
+      { from: '2026-04-06', to: '2026-04-12' },
+    ]);
+  });
+
+  it('版が無ければ日曜始まりとして扱う', () => {
+    const weeks = weeksBetweenWithRules('2026-04-01', '2026-04-04', []);
+
+    expect(weeks).toEqual([{ from: '2026-03-29', to: '2026-04-04' }]);
+  });
+
+  /**
+   * 切り替え日をまたぐ週は、その前日で区切る。
+   * 範囲の始まりの版を全体へ使うと、切り替えのあとも古い区切りが続く。
+   */
+  it('切り替え日をまたぐ週は、前日で区切って新しい並びへ移る', () => {
+    const weeks = weeksBetweenWithRules('2026-04-01', '2026-04-18', [
+      { effectiveFrom: '2026-01-01', weekStartsOn: 1 },
+      { effectiveFrom: '2026-04-08', weekStartsOn: 3 },
+    ]);
+
+    expect(weeks).toEqual([
+      // 月曜始まりの週。切り替え日の前日で閉じる。
+      { from: '2026-03-30', to: '2026-04-05' },
+      { from: '2026-04-06', to: '2026-04-07' },
+      // 2026-04-08 は水曜。ここから水曜始まりの並びになる。
+      { from: '2026-04-08', to: '2026-04-14' },
+      { from: '2026-04-15', to: '2026-04-21' },
+    ]);
+  });
+
+  it('週どうしは重ならず、範囲の日はどれか 1 つの週へ入る', () => {
+    const weeks = weeksBetweenWithRules('2026-04-01', '2026-04-30', [
+      { effectiveFrom: '2026-01-01', weekStartsOn: 1 },
+      { effectiveFrom: '2026-04-08', weekStartsOn: 3 },
+      { effectiveFrom: '2026-04-20', weekStartsOn: 0 },
+    ]);
+
+    for (let index = 1; index < weeks.length; index += 1) {
+      const previous = weeks[index - 1];
+      const current = weeks[index];
+      if (previous === undefined || current === undefined) throw new Error('週が足りません');
+      // 前の週の翌日が次の週の始まり。隙間も重なりも作らない。
+      expect(addDaysToBusinessDate(previous.to, 1)).toBe(current.from);
+    }
+  });
+
+  it('開始が終了より後なら、週を返さない', () => {
+    expect(weeksBetweenWithRules('2026-04-10', '2026-04-01', mondayFrom2026)).toEqual([]);
+  });
+});
+
+describe('期間の並びを覆う範囲', () => {
+  it('いちばん早い始まりと、いちばん遅い終わりを返す', () => {
+    expect(
+      boundsCovering([
+        { from: '2026-04-06', to: '2026-04-12' },
+        { from: '2026-01-01', to: '2026-03-31' },
+        { from: '2026-04-01', to: '2026-06-30' },
+      ]),
+    ).toEqual({ from: '2026-01-01', to: '2026-06-30' });
+  });
+
+  it('期間が無ければ範囲も無い', () => {
+    expect(boundsCovering([])).toBeNull();
   });
 });
