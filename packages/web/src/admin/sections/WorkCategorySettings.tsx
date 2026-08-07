@@ -84,6 +84,7 @@ export function WorkCategorySettings({ permissions }: SectionProps): React.JSX.E
       rowKey={(row) => row.id}
       load={load}
       canRead={permissions.includes('organization.read')}
+      importCsv={api.importWorkCategoriesCsv}
       canWrite={permissions.includes('organization.manage')}
       emptyMessage={labels.noWorkCategories}
       onCopy={(row) => {

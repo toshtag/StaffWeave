@@ -71,6 +71,7 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
       rowKey={(row) => row.id}
       load={load}
       canRead={permissions.includes('request.manage')}
+      importCsv={api.importRequestTypesCsv}
       canWrite={permissions.includes('request.manage')}
       emptyMessage={labels.noRequestTypes}
       copyLabel={labels.editRow}

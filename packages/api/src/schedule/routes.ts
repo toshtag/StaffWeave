@@ -33,14 +33,21 @@ import type { AppEnv } from '../shared/context.js';
 import { requirePermission } from '../shared/context.js';
 import { pathParam, readBody, readQuery } from '../shared/request.js';
 import type { ScheduleService } from './service.js';
+import type { SettingsImportService } from './settings-import.js';
 
 export interface ScheduleRouteDependencies {
   service: ScheduleService;
+  imports: SettingsImportService;
 }
 
 export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { service } = deps;
+
+  app.post(operations.importWorkCategoriesCsv.path, async (c) => {
+    const auth = requirePermission(c, 'employee.manage');
+    return c.json(await deps.imports.importWorkCategories(auth, await c.req.text()), 200);
+  });
 
   app.get(operations.listWorkCategories.path, async (c) => {
     const auth = requirePermission(c, 'organization.read');

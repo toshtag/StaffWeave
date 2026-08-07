@@ -163,7 +163,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 申請種別と承認経路の設定画面 | implemented | `ui:packages/web/src/admin/sections/RequestTypeSettings.tsx` `test:e2e/admin-console.spec.ts` | 段数を直しても提出済みの申請は動かない |
 | 一覧・写して作る・CSV を同じ形にする | implemented | `ui:packages/web/src/admin/SettingsSection.tsx` `test:packages/web/src/admin/resource.test.ts` | CSV の列は画面の表と同じ定義から作る |
 | 権限と組織の範囲で設定画面の表示を変える | implemented | `ui:packages/web/src/admin/AdminConsole.tsx` `test:e2e/admin-console.spec.ts` | 見られない設定は節ごと出さない。入口も出さない |
-| 設定の一括取り込み（CSV での投入） | partial | `op:importEmployeesCsv` | 従業員だけ。他の設定は 1 件ずつ |
+| 設定の一括取り込み（CSV での投入） | implemented | `op:importEmployeesCsv` `op:importWorkCategoriesCsv` `op:importRequestTypesCsv` `op:importLeaveGrantsCsv` `test:packages/api/test/integration/settings-import.test.ts` | 従業員・勤務区分・申請種別・休暇の付与。1 行でも読めなければ 1 行も取り込まない |
 | 日次・月次の一覧とレポート | partial | `ui:packages/web/src/admin/sections/MonthlySummarySettings.tsx` `ui:packages/web/src/admin/sections/ClosingReadinessSettings.tsx` | 月次の合計と締め前の確認を出す。長時間労働の警告は、上限の設定をどこに持つかが決まってから |
 | WCAG 2.2 AA | partial | `test:e2e/accessibility.spec.ts` | axe で AA まで機械的に見る（違反 0 件）。色の意味・読み上げの分かりやすさ・操作の順序は人が確かめる必要がある |
 | 主要な系統での動作 | implemented | `test:e2e/cross-browser.spec.ts` | Chromium・Firefox・WebKit の 3 系統。系統差が出る操作に絞って流す |

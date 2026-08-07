@@ -17,6 +17,7 @@ import {
   updateRequestTypeRequestSchema,
 } from '@staffweave/contracts';
 import { Hono } from 'hono';
+import type { SettingsImportService } from '../schedule/settings-import.js';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
 import { pathParam, readBody, readQuery } from '../shared/request.js';
@@ -24,10 +25,16 @@ import type { RequestService } from './service.js';
 
 export interface RequestRouteDependencies {
   service: RequestService;
+  imports: SettingsImportService;
 }
 
 export function createRequestRoutes(deps: RequestRouteDependencies): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+
+  app.post(operations.importRequestTypesCsv.path, async (c) => {
+    const auth = currentAuth(c);
+    return c.json(await deps.imports.importRequestTypes(auth, await c.req.text()), 200);
+  });
   const { service } = deps;
 
   app.get(operations.listRequestTypes.path, async (c) => {
