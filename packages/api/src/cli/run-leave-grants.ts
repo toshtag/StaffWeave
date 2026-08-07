@@ -42,7 +42,7 @@ const scheduler = createLeaveGrantScheduler({
 });
 
 try {
-  const summaries = await scheduler.run();
+  const summaries = await scheduler.runAll();
   const granted = summaries.reduce((total, summary) => total + summary.grantedCount, 0);
   logger.info('leave.grants.finished', { days: summaries.length, granted });
 } catch (error) {

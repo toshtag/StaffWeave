@@ -62,12 +62,19 @@ export interface LeaveRepository {
   findLastGrantRun(workspaceId: string, leaveTypeId: string): Promise<string | null>;
 
   /**
-   * 自動付与を処理した日を記録する。
+   * その日を、これから処理する日として先に取る。
    *
-   * 付与が 0 件でも記録する。残さないと、対象が誰も居なかった日を
+   * 取れなければ、他の実行がすでに取っている。取ってから付与するので、
+   * 同時に走っても同じ日を二度付与しない。付与してから記録する順にすると、
+   * 二度目は制約で落ちるまで付与を積むことになり、落ちる位置に結果が左右される。
+   *
+   * 付与が 0 件でも行は残す。残さないと、対象が誰も居なかった日を
    * 毎回やり直すことになり、追いつきが進まない。
    */
-  recordGrantRun(
+  claimGrantRun(workspaceId: string, leaveTypeId: string, effectiveOn: string): Promise<boolean>;
+
+  /** 先に取った日へ、実際の件数を書く。 */
+  recordGrantRunCounts(
     workspaceId: string,
     input: {
       leaveTypeId: string;
@@ -399,11 +406,23 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
       return rows[0]?.effective_on ?? null;
     },
 
-    async recordGrantRun(workspaceId, input) {
-      await db.query(
+    async claimGrantRun(workspaceId, leaveTypeId, effectiveOn) {
+      const rows = await db.query<{ id: string }>(
         `INSERT INTO leave_grant_runs
            (workspace_id, leave_type_id, effective_on, granted_count, skipped_count)
-         VALUES ($1, $2, $3, $4, $5)`,
+         VALUES ($1, $2, $3, 0, 0)
+         ON CONFLICT (workspace_id, leave_type_id, effective_on) DO NOTHING
+         RETURNING id`,
+        [workspaceId, leaveTypeId, effectiveOn],
+      );
+      return rows.length > 0;
+    },
+
+    async recordGrantRunCounts(workspaceId, input) {
+      await db.query(
+        `UPDATE leave_grant_runs
+            SET granted_count = $4, skipped_count = $5, ran_at = now()
+          WHERE workspace_id = $1 AND leave_type_id = $2 AND effective_on = $3`,
         [workspaceId, input.leaveTypeId, input.effectiveOn, input.grantedCount, input.skippedCount],
       );
     },

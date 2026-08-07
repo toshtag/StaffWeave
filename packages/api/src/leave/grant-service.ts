@@ -129,16 +129,16 @@ export function createLeaveGrantService(deps: LeaveGrantServiceDependencies): Le
 
     async runNow(context) {
       requireLeaveManager(context);
-      const summaries = await deps.scheduler.run();
-      return summaries
-        .filter((summary) => summary.workspaceId === context.workspace.id)
-        .map((summary) => ({
-          leaveTypeId: summary.leaveTypeId,
-          effectiveOn: summary.effectiveOn,
-          ranAt: deps.now().toISOString(),
-          grantedCount: summary.grantedCount,
-          skippedCount: summary.skippedCount,
-        }));
+      // 動かすのは、要求してきたワークスペースだけ。全てを回す入口を要求から
+      // 呼べると、1 人の管理者の操作が他のワークスペースの台帳を動かす。
+      const summaries = await deps.scheduler.runFor(context.workspace.id);
+      return summaries.map((summary) => ({
+        leaveTypeId: summary.leaveTypeId,
+        effectiveOn: summary.effectiveOn,
+        ranAt: deps.now().toISOString(),
+        grantedCount: summary.grantedCount,
+        skippedCount: summary.skippedCount,
+      }));
     },
 
     async createRule(context, input) {
