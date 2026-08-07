@@ -24,6 +24,7 @@ export function LeaveGrantSettings({ permissions }: SectionProps): React.JSX.Ele
   const [basis, setBasis] = useState<'fixed_date' | 'hire_anniversary'>('fixed_date');
   const [effectiveOn, setEffectiveOn] = useState('');
   const [outcome, setOutcome] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
 
   const canWrite = permissions.includes('leave.manage');
 
@@ -61,6 +62,29 @@ export function LeaveGrantSettings({ permissions }: SectionProps): React.JSX.Ele
     const result = await api.grantLeaveInBulk({ leaveTypeId, basis, effectiveOn });
     setOutcome(labels.bulkGrantOutcome(result.granted.length, result.skipped.length));
   }, [basis, effectiveOn, labels, leaveTypeId]);
+
+  /**
+   * 動かす前に、次の対象を見せる。
+   *
+   * 付与は台帳へ積むだけで、取り消しは打ち消しの記録として残る。
+   * 間違えた設定で動かしてから気付くと、人数ぶんの打ち消しが要る。
+   */
+  const showPreview = useCallback(async () => {
+    setPreview(null);
+    const result = await api.previewLeaveGrants({ leaveTypeId });
+    setPreview(
+      result.effectiveOn === null
+        ? labels.autoGrantNoTarget
+        : labels.autoGrantNext(result.effectiveOn, result.grantedCount),
+    );
+  }, [labels, leaveTypeId]);
+
+  const runAutoGrant = useCallback(async () => {
+    setOutcome(null);
+    const { runs } = await api.runLeaveGrants();
+    const granted = runs.reduce((total, run) => total + run.grantedCount, 0);
+    setOutcome(labels.autoGrantOutcome(runs.length, granted));
+  }, [labels]);
 
   return (
     <SettingsSection
@@ -122,6 +146,13 @@ export function LeaveGrantSettings({ permissions }: SectionProps): React.JSX.Ele
             <button type="button" onClick={() => void runBulkGrant()} disabled={effectiveOn === ''}>
               {labels.runBulkGrant}
             </button>
+            <button type="button" onClick={() => void showPreview()} disabled={leaveTypeId === ''}>
+              {labels.previewAutoGrant}
+            </button>
+            <button type="button" onClick={() => void runAutoGrant()}>
+              {labels.runAutoGrant}
+            </button>
+            {preview !== null && <p className="notice">{preview}</p>}
             {outcome !== null && <p className="notice">{outcome}</p>}
           </>
         ) : undefined

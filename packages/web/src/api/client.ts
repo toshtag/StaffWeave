@@ -40,8 +40,10 @@ import type {
   LaborSystemAssignmentRecord,
   LeaveBalanceList,
   LeaveExpirationList,
+  LeaveGrantPreview,
   LeaveGrantRuleList,
   LeaveGrantRuleRecord,
+  LeaveGrantRunList,
   LeaveLedgerEntryRecord,
   LeaveLedgerList,
   LeaveRegisterList,
@@ -272,6 +274,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  listLeaveGrantRuns: (query: { leaveTypeId: string }) =>
+    request<LeaveGrantRunList>(
+      `/leave-grant-runs?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  previewLeaveGrants: (query: { leaveTypeId: string }) =>
+    request<LeaveGrantPreview>(
+      `/leave-grant-runs/preview?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  runLeaveGrants: () => request<LeaveGrantRunList>('/leave-grant-runs', { method: 'POST' }),
   grantLeaveInBulk: (input: GrantLeaveInBulkRequest) =>
     request<GrantLeaveInBulkResponse>('/leave-ledger/bulk-grants', {
       method: 'POST',
