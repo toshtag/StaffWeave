@@ -12,7 +12,30 @@ import { E2E_ADMIN_CONSOLE_ADMIN } from './setup/prepare-database.js';
  *
  * 途中で API を直に叩かない。叩くと「画面だけで作れるか」を確かめたことに
  * ならない。打刻だけは従業員の画面から行う。
+ *
+ * 予定は検査の当日へ作る。以前は 2026-04 に固定して作り、打刻は現在日で行って
+ * いた。現在日がその期間の外でも通るため、作った設定が打刻の計算へ効いたことを
+ * 何も示していなかった。
+ *
+ * 確かめる値も具体的にする。勤務区分へ入れた所定労働分数（420 分）が、日次の
+ * 計算にも月次の集計にも出ることを見る。予定の時刻から出る 540 分とも、
+ * 固定休憩を引いた 480 分とも違う値にしてあるので、この値が出るのは
+ * 画面で作った勤務区分がその日の計算に選ばれたときだけ。
+ * 勤務区分・予定・割り当てのどれかが欠ければ、この検査は落ちる。
  */
+
+/** 検査の当日。予定はこの日へ作る。 */
+const TODAY = new Date().toISOString().slice(0, 10);
+/** 当月の 1 日。月次はこの月を見る。 */
+const PERIOD = `${TODAY.slice(0, 7)}-01`;
+/**
+ * 勤務区分に入れる所定労働分数。
+ *
+ * 09:00–18:00（540 分）でも、そこから固定休憩を引いた 480 分でもない値にする。
+ * この値が出るのは、画面で作った勤務区分がその日の計算に選ばれたときだけ。
+ * 予定の時刻から出る値と同じにすると、区分が効いていなくても通ってしまう。
+ */
+const SCHEDULED_MINUTES = 420;
 
 /** 検査どうしがコードを取り合わないよう、実行ごとに変える。 */
 const RUN = `${Date.now() % 100000}`;
@@ -105,6 +128,7 @@ test.describe('勤務の設定を画面だけで作る', () => {
     await card(page).getByLabel('所定の終了', { exact: true }).fill('18:00');
     await card(page).getByLabel('固定休憩の開始', { exact: true }).fill('12:00');
     await card(page).getByLabel('固定休憩の終了', { exact: true }).fill('13:00');
+    await card(page).getByLabel('所定労働分数').fill(String(SCHEDULED_MINUTES));
     await save(page);
 
     // 勤務パターン
@@ -136,28 +160,30 @@ test.describe('勤務の設定を画面だけで作る', () => {
     await card(page)
       .getByRole('combobox', { name: '勤務周期' })
       .selectOption({ label: `${CYCLE} 検証用の周期` });
-    await card(page).getByLabel('周期の起点日').fill('2026-04-01');
-    await card(page).getByLabel('適用開始日').fill('2026-04-01');
+    await card(page).getByLabel('周期の起点日').fill(TODAY);
+    await card(page).getByLabel('適用開始日').fill(TODAY);
     await card(page).getByRole('button', { name: '周期を割り当てる' }).click();
     await expect(card(page).getByText('割り当てました')).toBeVisible();
 
-    await card(page).getByLabel('開始日', { exact: true }).fill('2026-04-01');
-    await card(page).getByLabel('終了日', { exact: true }).fill('2026-04-30');
+    // 当日の 1 日だけを作る。月次の所定労働がその 1 日ぶんちょうどになり、
+    // 効いているかどうかを数字で言い切れる。
+    await card(page).getByLabel('開始日', { exact: true }).fill(TODAY);
+    await card(page).getByLabel('終了日', { exact: true }).fill(TODAY);
     await card(page).getByRole('button', { name: '予定を作る' }).click();
     await expect(card(page).getByText(/日分を作りました/)).toBeVisible();
 
     // 作った予定が、勤務区分つきで並ぶ。
     await page.goto('/#/admin/work/schedules');
     await card(page).getByLabel('従業員').selectOption({ label: employeeOption });
-    await card(page).getByLabel('開始日', { exact: true }).fill('2026-04-01');
-    await card(page).getByLabel('終了日', { exact: true }).fill('2026-04-30');
-    await expect(card(page).locator('tbody tr').first()).toContainText(CATEGORY);
+    await card(page).getByLabel('開始日', { exact: true }).fill(TODAY);
+    await card(page).getByLabel('終了日', { exact: true }).fill(TODAY);
+    await expect(card(page).locator('tbody tr', { hasText: TODAY })).toContainText(CATEGORY);
 
     // 労働形態。裁量のみなし時間を入れる。
     await page.goto('/#/admin/work/labor-systems');
     await card(page).getByLabel('従業員').selectOption({ label: employeeOption });
     await card(page).getByLabel('労働形態').selectOption('normal');
-    await card(page).getByLabel('適用開始日').fill('2026-04-01');
+    await card(page).getByLabel('適用開始日').fill(TODAY);
     await save(page);
 
     // ここまでで、curl も SQL も使っていない。
@@ -168,9 +194,19 @@ test.describe('勤務の設定を画面だけで作る', () => {
     await page.getByRole('button', { name: '退勤' }).click();
     await expect(page.locator('.work-state')).toContainText('退勤済み');
 
-    // 管理者へ戻り、月次の集計にその従業員が出ることを見る。
+    // 画面で作った勤務区分が、その打刻の計算へ効いていること。
+    // 従業員番号が並ぶだけでは、設定が効いたことを何も示さない。
+    const details = page.locator('.calculation-details');
+    await expect(
+      details.locator('dt', { hasText: '所定労働' }).locator('xpath=following-sibling::dd[1]'),
+    ).toHaveText('7時間0分');
+
+    // 管理者へ戻り、月次にも同じ値が出ることを見る。
     await signIn(page, E2E_ADMIN_CONSOLE_ADMIN.email, E2E_ADMIN_CONSOLE_ADMIN.password);
     await page.goto('/#/admin/monthly/summaries');
-    await expect(card(page).locator('tbody')).toContainText(EMPLOYEE_NUMBER);
+    await card(page).getByLabel('対象月').fill(PERIOD);
+    const monthly = card(page).locator('tbody tr', { hasText: EMPLOYEE_NUMBER });
+    await expect(monthly).toBeVisible();
+    await expect(monthly).toContainText(String(SCHEDULED_MINUTES));
   });
 });

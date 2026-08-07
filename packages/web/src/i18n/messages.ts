@@ -542,6 +542,7 @@ export interface AdminMessages {
   periodHint: string;
   workedDays: string;
   workedMinutes: string;
+  scheduledMinutes: string;
   outsideMinutes: string;
   nightMinutes: string;
   legalOvertimeMinutes: string;
@@ -1176,6 +1177,7 @@ const ja: Messages = {
     periodHint: '月の 1 日を選びます。',
     workedDays: '出勤日数',
     workedMinutes: '実労働（分）',
+    scheduledMinutes: '所定労働（分）',
     outsideMinutes: '所定外（分）',
     nightMinutes: '深夜（分）',
     legalOvertimeMinutes: '法定時間外（分）',
@@ -1826,6 +1828,7 @@ const en: Messages = {
     periodHint: 'Pick the first day of the month.',
     workedDays: 'Days worked',
     workedMinutes: 'Worked (minutes)',
+    scheduledMinutes: 'Scheduled (minutes)',
     outsideMinutes: 'Outside schedule (minutes)',
     nightMinutes: 'Night (minutes)',
     legalOvertimeMinutes: 'Legal overtime (minutes)',

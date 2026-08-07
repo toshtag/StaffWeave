@@ -29,6 +29,11 @@ export function MonthlySummarySettings({ permissions }: SectionProps): React.JSX
     { key: 'number', header: labels.employeeNumber, value: (row) => row.employeeNumber },
     { key: 'name', header: labels.name, value: (row) => row.displayName },
     { key: 'workedDays', header: labels.workedDays, value: (row) => row.workedDays },
+    {
+      key: 'scheduled',
+      header: labels.scheduledMinutes,
+      value: (row) => row.scheduledMinutes,
+    },
     { key: 'worked', header: labels.workedMinutes, value: (row) => row.workedMinutes },
     { key: 'outside', header: labels.outsideMinutes, value: (row) => row.outsideScheduleMinutes },
     { key: 'night', header: labels.nightMinutes, value: (row) => row.nightMinutes },
