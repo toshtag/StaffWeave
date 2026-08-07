@@ -190,16 +190,37 @@ describe('打刻端末の配布物', () => {
       (loaded.createPcscTransport as (load: () => Promise<unknown>) => Promise<unknown>)(() =>
         Promise.reject(new Error('not installed')),
       ),
-    ).rejects.toThrow('install-reader.ps1');
+    ).rejects.toThrow('staffweave-agent-windows-x64');
   });
 
-  it('読み取り装置の部品を入れる手順を同梱する', async () => {
+  /**
+   * 端末で取り寄せる手順を、正規の道として残さないこと。
+   *
+   * 現場の端末は通信できないことがあり、組み立ての道具も無い。あとで取り寄せる
+   * 形にすると、配布物だけでは物理カードを読めず、確かめた構成と実際に動く構成も
+   * 別になる。読み取りの部品は、その OS の上で組むときに入れる。
+   */
+  it('端末で部品を取り寄せる手順を同梱しない', async () => {
     const files = await filesUnder(bundle);
-    expect(files).toContain('install-reader.ps1');
+    expect(files).not.toContain('install-reader.ps1');
+    expect(files.filter((file) => file.endsWith('.ps1'))).toEqual([
+      'install-startup.ps1',
+      'uninstall-startup.ps1',
+    ]);
+  });
 
-    const script = await readFile(join(bundle, 'install-reader.ps1'), 'utf8');
-    // 利用者が書くのはコードではなく、この 1 行の実行だけ。
-    expect(script).toContain('pcsclite');
+  it('配布物が、対応する Node の版を持つ', async () => {
+    const build = JSON.parse(await readFile(join(bundle, 'agent/build-info.json'), 'utf8')) as {
+      nodeMajor: string;
+      reader: string;
+    };
+    const pinned = (await readFile(join(REPOSITORY_ROOT, '.nvmrc'), 'utf8')).trim();
+
+    // 組み立てた部品は Node の版ごとの取り決めに合わせて作られる。
+    // 別の版で動かすと、装置を開こうとした時点で落ちる。
+    expect(build.nodeMajor).toBe(pinned);
+    // ここで組むのは OS を選ばない配布物。読み取りの部品は入らない。
+    expect(build.reader).toBe('');
   });
 
   /**
@@ -223,7 +244,7 @@ describe('打刻端末の配布物', () => {
     };
     expect(build.version).toBe(root.version);
     // 秘密は入れない。診断は保守の人が現場で実行し、画面と端末の履歴に残る。
-    expect(Object.keys(build).sort()).toEqual(['sourceSha', 'version']);
+    expect(Object.keys(build).sort()).toEqual(['nodeMajor', 'reader', 'sourceSha', 'version']);
   });
 
   it('実行ファイルは作らない', async () => {

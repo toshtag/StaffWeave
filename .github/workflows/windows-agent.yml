@@ -1,6 +1,6 @@
-name: Windows の常駐
+name: Windows の配布物
 
-# 配った Agent が、Windows で本当に常駐できるかを確かめる。
+# Windows 向けの配布物を組み、その上で常駐できるかを確かめる。
 #
 # これまで確かめていたのは、登録する script の文字列だけだった。
 # 文字列は読めても、Windows がその通りに動くとは限らない。実際、
@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  startup:
-    name: 登録から削除までを Windows で通す
+  windows-agent:
+    name: 配布物を組み、登録から削除までを Windows で通す
     runs-on: windows-latest
 
     steps:
@@ -49,6 +49,57 @@ jobs:
       - name: 配布物を組む
         shell: bash
         run: ./scripts/package-agent.sh artifacts/agent
+
+      # Windows 向けの配布物。読み取り装置の部品は組み立てが要るため、
+      # ここでしか作れない。端末では取り寄せない。
+      - name: Windows 向けの配布物を組む
+        shell: bash
+        env:
+          AGENT_READER_MODULE: pcsclite@1.0.1
+        run: ./scripts/package-agent.sh artifacts/windows-agent-bundle
+
+      # 配布物だけの場所から、通信せずに読み取りの部品を読めること。
+      # ここが通らなければ、端末の前で初めて読めないと分かる。
+      - name: 通信せずに読み取りの部品を読めることを確かめる
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          $probe = @"
+          const { createRequire } = await import('node:module');
+          const require = createRequire('$($bundle -replace '\\', '/')/package.json');
+          const pcsc = require('pcsclite');
+          if (typeof pcsc !== 'function') throw new Error('読み取りの部品の形が違います');
+          console.log('読み取りの部品を読めました');
+          "@
+          $probe | Out-File -Encoding utf8 probe.mjs
+          node probe.mjs
+
+      # Windows の runner に zip コマンドは無い。PowerShell の圧縮を使う。
+      - name: 配布物をまとめる
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          New-Item -ItemType Directory -Force -Path artifacts/windows-agent | Out-Null
+          Compress-Archive -Path artifacts/windows-agent-bundle/staffweave-agent `
+            -DestinationPath "artifacts/windows-agent/staffweave-agent-windows-x64-$version.zip" `
+            -CompressionLevel Optimal -Force
+
+      # 読み取りの部品とその先の依存まで含めた構成は、ここで組んだものにしかない。
+      - name: 構成一覧を書き出す
+        shell: bash
+        run: |
+          npx --yes @cyclonedx/cyclonedx-npm@4.0.2 \
+            --omit dev \
+            --output-format json \
+            --output-file artifacts/windows-agent/staffweave-agent-windows.cdx.json \
+            -- artifacts/windows-agent-bundle/staffweave-agent/package.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staffweave-windows-agent-${{ github.sha }}
+          path: artifacts/windows-agent
+          if-no-files-found: error
+          retention-days: 14
 
       # 常駐そのものを試す前に、送信だけの形で登録する。
       # 読み取り装置は runner に無く、あっても物理カードは置けない。
