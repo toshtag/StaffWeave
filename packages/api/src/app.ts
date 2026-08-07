@@ -192,6 +192,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     approval: createApprovalRepository(deps.db),
     requests: createRequestRepository(deps.db),
     categories: workCategoryRepository,
+    laborSystems: laborSystemRepository,
   };
 
   const withTransaction = <T>(
@@ -201,6 +202,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       calculations: ReturnType<typeof createCalculationRepository>;
       approval: ReturnType<typeof createApprovalRepository>;
       categories: ReturnType<typeof createWorkCategoryRepository>;
+      laborSystems: ReturnType<typeof createLaborSystemRepository>;
       monthly: ReturnType<typeof createMonthlyRepository>;
       leave: ReturnType<typeof createLeaveRepository>;
       requests: ReturnType<typeof createRequestRepository>;
@@ -219,6 +221,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         calculations: createCalculationRepository(tx),
         approval: createApprovalRepository(tx),
         categories: createWorkCategoryRepository(tx),
+        laborSystems: createLaborSystemRepository(tx),
         monthly: createMonthlyRepository(tx),
         leave: createLeaveRepository(tx),
         requests: createRequestRepository(tx),

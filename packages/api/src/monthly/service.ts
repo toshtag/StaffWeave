@@ -40,6 +40,7 @@ export interface MonthlyRepositories {
   approval: DayRepositories['approval'];
   requests: DayRepositories['requests'];
   categories: DayRepositories['categories'];
+  laborSystems: DayRepositories['laborSystems'];
   audit: AuditRepository;
 }
 

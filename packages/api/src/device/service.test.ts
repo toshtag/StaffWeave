@@ -6,6 +6,7 @@ import { createCalculationRepository } from '../attendance/calculation-repositor
 import { createAttendanceRepository } from '../attendance/repository.js';
 import type { AuditEntry, AuditRepository } from '../audit/repository.js';
 import { createRequestRepository } from '../request/repository.js';
+import { createLaborSystemRepository } from '../schedule/labor-system-repository.js';
 import { createScheduleRepository } from '../schedule/repository.js';
 import { createWorkCategoryRepository } from '../schedule/work-category-repository.js';
 import { ApiError } from '../shared/errors.js';
@@ -71,6 +72,7 @@ function serviceWith(devices: Partial<DeviceRepository>): {
     approval: createApprovalRepository(unusedDatabase),
     requests: createRequestRepository(unusedDatabase),
     categories: createWorkCategoryRepository(unusedDatabase),
+    laborSystems: createLaborSystemRepository(unusedDatabase),
     devices: { ...createDeviceRepository(unusedDatabase), ...devices },
     audit,
   };
