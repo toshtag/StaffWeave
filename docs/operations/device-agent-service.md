@@ -4,7 +4,7 @@
 実機を使わずに取り決めを試す手順は [guide/device-agent.md](../guide/device-agent.md) にあります。
 
 このリポジトリに入っているのは、サーバーとの取り決めと、その取り決めを守る側の実装です。
-IC カードの読み取り装置そのものと、Windows のサービスとして動かした実機の確認は
+装置のドライバを叩く部分と、Windows のサービスとして動かした実機の確認は
 含まれていません。何が確かめてあって何が確かめてないかは、
 最後の[実機で確かめること](#実機で確かめること)にそのまま書いてあります。
 
@@ -14,17 +14,24 @@ IC カードの読み取り装置そのものと、Windows のサービスとし
 
 ```bash
 pnpm agent enroll --url https://staffweave.example --token-stdin
-pnpm agent serve
+pnpm agent station
 ```
 
-打刻は、受け取る側と送る側を分けています。
+`station` は、読み取り装置と送信を 1 つのプロセスで持ちます。読み取ったカードは
+その場で送らず、送信待ちへ積みます。積んだものは同じプロセスが送ります。
+
+読み取りと送信を別のプロセスに分けると、サービスとして登録した側だけが動き、
+もう一方は誰も起動しない状態になります。実際にそうなっていました。
+
+読み取り装置を付けない端末では、送信だけを常駐させます。
 
 ```bash
+pnpm agent serve
 pnpm agent queue --employee E001 --type clock_in
 ```
 
 `queue` は送信待ちへ積むだけです。その場で送ろうとすると、回線が切れているあいだ
-利用者を待たせることになります。`serve` が別に送ります。
+利用者を待たせることになります。
 
 困ったときは状態を出します。
 
@@ -143,37 +150,42 @@ PC/SC は Windows（WinSCard）と Linux・macOS（PCSC-Lite）の両方にあ�
 同じカードの連続タップの扱い、装置が外れたときの開き直しは、リポジトリの中にあります
 （`packages/agent/src/card/pcsc.ts`）。
 
-装置そのものを叩く部分は含めません。OS ごとに native の部品が要り、
-同梱すると確かめていない組み合わせを配ることになります。
+PC/SC の装置へつなぐ受け渡しは、配布物へ同梱しています
+（`agent/card/pcsc-winscard.js`）。利用者がコードを書く必要はありません。
 
-### 装置との受け渡しをつなぐ
+装置のドライバを叩く部分だけは含めません。OS ごとに組み立てが要り、
+Linux で組み立てたものを Windows へ配ることはできないためです。
 
-端末を用意する側が、その OS 向けの PC/SC の部品を入れ、次の形で公開します。
+### 読み取り装置を使えるようにする
 
-```ts
-export function createPcscTransport(): PcscTransport {
-  return {
-    name: '<装置の名前>',
-    waitForCard: async () => {/* カードが置かれるまで待つ */},
-    transmit: async (command) => {/* APDU を送り、応答を返す */},
-    waitForRemoval: async () => {/* カードが離れるまで待つ */},
-    reconnect: async () => {/* 装置を開き直す */},
-    close: async () => {/* 閉じる */},
-  };
-}
+端末で 1 回だけ、装置の部品を取り寄せます。配布物に手順が入っています。
+
+```powershell
+.\install-reader.ps1
 ```
 
-その置き場を渡して常駐させます。
+入っていない端末で `station` を動かすと、この手順を案内して止まります。
+黙って読み取りなしで立ち続けると、打刻できない端末が動いているように見えます。
+
+別の受け渡しを使う端末では、その置き場を渡せます。
 
 ```sh
-pnpm agent card-watch --pcsc /opt/staffweave/pcsc-transport.js
+pnpm agent station --pcsc /opt/staffweave/pcsc-transport.js
 ```
-
-`--pcsc` を渡さなければ動きません。検証用のアダプターへ黙って落とすと、
-実機のつもりで動かしている端末が、何も読まないまま静かに立っていることになります。
 
 形が合わない部品は、打刻の途中ではなく読み込みの時点で断ります。
 途中で落ちると、端末の前の人が何が起きたのかを判断できません。
+
+### カードを登録する
+
+読み取り装置へカードを置いて登録できます。
+
+```sh
+pnpm agent card-register --token-file <path> --reader
+```
+
+`--reader` を付けなければ、識別子を手で入れます。手入力しか無いと、登録のときだけ
+人がカードの番号を読み取って書き写すことになり、写した番号が端末の外に残ります。
 
 ### 実機がない場所
 
@@ -189,8 +201,9 @@ pnpm agent card-watch --pcsc /opt/staffweave/pcsc-transport.js
 
 ### 物理の IC カード
 
-- [ ] その OS 向けの `createPcscTransport` を書き、`pnpm agent card-register` でカードを登録できる
-- [ ] 登録したカードを `pnpm agent card-watch --pcsc <モジュール>` でかざすと打刻が記録される
+- [ ] 配布物の `install-reader.ps1` で装置の部品が入り、`diagnose` が装置の名前を出す
+- [ ] `card-register --reader` で、カードを置いて登録できる
+- [ ] 登録したカードをかざすと、サービスとして動いている `station` が打刻を記録する
 - [ ] 登録していないカードをかざすと、打刻されず、理由が端末へ出て、連番が進まない
 - [ ] 失効させたカードをかざすと、打刻されない
 - [ ] 同じカードを続けて 2 回かざしたとき、二重の打刻にならない
@@ -199,7 +212,8 @@ pnpm agent card-watch --pcsc /opt/staffweave/pcsc-transport.js
 
 ### Windows のサービス
 
-- [ ] `install-service.ps1` でサービスとして登録でき、自動起動になる
+- [ ] `install-service.ps1` で `station` としてサービス登録でき、自動起動になる
+- [ ] 登録したサービス 1 つだけで、カードの読み取りから送信まで完結する
 - [ ] 端末を再起動すると、サービスが自動で上がる
 - [ ] 送信待ちが残った状態で再起動しても、上がったあとに送られる
 - [ ] サービスを強制終了しても、送信待ちのファイルが壊れない
@@ -209,6 +223,8 @@ pnpm agent card-watch --pcsc /opt/staffweave/pcsc-transport.js
 
 ### 回線と時計
 
+- [ ] 回線を抜いた状態でカードをかざすと送信待ちへ残り、つなぎ直すと送られる
+- [ ] 回線を抜いた状態でかざしたあとサービスを再起動しても、送信待ちが残る
 - [ ] 回線を抜いた状態で打刻を積み、つなぎ直すと送られる
 - [ ] 送れない間、試す間隔が広がる
 - [ ] 端末の時計を大きくずらすと、サーバー側で時計差として記録される
