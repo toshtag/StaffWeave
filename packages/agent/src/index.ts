@@ -33,3 +33,9 @@ export type {
 export { createFileSpool } from './service/spool.js';
 export type { CardStationOptions } from './service/station.js';
 export { readCardIntoSpool, runCardStation } from './service/station.js';
+export {
+  clearStop,
+  isStopRequested,
+  requestStop,
+  stopSignalPath,
+} from './service/stop-signal.js';

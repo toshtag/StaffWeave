@@ -14,6 +14,7 @@
  *   pnpm agent session-observe --employee E001 --type sign_in [--at <ISO日時>]
  *   pnpm agent queue --employee E001 --type clock_in   送信待ちへ積むだけ
  *   pnpm agent serve                                   常駐して送信待ちを送り続ける
+ *   pnpm agent stop                                    常駐している側へ、行儀よく終わるよう伝える
  *   pnpm agent diagnose                                設定と送信待ちの状態を出す
  *   pnpm agent --version                               配布物の版と元の commit を出す
  *
@@ -49,6 +50,7 @@ import { runAgent, type SendOutcome } from './service/runner.js';
 import { createSender } from './service/sender.js';
 import { createFileSpool, type SpooledPunch } from './service/spool.js';
 import { runCardStation } from './service/station.js';
+import { clearStop, isStopRequested, requestStop, stopSignalPath } from './service/stop-signal.js';
 
 const DEFAULT_STORE = '.staffweave-agent.json';
 
@@ -319,14 +321,25 @@ function sender(): (punch: SpooledPunch) => Promise<SendOutcome> {
   });
 }
 
-/** 停止の合図で止まる常駐の足回り。待っている間に来た合図でも、次の周回まで待たせない。 */
+/** 合図のファイルを見に行く間隔。長くすると、止めてから終わるまでが延びる。 */
+const STOP_POLL_MS = 1_000;
+
+/**
+ * 停止の合図で止まる常駐の足回り。待っている間に来た合図でも、次の周回まで待たせない。
+ *
+ * 合図は 2 つある。SIGINT / SIGTERM と、置かれたファイル。Windows には
+ * 「行儀よく終われ」という合図が無いため、ファイルのほうを見る
+ * （docs/decisions/0002-windows-residency.md）。
+ */
 function residency(logger: ReturnType<typeof createAgentLogger>): {
   running: () => boolean;
   sleep: (ms: number) => Promise<void>;
+  dispose: () => void;
 } {
   let running = true;
   let wake: (() => void) | null = null;
   const stop = (): void => {
+    if (!running) return;
     running = false;
     logger.info('agent.stopping');
     wake?.();
@@ -334,7 +347,21 @@ function residency(logger: ReturnType<typeof createAgentLogger>): {
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
+  const signalPath = stopSignalPath(spoolPath());
+  const watch = setInterval(() => {
+    void isStopRequested(signalPath).then((requested) => {
+      if (requested) stop();
+    });
+  }, STOP_POLL_MS);
+  // ここは unref してよい。他に用が無ければ、常駐する理由も無い。
+  watch.unref();
+
   return {
+    dispose: () => {
+      clearInterval(watch);
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+    },
     running: () => running,
     // 待ちは unref しない。unref すると、待っている間に他へ用が無いプロセスが終了し、
     // 常駐しているつもりの端末が最初の待ちで落ちる。
@@ -356,17 +383,37 @@ function residency(logger: ReturnType<typeof createAgentLogger>): {
 /** 常駐して送信待ちを送り続ける。停止の合図を受けたら、今の 1 件を送り終えてから止まる。 */
 async function runServe(): Promise<void> {
   const logger = createAgentLogger();
-  const { running, sleep } = residency(logger);
+  const { running, sleep, dispose } = residency(logger);
 
   logger.info('agent.started', { store: storePath(), spool: spoolPath() });
-  await runAgent({
-    spool: createFileSpool(spoolPath()),
-    logger,
-    running,
-    sleep,
-    send: sender(),
-  });
+  try {
+    await runAgent({
+      spool: createFileSpool(spoolPath()),
+      logger,
+      running,
+      sleep,
+      send: sender(),
+    });
+  } finally {
+    dispose();
+    // 合図は片付けてから終わる。残したまま次に上げると、上がった直後に止まる。
+    await clearStop(stopSignalPath(spoolPath()));
+  }
   logger.info('agent.stopped');
+}
+
+/**
+ * 常駐している側へ、行儀よく終わるよう伝える。
+ *
+ * 強制的に終わらせても送信待ちは消えないが、送っている途中で切ると、
+ * サーバーが受理したかどうかの分からない 1 件が残る。次に上げたときに
+ * 送り直すので失われはしないものの、毎回そうする理由も無い。
+ */
+async function runStop(): Promise<void> {
+  const path = stopSignalPath(spoolPath());
+  await requestStop(path);
+  console.log(`停止を伝えました: ${path}`);
+  console.log('常駐している側は、いまの 1 件を送り終えてから終わります。');
 }
 
 /**
@@ -383,7 +430,7 @@ async function runStation(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
   const key = requireCardKey(credentials);
   const logger = createAgentLogger();
-  const { running, sleep } = residency(logger);
+  const { running, sleep, dispose } = residency(logger);
   const spool = createFileSpool(spoolPath());
 
   const transport = await loadPcscTransport(option('pcsc') ?? BUNDLED_PCSC_MODULE);
@@ -395,20 +442,25 @@ async function runStation(): Promise<void> {
 
   // 読み取りと送信を並べて動かす。読み取りが待っている間も送信は進む。
   // 順番に動かすと、カードが置かれるまで送信待ちが出ていかない。
-  await Promise.all([
-    runCardStation({
-      reader,
-      spool,
-      logger,
-      fingerprint: (rawCardId) => cardFingerprint(key, rawCardId),
-      allocateSequence,
-      running,
-      now: () => new Date(),
-    }),
-    runAgent({ spool, logger, running, sleep, send: sender() }),
-  ]);
-
-  await transport.close();
+  try {
+    await Promise.all([
+      runCardStation({
+        reader,
+        spool,
+        logger,
+        fingerprint: (rawCardId) => cardFingerprint(key, rawCardId),
+        allocateSequence,
+        running,
+        now: () => new Date(),
+      }),
+      runAgent({ spool, logger, running, sleep, send: sender() }),
+    ]);
+  } finally {
+    dispose();
+    // 装置は必ず閉じる。開いたまま終わると、次に上げたときに掴めない。
+    await transport.close();
+    await clearStop(stopSignalPath(spoolPath()));
+  }
   logger.info('agent.stopped');
 }
 
@@ -493,12 +545,15 @@ async function main(): Promise<void> {
       return runServe();
     case 'station':
       return runStation();
+    case 'stop':
+      return runStop();
     case 'diagnose':
       return runDiagnose();
     default:
       throw new Error(
         'enroll / punch / replay / card-register / card-punch / session-observe / ' +
-          'status / queue / serve / station / diagnose / --version のいずれかを指定してください',
+          'status / queue / serve / station / stop / diagnose / --version のいずれかを' +
+          '指定してください',
       );
   }
 }
