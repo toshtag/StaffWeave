@@ -148,6 +148,9 @@ CSV での付与、自動付与、一斉付与は、管理画面と一括処理�
 [product/capability-matrix.md](product/capability-matrix.md) を見てください。**
 
 P24 の終了時点では、製品側の実装は揃い、実機での確認は済んでいませんでした。
+このとき作った「Windows のサービスとして登録する」手順は、そのままでは起動できない
+ものでした。あとで常駐の方法を変えています
+（[decisions/0002-windows-residency.md](decisions/0002-windows-residency.md)）。
 
 端末の常駐、送れなかった打刻のディスクへの保管、送る順番の維持、送れない間の間隔、
 ログの秘匿、診断、Windows のサービスとして登録・削除する手順、配布物を作る手順を

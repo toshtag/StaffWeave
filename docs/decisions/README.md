@@ -32,3 +32,4 @@
 | 番号 | 決定 |
 | --- | --- |
 | [0001](0001-database-collation.md) | データベースの並びを libc から切り離し、基盤に Debian を使う |
+| [0002](0002-windows-residency.md) | Windows での常駐を、サービスではなくタスクスケジューラで行う |
