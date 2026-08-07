@@ -20,6 +20,7 @@ import { ChangePassword } from './ChangePassword.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
 import { NotificationPanel } from './NotificationPanel.tsx';
 import { PendingApprovals } from './PendingApprovals.tsx';
+import { PendingDailyRequests } from './PendingDailyRequests.tsx';
 import { RequestCenter } from './RequestCenter.tsx';
 import { TodayAttendance } from './TodayAttendance.tsx';
 
@@ -156,6 +157,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         <RequestCenter session={session} />
 
         <PendingApprovals session={session} />
+
+        <PendingDailyRequests session={session} />
 
         <AnomalyPanel session={session} />
 

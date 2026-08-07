@@ -180,6 +180,29 @@ export const E2E_REQUEST_EMPLOYEE: SeededAccount = {
 };
 
 /**
+ * 製品を一巡する検査で使う管理者。
+ *
+ * 一巡の検査は設定を作りながら進むため、他の検査と共有しない。
+ * 共有すると、途中で作った行が別の検査の一覧へ混ざる。
+ */
+export const E2E_GOLDEN_ADMIN: SeededAccount = {
+  email: 'golden-admin@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E019',
+  displayName: '検証 十九郎',
+  role: 'workspace_admin',
+};
+
+/** 一巡の検査で、残業の 1 段目を承認する組織の管理者。 */
+export const E2E_GOLDEN_MANAGER: SeededAccount = {
+  email: 'golden-manager@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E020',
+  displayName: '検証 二十郎',
+  role: 'organization_manager',
+};
+
+/**
  * 系統ごとの検査と、アクセシビリティの検査で使う管理者。
  *
  * 3 つの系統で同じ検査を流すため、状態を変えない操作だけに使う。
@@ -212,6 +235,8 @@ const SEEDED_ACCOUNTS = [
   E2E_REQUEST_EMPLOYEE,
   E2E_HISTORY_EMPLOYEE,
   E2E_CROSS_BROWSER_ADMIN,
+  E2E_GOLDEN_ADMIN,
+  E2E_GOLDEN_MANAGER,
 ];
 
 export function e2eDatabaseUrl(): string {

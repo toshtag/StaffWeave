@@ -1,6 +1,6 @@
 import type { AttendanceDaySummary, SessionResponse, WorkDay } from '@staffweave/contracts';
 import { addMonthsToBusinessDate } from '@staffweave/domain';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiRequestError, api } from '../api/client.ts';
 import { useLocale } from '../i18n/LocaleProvider.tsx';
 import { businessToday } from '../session/business-date.ts';
@@ -34,13 +34,23 @@ export function AttendanceHistory({
   const employeeId = session.employee?.id ?? null;
   const timeZone = session.workspace.timeZone;
 
+  // 読み直しは、前の読み出しが返る前にも起こる。返った順に書き込むと、
+  // 古い結果が新しい結果を上書きし、打刻したはずの日が消えて見える。
+  const latestRequest = useRef(0);
+
   const load = useCallback(() => {
     if (employeeId === null) return;
+    const request = latestRequest.current + 1;
+    latestRequest.current = request;
     setError(null);
     api
       .listAttendanceDays({ period })
-      .then((body) => setDays(body.days))
+      .then((body) => {
+        if (latestRequest.current !== request) return;
+        setDays(body.days);
+      })
       .catch((cause: unknown) => {
+        if (latestRequest.current !== request) return;
         setDays([]);
         setError(cause instanceof ApiRequestError ? cause.message : messages.networkError);
       });
