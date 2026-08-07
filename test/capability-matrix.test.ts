@@ -67,4 +67,32 @@ describe('能力の一覧の根拠', () => {
 
     expect(unknown).toEqual([]);
   });
+
+  /**
+   * `implemented` は、縦に通る証拠を必ず 1 つは指す。
+   *
+   * domain の単体テストは、計算そのものが正しいことしか言わない。設定した値が
+   * そこへ渡っているか、結果が保存されて月次まで届くかは別の話で、単体テストは
+   * どちらも見ていない。単体テストだけを根拠に `implemented` と書くと、
+   * 「配線されていない機能」が動くものとして一覧に並ぶ。
+   *
+   * 縦に通る証拠として数えるのは、統合テスト（`packages/*_/test/integration/`）、
+   * 画面テスト（`e2e/`）、リポジトリ直下の `test/`、そして画面そのものの 4 つ。
+   */
+  it('implemented は縦に通る証拠を指す', () => {
+    const rows = [...matrix.matchAll(/^\| ([^|]+) \| implemented \| ([^|]*) \|/gm)];
+    const isVertical = (path: string): boolean =>
+      path.includes('/test/integration/') || path.startsWith('e2e/') || path.startsWith('test/');
+
+    const thin = rows
+      .filter(([, , refs]) => {
+        const source = refs as string;
+        if (source.includes('`ui:')) return false;
+        const tests = [...source.matchAll(/`test:([^`]+)`/g)].map((match) => match[1] as string);
+        return !tests.some(isVertical);
+      })
+      .map(([, name]) => (name as string).trim());
+
+    expect(thin).toEqual([]);
+  });
 });

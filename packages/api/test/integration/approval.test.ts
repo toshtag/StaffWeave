@@ -218,6 +218,35 @@ describe('日次申請', () => {
     expect(response.status).toBe(409);
   });
 
+  it('承認の権限を持っていても、自分の申請は自分で承認できない', async () => {
+    // 承認できる立場の人も申請を出す。そのとき自分で通せてしまうと、
+    // 承認という手続きが「自分で書いて自分で押す」ものになり、意味を失う。
+    const workspaceId = await createWorkspace(testDatabase(), { slug: 'self' });
+    const organizationId = await createOrganization(testDatabase(), workspaceId, { code: 'SELF' });
+    await createEmployeeWithAccount(testDatabase(), workspaceId, {
+      organizationId,
+      employeeNumber: 'E900',
+      displayName: '承認 太郎',
+      email: 'approver-employee@example.com',
+      roles: ['workspace_admin'],
+    });
+
+    const instance = app();
+    const cookie = await loginAndGetCookie(instance, {
+      email: 'approver-employee@example.com',
+      workspaceSlug: 'self',
+    });
+    await punchWholeDay(instance, cookie, 'self-approval');
+    const { request } = await submit(instance, cookie);
+
+    const response = await instance.request(
+      `/api/attendance/requests/${request.id}/approve`,
+      authorized(cookie, { method: 'POST', body: {} }),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
   it('承認権限がなければ承認できない', async () => {
     const instance = app();
     const { request } = await submit(instance, fixture.employeeCookie);
