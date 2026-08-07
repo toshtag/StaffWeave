@@ -64,12 +64,20 @@ jobs:
         #
         # branch と commit の範囲は、Git の状態から推測させず、event から渡す。
         # checkout は PR では detached HEAD になり、branch 名を辿れない。
+        #
+        # 禁止語そのものはリポジトリへ置かない。置いた時点で、書かせたくない
+        # 語をリポジトリが持つことになる。repository variable から渡す。
+        # Secret ではなく variable にするのは、この job が PR の側のコードを
+        # 動かすため。Secret を渡すと、脚本を 1 行変えた PR から読み出せる。
+        # variable も同じ理由で読み出せるが、禁止語は秘密ではなく決めごとで、
+        # ログへ出さないことだけを守れば足りる。
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           POLICY_HEAD_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
           POLICY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           POLICY_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          POLICY_FORBIDDEN_PATTERN: ${{ vars.POLICY_FORBIDDEN_PATTERN }}
 
       - name: 依存の脆弱性
         run: pnpm check:audit
