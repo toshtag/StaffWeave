@@ -1,18 +1,22 @@
 import type {
+  ChangeEmployeeStatusRequest,
   CreateDepartmentRequest,
   CreateEmployeeRequest,
   CreateOrganizationRequest,
   CreateSiteRequest,
   Department,
   Employee,
+  EmployeeStatusChange,
   ImportResult,
   Organization,
   Site,
+  UpdateEmployeeRequest,
   UpdateOrganizationRequest,
 } from '@staffweave/contracts';
 import type { Role } from '@staffweave/domain';
 import {
   DEFAULT_LOCALE,
+  hasPermission,
   isBusinessDate,
   isValidEmail,
   normalizeCode,
@@ -21,18 +25,30 @@ import {
   validateCode,
   validatePassword,
 } from '@staffweave/domain';
+import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
-import { conflict, invalidRequest, notFound } from '../shared/errors.js';
+import { conflict, forbidden, invalidRequest, notFound } from '../shared/errors.js';
 import { hashPassword } from '../shared/security/password.js';
 import type { OrganizationRepository } from './repository.js';
 
 export interface OrganizationServiceDependencies {
   repository: OrganizationRepository;
   visibility: EmployeeVisibilityGuard;
-  /** 複数テーブルへまたがる登録をまとめるためのトランザクション境界。 */
-  transaction<T>(fn: (repository: OrganizationRepository) => Promise<T>): Promise<T>;
+  /** 状態を変えた時刻。失効の時刻と監査の時刻を揃えるために要る。 */
+  now(): Date;
+  /**
+   * 複数テーブルへまたがる登録をまとめるためのトランザクション境界。
+   *
+   * 監査も同じ境界へ入れる。分けると、巻き戻した操作の記録だけが残る。
+   */
+  transaction<T>(
+    fn: (repositories: {
+      organization: OrganizationRepository;
+      audit: AuditRepository;
+    }) => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface OrganizationService {
@@ -49,6 +65,22 @@ export interface OrganizationService {
   createDepartment(workspaceId: string, input: CreateDepartmentRequest): Promise<Department>;
   listEmployees(context: AuthenticatedContext): Promise<Employee[]>;
   createEmployee(workspaceId: string, input: CreateEmployeeRequest): Promise<Employee>;
+  updateEmployee(
+    context: AuthenticatedContext,
+    employeeId: string,
+    input: UpdateEmployeeRequest,
+  ): Promise<Employee>;
+  /**
+   * 休止・退職・復帰。
+   *
+   * 履歴は消さない。行を消すと、その人の打刻と計算が参照先を失う。
+   * 状態を変え、入れなくする手当てを同じ操作の中で済ませる。
+   */
+  changeEmployeeStatus(
+    context: AuthenticatedContext,
+    employeeId: string,
+    input: ChangeEmployeeStatusRequest,
+  ): Promise<EmployeeStatusChange>;
   /**
    * 従業員を CSV でまとめて登録する。
    *
@@ -152,6 +184,75 @@ export function createOrganizationService(
     async listEmployees(context) {
       const employees = await repository.listEmployees(context.workspace.id);
       return deps.visibility.filterVisible(context, employees, (employee) => employee.id);
+    },
+
+    async updateEmployee(context, employeeId, input) {
+      if (!hasPermission(context.roles, 'employee.manage')) throw forbidden();
+      await deps.visibility.requireVisibleEmployee(context, employeeId);
+
+      const updated = await repository.updateEmployee(context.workspace.id, employeeId, input);
+      if (!updated) throw notFound('従業員');
+      return updated;
+    },
+
+    async changeEmployeeStatus(context, employeeId, input) {
+      if (!hasPermission(context.roles, 'employee.manage')) throw forbidden();
+      await deps.visibility.requireVisibleEmployee(context, employeeId);
+
+      return deps.transaction(async ({ organization: repositoryInTransaction, audit }) => {
+        const before = await repositoryInTransaction.findEmployee(context.workspace.id, employeeId);
+        if (!before) throw notFound('従業員');
+
+        const employee = await repositoryInTransaction.updateEmployeeStatus(
+          context.workspace.id,
+          employeeId,
+          input.status,
+        );
+        if (!employee) throw notFound('従業員');
+
+        const at = deps.now();
+        // 休止と退職では、いま入っている経路を閉じる。状態だけ変えて閉じないと、
+        // 開いたままのセッションで打刻が続く。
+        const revokedSessions =
+          input.status === 'active'
+            ? 0
+            : await repositoryInTransaction.revokeSessionsOfEmployee(
+                context.workspace.id,
+                employeeId,
+                at,
+              );
+        // カードは退職のときだけ失効させる。休止は戻ることが前提で、
+        // 戻るたびに配り直すのは運用の負担にしかならない。
+        const revokedCards =
+          input.status === 'retired'
+            ? await repositoryInTransaction.revokeCardsOfEmployee(
+                context.workspace.id,
+                employeeId,
+                {
+                  at,
+                  byUserId: context.user.id,
+                },
+              )
+            : 0;
+
+        await audit.record(context.workspace.id, {
+          actorKind: 'user',
+          actorUserId: context.user.id,
+          action: 'employee.status_changed',
+          targetType: 'employee',
+          targetId: employeeId,
+          summary: `${employee.employeeNumber} を ${before.status} から ${input.status} へ変えました`,
+          detail: {
+            from: before.status,
+            to: input.status,
+            reason: input.reason,
+            revokedSessions,
+            revokedCards,
+          },
+        });
+
+        return { employee, revokedSessions, revokedCards };
+      });
     },
 
     async importEmployeesCsv(workspaceId, text) {
@@ -262,7 +363,7 @@ export function createOrganizationService(
 
       // ここから先は 1 つのトランザクションで作る。DB の制約で落ちた場合も
       // 全て巻き戻り、件数は動かない。
-      return deps.transaction(async (repositoryInTransaction) => {
+      return deps.transaction(async ({ organization: repositoryInTransaction }) => {
         for (const row of planned) {
           await repositoryInTransaction.createEmployee(workspaceId, {
             organizationId: row.organizationId,
@@ -310,7 +411,7 @@ export function createOrganizationService(
       const accountLocale = input.account?.locale ?? DEFAULT_LOCALE;
 
       try {
-        return await deps.transaction(async (repositoryInTransaction) => {
+        return await deps.transaction(async ({ organization: repositoryInTransaction }) => {
           let userId: string | null = null;
           if (accountEmail !== undefined && accountPasswordHash !== undefined) {
             const user = await repositoryInTransaction.createUser(workspaceId, {

@@ -152,6 +152,7 @@ import {
   notificationListSchema,
 } from './schemas/notification.js';
 import {
+  changeEmployeeStatusRequestSchema,
   createDepartmentRequestSchema,
   createEmployeeRequestSchema,
   createOrganizationRequestSchema,
@@ -160,10 +161,12 @@ import {
   departmentSchema,
   employeeListSchema,
   employeeSchema,
+  employeeStatusChangeSchema,
   organizationListSchema,
   organizationSchema,
   siteListSchema,
   siteSchema,
+  updateEmployeeRequestSchema,
   updateOrganizationRequestSchema,
 } from './schemas/organization.js';
 import {
@@ -483,6 +486,42 @@ export const operations = {
       unauthorized,
       forbidden,
       conflict,
+    ],
+  },
+  updateEmployee: {
+    operationId: 'updateEmployee',
+    method: 'patch',
+    path: '/employees/{employeeId}',
+    summary: '従業員の内容を直す',
+    tags: ['employee'],
+    security: 'session',
+    requestBody: updateEmployeeRequestSchema,
+    responses: [
+      { status: 200, description: '直した従業員', schema: employeeSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '従業員が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  changeEmployeeStatus: {
+    operationId: 'changeEmployeeStatus',
+    method: 'post',
+    path: '/employees/{employeeId}/status',
+    summary: '従業員を休止・退職・復帰させる',
+    tags: ['employee'],
+    security: 'session',
+    requestBody: changeEmployeeStatusRequestSchema,
+    responses: [
+      {
+        status: 200,
+        description: '変えた結果と、併せて失効させたもの',
+        schema: employeeStatusChangeSchema,
+      },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '従業員が見つからない', schema: errorResponseSchema },
     ],
   },
   recordAttendanceEvent: {

@@ -349,6 +349,10 @@ export interface AdminMessages {
   createAccount: string;
   initialPasswordHint: string;
   employeeStatus: Record<EmployeeStatus, string>;
+  suspendEmployee: string;
+  retireEmployee: string;
+  restoreEmployee: string;
+  statusChangeReason: string;
   userId: string;
   userIdHint: string;
   grantedAt: string;
@@ -932,6 +936,10 @@ const ja: Messages = {
     createAccount: 'ログイン用の利用者も作る',
     initialPasswordHint: '初回のパスワードです。本人に変えてもらってください。',
     employeeStatus: { active: '在籍', suspended: '休止', retired: '退職' },
+    suspendEmployee: '休止する',
+    retireEmployee: '退職にする',
+    restoreEmployee: '復帰させる',
+    statusChangeReason: '変更の理由を入れてください',
     userId: '利用者の識別子',
     userIdHint: '利用者一覧の識別子を貼り付けます。',
     grantedAt: '付与日時',
@@ -1572,6 +1580,10 @@ const en: Messages = {
     createAccount: 'Also create a sign-in account',
     initialPasswordHint: 'The first password. Ask the person to change it.',
     employeeStatus: { active: 'Active', suspended: 'Suspended', retired: 'Retired' },
+    suspendEmployee: 'Suspend',
+    retireEmployee: 'Retire',
+    restoreEmployee: 'Restore',
+    statusChangeReason: 'Enter a reason for the change',
     userId: 'User identifier',
     userIdHint: 'Paste the identifier from the user list.',
     grantedAt: 'Granted at',

@@ -10,6 +10,7 @@ import type {
   AttendanceDayList,
   CalculationRuleVersionList,
   CalculationRuleVersionRecord,
+  ChangeEmployeeStatusRequest,
   ChangePasswordRequest,
   CloseMonthRequest,
   ClosingReadinessList,
@@ -40,6 +41,7 @@ import type {
   EmployeeList,
   EmployeeRequestList,
   EmployeeRequestRecord,
+  EmployeeStatusChange,
   EmployeeWorkCycleList,
   EmployeeWorkCycleRecord,
   ErrorDetail,
@@ -90,6 +92,7 @@ import type {
   SiteList,
   SubmitDailyRequestRequest,
   SubmitEmployeeRequestRequest,
+  UpdateEmployeeRequest,
   UpdateLeaveTypeRequest,
   UpdateOrganizationRequest,
   UpdatePreferencesRequest,
@@ -262,6 +265,16 @@ export const api = {
   createDepartment: (input: CreateDepartmentRequest) =>
     request<Department>('/departments', { method: 'POST', body: JSON.stringify(input) }),
   listEmployees: () => request<EmployeeList>('/employees'),
+  updateEmployee: (employeeId: string, input: UpdateEmployeeRequest) =>
+    request<Employee>(`/employees/${employeeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  changeEmployeeStatus: (employeeId: string, input: ChangeEmployeeStatusRequest) =>
+    request<EmployeeStatusChange>(`/employees/${employeeId}/status`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   createEmployee: (input: CreateEmployeeRequest) =>
     request<Employee>('/employees', { method: 'POST', body: JSON.stringify(input) }),
   listUserScopes: () => request<UserScopeList>('/user-scopes'),

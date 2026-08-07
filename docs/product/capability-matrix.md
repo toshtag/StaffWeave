@@ -165,7 +165,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 本人のセッション一覧とログアウト | implemented | `ui:packages/web/src/pages/ActiveSessions.tsx` | 端末ごと・一括 |
 | 勤怠時刻を拠点の時間帯で表示・入力する | implemented | `ui:packages/web/src/pages/TodayAttendance.tsx` `test:packages/web/src/time/zoned.test.ts` | 表示・入力とも拠点の時計で読む。存在しない現地時刻は保存させない |
 | 上部のモジュール切替と左メニュー | implemented | `ui:packages/web/src/admin/AdminConsole.tsx` `test:e2e/admin-console.spec.ts` | どこを見ているかは URL に持つ。左右キーでモジュールを移れる |
-| 組織・拠点・部門・従業員の設定画面 | implemented | `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` `ui:packages/web/src/admin/sections/SiteSettings.tsx` `ui:packages/web/src/admin/sections/DepartmentSettings.tsx` `ui:packages/web/src/admin/sections/EmployeeSettings.tsx` | 一覧・作成・写して作る・CSV |
+| 組織・拠点・部門・従業員の設定画面 | implemented | `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` `ui:packages/web/src/admin/sections/SiteSettings.tsx` `ui:packages/web/src/admin/sections/DepartmentSettings.tsx` `ui:packages/web/src/admin/sections/EmployeeSettings.tsx` `op:updateEmployee` `op:changeEmployeeStatus` `test:packages/api/test/integration/employee-lifecycle.test.ts` | 一覧・作成・写して作る・CSV。従業員の更新・休止・退職も画面から行える |
 | 勤務区分・計算規則・労働形態の設定画面 | implemented | `ui:packages/web/src/admin/sections/WorkCategorySettings.tsx` `ui:packages/web/src/admin/sections/CalculationRuleSettings.tsx` `ui:packages/web/src/admin/sections/LaborSystemSettings.tsx` | 未設定の閾値は 0 ではなく未設定として出す |
 | 休暇種別・台帳の設定画面 | implemented | `ui:packages/web/src/admin/sections/LeaveTypeSettings.tsx` `ui:packages/web/src/admin/sections/LeaveLedgerSettings.tsx` | 残数は台帳から組み立てた値として出す。付与と取消ができる |
 | 申請種別と承認経路の設定画面 | implemented | `ui:packages/web/src/admin/sections/RequestTypeSettings.tsx` `test:e2e/admin-console.spec.ts` | 段ごとの承認者を画面から決められる。段数を直しても提出済みの申請は動かない |
@@ -218,7 +218,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 稼働の確認 | implemented | `test:packages/api/test/integration/load-and-faults.test.ts` | データベースへ届かないとき、生存は返し受け入れ可否は不調にする |
 | メトリクス・アラート | planned | - | v0.1 の範囲外。構造化ログを既存のログ基盤で拾う |
 | Row-Level Security | planned | - | アプリ側の認可が正本。採否を決める（P25） |
-| データの保持の取り決め | implemented | `docs:operations/retention.md` | 何をいつまで持つか、消してはいけないもの、退職者の扱いを決めた |
+| データの保持の取り決め | implemented | `docs:operations/retention.md` `op:changeEmployeeStatus` `test:packages/api/test/integration/employee-lifecycle.test.ts` | 何をいつまで持つか、消してはいけないもの、退職者の扱いを決めた。退職の手順は 1 つの操作にまとめ、SQL を求めない |
 | 保持期間を過ぎたデータの削除 | implemented | `script:packages/api/src/cli/run-retention.ts` `test:packages/api/test/integration/retention.test.ts` `docs:operations/retention.md` | 事前確認と実行を持つ command。消した件数を同じトランザクションで監査へ残す。保持する日数は渡した値だけを使い、渡さなかった対象は消さない。定期実行の仕組みは cron などに委ねる |
 | 配布物の checksum と出所の対応 | implemented | `script:scripts/release-assets.sh` `script:scripts/verify-release-assets.mjs` `test:test/release-assets.test.ts` | 版・commit・checksum・構成一覧の対応を、配る前に突き合わせる |
 | 配る前の必須ゲート | implemented | `script:scripts/verify-release-checks.mjs` `test:packages/api/test/integration/release-checks.test.ts` | tag の SHA で必須の workflow が成功していることと、tag と package の版の一致を、Release の workflow が確かめる。判断に要るものが欠けていれば通さない |

@@ -1,22 +1,26 @@
 import type {
+  ChangeEmployeeStatusRequest,
   CreateDepartmentRequest,
   CreateEmployeeRequest,
   CreateOrganizationRequest,
   CreateSiteRequest,
+  UpdateEmployeeRequest,
   UpdateOrganizationRequest,
 } from '@staffweave/contracts';
 import {
+  changeEmployeeStatusRequestSchema,
   createDepartmentRequestSchema,
   createEmployeeRequestSchema,
   createOrganizationRequestSchema,
   createSiteRequestSchema,
   honoPath,
   operations,
+  updateEmployeeRequestSchema,
   updateOrganizationRequestSchema,
 } from '@staffweave/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
-import { requirePermission } from '../shared/context.js';
+import { currentAuth, requirePermission } from '../shared/context.js';
 import { pathParam, readBody } from '../shared/request.js';
 import type { OrganizationService } from './service.js';
 
@@ -83,6 +87,18 @@ export function createOrganizationRoutes(deps: OrganizationRouteDependencies): H
     const auth = requirePermission(c, 'employee.manage');
     const body = await readBody<CreateEmployeeRequest>(c, createEmployeeRequestSchema);
     return c.json(await service.createEmployee(auth.workspace.id, body), 201);
+  });
+
+  app.patch(honoPath(operations.updateEmployee), async (c) => {
+    const auth = currentAuth(c);
+    const body = await readBody<UpdateEmployeeRequest>(c, updateEmployeeRequestSchema);
+    return c.json(await service.updateEmployee(auth, pathParam(c, 'employeeId'), body), 200);
+  });
+
+  app.post(honoPath(operations.changeEmployeeStatus), async (c) => {
+    const auth = currentAuth(c);
+    const body = await readBody<ChangeEmployeeStatusRequest>(c, changeEmployeeStatusRequestSchema);
+    return c.json(await service.changeEmployeeStatus(auth, pathParam(c, 'employeeId'), body), 200);
   });
 
   return app;
