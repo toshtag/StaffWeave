@@ -37,6 +37,16 @@ export function MonthlySummarySettings({ permissions }: SectionProps): React.JSX
       header: labels.legalOvertimeMinutes,
       value: (row) => row.legalOvertimeMinutes ?? unset,
     },
+    {
+      key: 'recognizedOvertime',
+      header: labels.recognizedOvertimeMinutes,
+      value: (row) => row.recognizedOvertimeMinutes ?? unset,
+    },
+    {
+      key: 'unapprovedOvertime',
+      header: labels.unapprovedOvertimeMinutes,
+      value: (row) => row.unapprovedOvertimeMinutes ?? unset,
+    },
     { key: 'leave', header: labels.leaveMinutes, value: (row) => row.leaveMinutes },
     {
       key: 'closing',

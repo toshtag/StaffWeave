@@ -529,10 +529,32 @@ function EmployeeTodayAttendance({
             <dd>{messages.formatDuration(day.calculation.scheduledMinutes)}</dd>
             <dt>{messages.outsideScheduleTime}</dt>
             <dd>{messages.formatDuration(day.calculation.outsideScheduleMinutes)}</dd>
+            {/*
+              所定外の内訳。承認しきった申請で認めた分と、その外に出た分を分けて出す。
+              合計だけを出すと、承認の有無が画面から分からない。
+              所定の時間帯が決まっていない日は未設定なので、行そのものを出さない。
+            */}
+            {day.calculation.recognizedOvertimeMinutes !== null && (
+              <>
+                <dt>{messages.recognizedOvertimeTime}</dt>
+                <dd>{messages.formatDuration(day.calculation.recognizedOvertimeMinutes)}</dd>
+                <dt>{messages.unapprovedOvertimeTime}</dt>
+                <dd>{messages.formatDuration(day.calculation.unapprovedOvertimeMinutes ?? 0)}</dd>
+              </>
+            )}
             <dt>{messages.nightTime}</dt>
             <dd>{messages.formatDuration(day.calculation.nightMinutes)}</dd>
             <dt>{messages.nonWorkingDayTime}</dt>
             <dd>{messages.formatDuration(day.calculation.nonWorkingDayMinutes)}</dd>
+            {/* 休日に働いた日だけ、承認の有無を分けて出す。 */}
+            {day.calculation.nonWorkingDayMinutes > 0 && (
+              <>
+                <dt>{messages.approvedHolidayTime}</dt>
+                <dd>{messages.formatDuration(day.calculation.approvedHolidayMinutes ?? 0)}</dd>
+                <dt>{messages.unapprovedHolidayTime}</dt>
+                <dd>{messages.formatDuration(day.calculation.unapprovedHolidayMinutes ?? 0)}</dd>
+              </>
+            )}
           </dl>
           <p className="notice">
             {messages.calculationVersion}: {day.calculation.version} / {day.calculation.ruleVersion}
