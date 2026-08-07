@@ -495,6 +495,7 @@ export interface AdminMessages {
   asOf: string;
   through: string;
   importCsv: string;
+  downloadImportCsv: string;
   importCsvHint: string;
   imported: (count: number) => string;
   sectionMonthlySummaries: string;
@@ -1114,6 +1115,7 @@ const ja: Messages = {
     asOf: '基準日',
     through: 'この日まで',
     importCsv: 'CSV で取り込む',
+    downloadImportCsv: '取込用の CSV を取り出す',
     importCsvHint:
       '取り出した CSV と同じ列で書きます。1 行でも読めなければ、1 行も取り込みません。',
     imported: (count: number) => `${count} 件を取り込みました。`,
@@ -1756,6 +1758,7 @@ const en: Messages = {
     asOf: 'As of',
     through: 'Through',
     importCsv: 'Import CSV',
+    downloadImportCsv: 'Download an importable CSV',
     importCsvHint:
       'Use the same columns as the exported CSV. If a single row cannot be read, nothing is imported.',
     imported: (count: number) => `Imported ${count} rows.`,
