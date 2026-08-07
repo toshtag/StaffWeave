@@ -61,6 +61,82 @@ export function weeksBetween(
   return weeks;
 }
 
+/** 週の区切りを決める規則の版。適用開始日で切り替わる。 */
+export interface WeekRuleVersion {
+  effectiveFrom: BusinessDate;
+  /** 週の開始曜日（0 が日曜）。 */
+  weekStartsOn: number;
+}
+
+/**
+ * 規則の版が途中で変わる範囲の週を、古い順に並べる。
+ *
+ * 週の開始曜日は計算規則の版が持ち、適用開始日で切り替わる。
+ * 範囲の始まりの版を全体へ使うと、切り替えの前後で週の区切りがずれる。
+ * 切り替え日をまたぐ週は、その前日で区切り、切り替え日から次の週を始める。
+ * こうすると週どうしが重ならず、範囲の全ての日がどれか 1 つの週へ入る。
+ *
+ * 端の週は切り詰めない。範囲の外へはみ出した週も丸ごと返し、
+ * どこからどこまでを数えたのかを呼ぶ側へ示す。
+ */
+export function weeksBetweenWithRules(
+  from: BusinessDate,
+  to: BusinessDate,
+  versions: readonly WeekRuleVersion[],
+): PeriodBounds[] {
+  if (from > to) return [];
+
+  const ordered = [...versions].sort((left, right) =>
+    left.effectiveFrom < right.effectiveFrom
+      ? -1
+      : left.effectiveFrom > right.effectiveFrom
+        ? 1
+        : 0,
+  );
+  const weekStartsOnAt = (date: BusinessDate): number => {
+    let value = 0;
+    for (const version of ordered) {
+      if (version.effectiveFrom > date) break;
+      value = version.weekStartsOn;
+    }
+    return value;
+  };
+
+  const weeks: PeriodBounds[] = [];
+  let cursor = weekStartOf(from, weekStartsOnAt(from));
+
+  while (cursor <= to) {
+    // 切り替えで週の途中から始まっていても、その週の終わりは
+    // いま効いている版の並びに合わせる。次の週からは並びへ戻る。
+    const aligned = addDaysToBusinessDate(weekStartOf(cursor, weekStartsOnAt(cursor)), 6);
+    const change = ordered.find(
+      (version) => version.effectiveFrom > cursor && version.effectiveFrom <= aligned,
+    );
+    const end = change === undefined ? aligned : addDaysToBusinessDate(change.effectiveFrom, -1);
+    weeks.push({ from: cursor, to: end });
+    cursor = addDaysToBusinessDate(end, 1);
+  }
+  return weeks;
+}
+
+/**
+ * 期間の並びを覆う範囲。
+ *
+ * 日次をどこまで読めばよいかを決めるために使う。要求された範囲だけを読むと、
+ * 清算期間のように要求より広い期間を返すとき、期間の一部しか足せない。
+ * 足りない合計は、正しい値の顔をして残る。
+ */
+export function boundsCovering(periods: readonly PeriodBounds[]): PeriodBounds | null {
+  if (periods.length === 0) return null;
+  let from = periods[0]?.from as BusinessDate;
+  let to = periods[0]?.to as BusinessDate;
+  for (const period of periods) {
+    if (period.from < from) from = period.from;
+    if (period.to > to) to = period.to;
+  }
+  return { from, to };
+}
+
 /**
  * その日を含む清算期間（対象期間）。
  *
