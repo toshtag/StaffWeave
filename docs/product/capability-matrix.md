@@ -174,7 +174,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | 日次勤怠の CSV 出力 | implemented | `op:exportAttendanceCsv` `test:packages/domain/src/integration/csv.test.ts` | 表計算で数式として動かない形で出す |
-| 従業員の CSV 取込 | implemented | `op:importEmployeesCsv` | 取り込めなかった行を位置つきで返す |
+| 従業員の CSV 取込 | implemented | `op:importEmployeesCsv` `test:packages/api/test/integration/integration.test.ts` | 全行を先に確かめ、1 つのトランザクションで作る。1 行でも取り込めなければ 1 件も作らず、位置つきで理由を返す |
 | API キーとスコープ | implemented | `op:createApiKey` `op:revokeApiKey` `test:packages/domain/src/integration/api-key-usage.test.ts` | 生の鍵は作成時に 1 度だけ返す |
 | Webhook の署名と送信先の制約 | implemented | `op:createWebhookEndpoint` `op:listWebhookDeliveries` `migration:0014_create_webhook_outbox.sql` | 送信待ちは業務処理と同じトランザクションで積む |
 | connector SDK | implemented | `test:packages/connector/src/index.test.ts` | 外部連携を作るための足場 |
