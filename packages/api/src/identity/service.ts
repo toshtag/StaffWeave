@@ -4,6 +4,7 @@ import {
   absoluteExpiresAtFrom,
   afterLoginFailure,
   expiresAtFrom,
+  hasPermission,
   isLoginBlocked,
   normalizeEmail,
   permissionsOf,
@@ -14,7 +15,7 @@ import {
   validatePassword,
 } from '@staffweave/domain';
 import type { AuditRepository } from '../audit/repository.js';
-import { ApiError, invalidRequest } from '../shared/errors.js';
+import { ApiError, forbidden, invalidRequest } from '../shared/errors.js';
 import type { StructuredLogger } from '../shared/logger.js';
 import { hashPassword, verifyPassword } from '../shared/security/password.js';
 import { generateToken, hashToken } from '../shared/security/tokens.js';
@@ -122,6 +123,20 @@ export interface IdentityService {
   revokeSession(context: AuthenticatedContext, sessionId: string): Promise<void>;
   /** いま使っているセッション以外をまとめて失効させ、失効させた件数を返す。 */
   revokeOtherSessions(context: AuthenticatedContext): Promise<number>;
+  /**
+   * 管理者が、利用者のセッションをすべて終わらせる。
+   * 退職や端末の紛失で、本人が操作できない状況のために要る。
+   */
+  revokeSessionsOfUser(context: AuthenticatedContext, userId: string): Promise<number>;
+  /**
+   * 管理者が、利用者のパスワードを再設定する。
+   * 送信の仕組みを持たないため、本人が入れなくなったときの復旧はこれで行う。
+   */
+  resetUserPassword(
+    context: AuthenticatedContext,
+    userId: string,
+    newPassword: string,
+  ): Promise<number>;
 }
 
 export function toSessionResponse(context: AuthenticatedContext): SessionResponse {
@@ -378,6 +393,86 @@ export function createIdentityService(deps: IdentityServiceDependencies): Identi
         targetId: sessionId,
         summary: 'セッションを失効させました',
       });
+    },
+
+    async revokeSessionsOfUser(context, userId) {
+      if (!hasPermission(context.roles, 'user.manage')) throw forbidden();
+      const target = await repository.findUserById(context.workspace.id, userId);
+      if (!target) throw new ApiError('not_found', '利用者が見つかりません');
+
+      const revoked = await repository.revokeSessionsOfUser({
+        workspaceId: context.workspace.id,
+        userId,
+        revokedAt: now(),
+      });
+
+      await deps.audit.record(context.workspace.id, {
+        actorKind: 'user',
+        actorUserId: context.user.id,
+        action: 'auth.sessions_revoked_by_admin',
+        targetType: 'user',
+        targetId: userId,
+        summary: `${target.email} のセッションを ${revoked} 件終わらせました`,
+        detail: { revoked },
+      });
+
+      return revoked;
+    },
+
+    async resetUserPassword(context, userId, newPassword) {
+      if (!hasPermission(context.roles, 'user.manage')) throw forbidden();
+
+      /*
+       * 自分のパスワードは、この経路では変えられない。
+       *
+       * 本人が変えるときは現在のパスワードを確かめる（changePassword）。
+       * 確かめるのは、Cookie だけを盗んだ相手にパスワードごと乗っ取られないため。
+       *
+       * この経路で自分を対象にできると、その守りが管理者にだけ効かなくなる。
+       */
+      if (userId === context.user.id) {
+        throw new ApiError(
+          'forbidden',
+          '自分のパスワードは、現在のパスワードを確かめる経路から変えてください',
+        );
+      }
+
+      const target = await repository.findUserById(context.workspace.id, userId);
+      if (!target) throw new ApiError('not_found', '利用者が見つかりません');
+
+      const problems = validatePassword(newPassword);
+      if (problems.length > 0) {
+        throw invalidRequest(
+          problems.map((problem) => ({ field: 'newPassword', message: problem })),
+        );
+      }
+
+      await repository.updateUserPassword(
+        context.workspace.id,
+        userId,
+        await hashPassword(newPassword),
+      );
+
+      // 再設定したら、その利用者のセッションはすべて終わらせる。
+      // 残すと、古いパスワードで開いた画面がそのまま使える。
+      const revoked = await repository.revokeSessionsOfUser({
+        workspaceId: context.workspace.id,
+        userId,
+        revokedAt: now(),
+      });
+
+      // 記録するのは再設定が行われた事実だけ。新しい値は残さない。
+      await deps.audit.record(context.workspace.id, {
+        actorKind: 'user',
+        actorUserId: context.user.id,
+        action: 'auth.password_reset_by_admin',
+        targetType: 'user',
+        targetId: userId,
+        summary: `${target.email} のパスワードを再設定しました`,
+        detail: { revoked },
+      });
+
+      return revoked;
     },
 
     async revokeOtherSessions(context) {

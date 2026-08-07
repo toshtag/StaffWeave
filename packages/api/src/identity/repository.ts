@@ -77,6 +77,7 @@ export interface SessionContextRecord {
 export interface IdentityRepository {
   findWorkspaceBySlug(slug: string): Promise<WorkspaceRecord | null>;
   findUserByEmail(workspaceId: string, email: string): Promise<UserRecord | null>;
+  findUserById(workspaceId: string, userId: string): Promise<UserRecord | null>;
   listRoles(workspaceId: string, userId: string): Promise<Role[]>;
   /**
    * 利用者へ明示的に与えられた閲覧対象の組織。
@@ -276,6 +277,16 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
            FROM users
           WHERE workspace_id = $1 AND email = $2`,
         [workspaceId, email],
+      );
+      return rows[0] ? toUser(rows[0]) : null;
+    },
+
+    async findUserById(workspaceId, userId) {
+      const rows = await db.query<UserRow>(
+        `SELECT id, workspace_id, email, password_hash, display_name, locale, status
+           FROM users
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, userId],
       );
       return rows[0] ? toUser(rows[0]) : null;
     },

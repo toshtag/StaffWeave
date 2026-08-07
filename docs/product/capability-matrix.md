@@ -192,9 +192,10 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | ロールによる権限制御 | implemented | `test:packages/domain/src/identity/roles.test.ts` | ワークスペース管理者・組織管理者・従業員 |
 | 契約・配属・閲覧範囲 | implemented | `op:createAssignmentContract` `op:createEmployeeAssignment` `op:grantUserScope` `test:packages/domain/src/organization/assignment.test.ts` | 期間付きで持つ |
 | 日本語と英語の切り替え | implemented | `op:updatePreferences` `test:packages/domain/src/i18n/locale.test.ts` |  |
-| 管理者による他の利用者のセッション失効 | planned | - | 退職・端末紛失の対応に要る（P25） |
-| 招待・パスワード再設定・メールアドレス変更 | planned | - | 管理者が作り、初回のパスワードを渡す運用になる（P25） |
-| MFA・SSO | planned | - | 企業向けの要件として別に判断する（P25） |
+| 管理者による他の利用者のセッション失効 | implemented | `op:revokeUserSessions` `test:packages/api/test/integration/session-management.test.ts` | 退職・端末紛失のとき、本人が操作できなくても終わらせられる |
+| 管理者によるパスワードの再設定 | implemented | `op:resetUserPassword` `test:packages/api/test/integration/session-management.test.ts` | 再設定するとセッションも終わる。本人が入れなくなったときの復旧 |
+| 招待・パスワード再設定の自己申請・メールアドレス変更 | planned | - | 送信の仕組みを持たない。管理者が作り、初回のパスワードを渡す（v0.1 の範囲外） |
+| MFA・SSO | planned | - | v0.1 の範囲外。パスワードとログインの回数制限で守る |
 
 ## 運用
 
@@ -205,11 +206,14 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | マイグレーションの検証 | implemented | `test:packages/db/src/migrator.test.ts` `test:packages/api/test/integration/migration-concurrency.test.ts` | 二重適用・内容変更・DB 名の誤指定を止める |
 | 書き出しと復元の突き合わせ | implemented | `test:scripts/verify-restore.sh` | 46 テーブルの行数と中身の要約が一致することを CI で見る |
 | 定期的な復元の演習（実運用のデータでの） | planned | - | 自動の突き合わせはあるが、実運用のデータでの演習は別に要る |
-| 構造化ログ・相関 ID・メトリクス・アラート | planned | - | 運用の可観測性として別に判断する（P25） |
+| 構造化ログ | implemented | `test:packages/agent/src/service/redact.test.ts` | 1 行 1 件の JSON。秘密は書く側が忘れても伏せる |
+| 稼働の確認 | implemented | `test:packages/api/test/integration/load-and-faults.test.ts` | データベースへ届かないとき、生存は返し受け入れ可否は不調にする |
+| メトリクス・アラート | planned | - | v0.1 の範囲外。構造化ログを既存のログ基盤で拾う |
 | Row-Level Security | planned | - | アプリ側の認可が正本。採否を決める（P25） |
-| データの保持・アーカイブ・削除の取り決め | planned | - | 個人データの扱いとして要る（P25） |
+| データの保持の取り決め | implemented | `docs:operations/retention.md` | 何をいつまで持つか、消してはいけないもの、退職者の扱いを決めた |
+| 保持期間を過ぎたデータの自動削除 | planned | - | v0.1 の範囲外。手で消す |
 | 配布物の署名と出所の証明 | planned | - | 受け取った側が改ざんを確かめられない（P26） |
-| 負荷試験・障害注入 | planned | - | 締め日の集中と同時操作を確かめていない（P26） |
+| 負荷試験・障害注入 | partial | `test:packages/api/test/integration/load-and-faults.test.ts` | 同時の打刻、1 か月ぶんの集計、監査の失敗、DB 断を再現できる形で確かめる。実運用の規模での負荷試験はしていない |
 | 給与計算そのもの | non-goal | - | 計算した勤務時間を出すところまでを範囲とし、賃金の計算は連携先に委ねる |
 | 労働法令への適合の保証 | non-goal | - | 実装した計算の範囲は示すが、規程に合っているかは導入する側で確かめる |
 | 公開デモ環境 | non-goal | - | 手元で `pnpm seed:demo` を使う。常時動く環境の運用は負担に見合わない |
