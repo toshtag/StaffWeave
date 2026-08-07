@@ -1,5 +1,6 @@
 import type {
   AttendanceEventRecord,
+  AttendanceLocationRecord,
   CorrectAttendanceRequest,
   CorrectAttendanceResponse,
   RecordAttendanceEventRequest,
@@ -16,6 +17,7 @@ import {
   validateOccurredAt,
 } from '@staffweave/domain';
 import type { AuthenticatedContext } from '../identity/service.js';
+import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError, invalidRequest, notFound } from '../shared/errors.js';
 import type { DayRepositories } from './day.js';
 import { loadWorkDay, recalculateWorkDay } from './day.js';
@@ -27,6 +29,8 @@ export type { AttendanceRepositories } from './record.js';
 
 export interface AttendanceServiceDependencies {
   repositories: DayRepositories;
+  /** 他人の打刻した場所を見てよいかの判断。 */
+  visibility: EmployeeVisibilityGuard;
   now: () => Date;
   /** 打刻の登録は同一従業員内で直列化する必要があるため、必ずトランザクション内で行う。 */
   transaction<T>(fn: (repositories: AttendanceRepositories) => Promise<T>): Promise<T>;
@@ -44,6 +48,10 @@ export interface AttendanceService {
   ): Promise<{ result: CorrectAttendanceResponse; created: boolean }>;
   getToday(context: AuthenticatedContext): Promise<WorkDay>;
   getDay(context: AuthenticatedContext, businessDate: string): Promise<WorkDay>;
+  listLocations(
+    context: AuthenticatedContext,
+    query: { employeeId: string; from: string; to: string },
+  ): Promise<AttendanceLocationRecord[]>;
 }
 
 /** 打刻は本人の従業員レコードに対してのみ行える。 */
@@ -340,6 +348,27 @@ export function createAttendanceService(deps: AttendanceServiceDependencies): At
         employeeId,
       );
       return loadWorkDay(deps.repositories, workspaceId, employeeId, businessDate, timeZone);
+    },
+
+    async listLocations(context, query) {
+      if (!isBusinessDate(query.from) || !isBusinessDate(query.to)) {
+        throw invalidRequest([{ field: 'from', message: '日付の形式が正しくありません' }]);
+      }
+      if (query.from > query.to) {
+        throw invalidRequest([{ field: 'to', message: '終了日は開始日以降にしてください' }]);
+      }
+      // 本人は自分の位置情報を必ず読める。何を残されたのかを本人が確かめられないと、
+      // 取ることそのものを説明できない。
+      if (query.employeeId !== context.employee?.id) {
+        await deps.visibility.requireVisibleEmployee(context, query.employeeId, {
+          from: query.from,
+          to: query.to,
+        });
+      }
+      return deps.repositories.attendance.listLocations(context.workspace.id, query.employeeId, {
+        from: query.from,
+        to: query.to,
+      });
     },
   };
 }

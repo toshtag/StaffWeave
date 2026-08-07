@@ -125,6 +125,7 @@ export interface Messages {
   workedTime: string;
   breakTime: string;
   scheduledTime: string;
+  locationCaptureNotice: string;
   notifications: string;
   noNotifications: string;
   markAllRead: string;
@@ -552,6 +553,10 @@ const ja: Messages = {
   workedTime: '実労働',
   breakTime: '休憩',
   scheduledTime: '所定労働',
+  locationCaptureNotice:
+    'この組織は、打刻した場所を記録します。記録するのは緯度・経度と測位の精度で、' +
+    '見られるのは本人と、あなたの勤怠を見られる担当者だけです。' +
+    '場所が取れなくても、打刻は記録されます。',
   notifications: '通知',
   noNotifications: '新しい通知はありません。',
   markAllRead: 'すべて既読にする',
@@ -1036,6 +1041,10 @@ const en: Messages = {
   workedTime: 'Worked',
   breakTime: 'Break',
   scheduledTime: 'Scheduled',
+  locationCaptureNotice:
+    'This organization records where you punch. It stores latitude, longitude and the accuracy of ' +
+    'the fix; only you and the people who can see your attendance can read it. ' +
+    'If no location can be obtained, the punch is still recorded.',
   notifications: 'Notifications',
   noNotifications: 'No new notifications.',
   markAllRead: 'Mark all as read',

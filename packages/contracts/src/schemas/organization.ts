@@ -14,9 +14,19 @@ export const organizationSchema = objectSchema({
     id: uuidSchema,
     code: codeSchema,
     name: nameSchema,
+    locationCapture: {
+      type: 'boolean',
+      description: '打刻時の位置情報を取るか。既定は取らない',
+    },
     createdAt: timestampSchema,
   },
-  required: ['id', 'code', 'name', 'createdAt'],
+  required: ['id', 'code', 'name', 'locationCapture', 'createdAt'],
+});
+
+export const updateOrganizationRequestSchema = objectSchema({
+  description: '組織の設定を直す。打刻時の位置情報は、取ると決めた組織だけが有効にする',
+  properties: { locationCapture: { type: 'boolean' } },
+  required: ['locationCapture'],
 });
 
 export const organizationListSchema = objectSchema({

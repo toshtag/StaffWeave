@@ -12,6 +12,15 @@ export interface OrganizationRepository {
     workspaceId: string,
     input: { code: string; name: string },
   ): Promise<Organization>;
+  /**
+   * 組織の設定を直す。いまは打刻時の位置情報の取得だけ。
+   * 既定は取得しない。取ると決めた組織だけが opt-in する。
+   */
+  updateOrganization(
+    workspaceId: string,
+    organizationId: string,
+    input: { locationCapture: boolean },
+  ): Promise<Organization | null>;
 
   listSites(workspaceId: string): Promise<Site[]>;
   createSite(
@@ -62,6 +71,7 @@ interface OrganizationRow {
   id: string;
   code: string;
   name: string;
+  location_capture?: boolean;
   created_at: Date;
 }
 
@@ -89,7 +99,14 @@ interface EmployeeRow {
 }
 
 function toOrganization(row: OrganizationRow): Organization {
-  return { id: row.id, code: row.code, name: row.name, createdAt: row.created_at.toISOString() };
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    // 既定は取得しない。読めなかった場合も「取らない」側へ倒す。
+    locationCapture: row.location_capture ?? false,
+    createdAt: row.created_at.toISOString(),
+  };
 }
 
 function toSite(row: SiteRow): Site {
@@ -136,7 +153,8 @@ export function createOrganizationRepository(db: Queryable): OrganizationReposit
   return {
     async listOrganizations(workspaceId) {
       const rows = await db.query<OrganizationRow>(
-        'SELECT id, code, name, created_at FROM organizations WHERE workspace_id = $1 ORDER BY code',
+        `SELECT id, code, name, location_capture, created_at
+           FROM organizations WHERE workspace_id = $1 ORDER BY code`,
         [workspaceId],
       );
       return rows.map(toOrganization);
@@ -146,12 +164,23 @@ export function createOrganizationRepository(db: Queryable): OrganizationReposit
       const rows = await db.query<OrganizationRow>(
         `INSERT INTO organizations (workspace_id, code, name)
          VALUES ($1, $2, $3)
-         RETURNING id, code, name, created_at`,
+         RETURNING id, code, name, location_capture, created_at`,
         [workspaceId, input.code, input.name],
       );
       const row = rows[0];
       if (!row) throw new Error('組織を登録できませんでした');
       return toOrganization(row);
+    },
+
+    async updateOrganization(workspaceId, organizationId, input) {
+      const rows = await db.query<OrganizationRow>(
+        `UPDATE organizations SET location_capture = $3
+          WHERE workspace_id = $1 AND id = $2
+        RETURNING id, code, name, location_capture, created_at`,
+        [workspaceId, organizationId, input.locationCapture],
+      );
+      const row = rows[0];
+      return row ? toOrganization(row) : null;
     },
 
     async listSites(workspaceId) {

@@ -42,7 +42,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 日をまたぐ勤務を 1 日として扱う | implemented | `test:packages/domain/src/attendance/calculation.test.ts` `test:packages/domain/src/attendance/business-date.test.ts` | 業務日の開始時刻を基準に 1 日として扱う |
 | 1 日に複数の勤務区間 | implemented | `test:packages/domain/src/attendance/events.test.ts` `test:packages/domain/src/attendance/calculation.test.ts` | 退勤したあと再出勤できる。区間の間は勤務時間に数えない |
 | カードの 1 回のタップで休憩を始める | planned | - | 勤務中のタップは退勤、退勤済みのタップは再出勤に割り当てている（P24） |
-| 打刻時の位置情報 | planned | - | 取得・同意・精度・保持期間・閲覧権限のいずれも無い（P24） |
+| 打刻時の位置情報 | implemented | `op:recordAttendanceEvent` `op:listAttendanceLocations` `test:packages/api/test/integration/attendance-location.test.ts` `migration:0037_create_attendance_locations.sql` | 組織ごとの opt-in。既定は取らない。取れなくても打刻は残る。読めるのは本人と閲覧範囲の相手だけ |
 
 ## 勤務予定と勤務区分
 
@@ -143,7 +143,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | Windows のサービスとしての登録・削除 | partial | `test:packages/api/test/integration/agent-package.test.ts` `docs:operations/device-agent-service.md` | 手順と配布物を作る仕組みはある。**実機での起動と再起動は未確認** |
 | 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/pcsc.test.ts` `test:packages/agent/src/card/pcsc-module.test.ts` `docs:operations/device-agent-service.md` | PC/SC を 1 つの対応先として実装した。`pnpm agent card-watch` で常駐する。**実機の読み取り装置では未確認** |
 | 端末の自動更新 | planned | - | 署名と配布の方式が決まってから（P26） |
-| 打刻時の位置情報 | planned | - | 同意と保持期間の扱いを決めてから |
+| 打刻時の位置情報 | implemented | `op:listAttendanceLocations` `docs:operations/retention.md` | 保持期間は 400 日（訂正できる範囲と同じ）。打刻とは別の表に持ち、消しても打刻は残る |
 
 ## 画面
 

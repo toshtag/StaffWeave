@@ -1,4 +1,5 @@
 import type {
+  AttendanceLocationInput,
   RecordAttendanceEventRequest,
   RecordAttendanceEventResponse,
 } from '@staffweave/contracts';
@@ -58,6 +59,13 @@ export interface PendingPunch {
   occurredAt: string;
   /** 送信を試みた回数。次の再送までの待ち時間を決めるのに使う。 */
   attempts: number;
+  /**
+   * 打刻した場所。取れたときだけ入る。
+   *
+   * 打刻と一緒に残す。あとから測り直すと、送るころには別の場所に居る。
+   * 取れなくても打刻は残す。位置情報を理由に打刻を失わせない。
+   */
+  location?: AttendanceLocationInput;
 }
 
 /** 保存する内容。所有者と版を打刻本体と一緒に持ち、読み込み時に照合する。 */
@@ -164,6 +172,20 @@ export function isPunchQueueOwner(value: unknown): value is PunchQueueOwner {
  * 保存先は利用者が書き換えられるため、信用できる入力ではない。
  * 種別は正本の判定を使う。未知の種別が画面の集計へ入ると、そこで落ちる。
  */
+function isLocation(value: unknown): value is AttendanceLocationInput {
+  if (typeof value !== 'object' || value === null) return false;
+  const location = value as Partial<AttendanceLocationInput>;
+  return (
+    typeof location.latitude === 'number' &&
+    Number.isFinite(location.latitude) &&
+    typeof location.longitude === 'number' &&
+    Number.isFinite(location.longitude) &&
+    typeof location.accuracyMeters === 'number' &&
+    Number.isInteger(location.accuracyMeters) &&
+    location.accuracyMeters >= 0
+  );
+}
+
 function isPendingPunch(value: unknown): value is PendingPunch {
   if (typeof value !== 'object' || value === null) return false;
   const entry = value as Partial<PendingPunch>;
@@ -177,6 +199,9 @@ function isPendingPunch(value: unknown): value is PendingPunch {
 
   if (typeof entry.occurredAt !== 'string') return false;
   if (!Number.isFinite(new Date(entry.occurredAt).getTime())) return false;
+
+  // 位置情報は無くてよい。あるなら、送れる形になっていること。
+  if (entry.location !== undefined && !isLocation(entry.location)) return false;
 
   // 経過時間による受理の可否はサーバーが決める。ここでは日時として読めることだけを見る。
   return (
@@ -307,7 +332,11 @@ function containsLegacyEntries(raw: string | null): boolean {
 
 export interface PunchQueue {
   /** 打刻を行列へ入れ、可能ならすぐ送る。 */
-  enqueue(eventType: AttendanceEventType, occurredAt: Date): Promise<void>;
+  enqueue(
+    eventType: AttendanceEventType,
+    occurredAt: Date,
+    location?: AttendanceLocationInput,
+  ): Promise<void>;
   /** 溜まっている打刻を古い順に送る。 */
   flush(): Promise<void>;
   snapshot(): PunchQueueSnapshot;
@@ -561,6 +590,7 @@ export function createPunchQueue(
             occurredAt: entry.occurredAt,
             requestId: entry.requestId,
             source: 'mobile',
+            ...(entry.location === undefined ? {} : { location: entry.location }),
           });
         } catch (error) {
           if (handleSendFailure(entry, error)) continue;
@@ -590,7 +620,7 @@ export function createPunchQueue(
   });
 
   return {
-    async enqueue(eventType, occurredAt) {
+    async enqueue(eventType, occurredAt, location) {
       if (disposed) return;
 
       if (!readable) {
@@ -611,6 +641,9 @@ export function createPunchQueue(
         eventType,
         occurredAt: occurredAt.toISOString(),
         attempts: 0,
+        // 位置情報は打刻と一緒に残す。あとから測り直すと、
+        // 送るころには別の場所に居る。
+        ...(location === undefined ? {} : { location }),
       };
       const next = [...pending, entry];
 

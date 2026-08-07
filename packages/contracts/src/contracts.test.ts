@@ -233,6 +233,7 @@ describe('応答の型とスキーマの一致', () => {
         employeeNumber: 'E001',
         displayName: '検証 太郎',
         organizationId: '00000000-0000-4000-8000-000000000004',
+        locationCapture: false,
       },
       expiresAt: '2026-04-01T12:00:00.000Z',
     };

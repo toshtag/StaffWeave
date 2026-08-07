@@ -235,6 +235,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const attendanceService = createAttendanceService({
     repositories: dayRepositories,
+    visibility,
     now,
     transaction: withTransaction,
   });

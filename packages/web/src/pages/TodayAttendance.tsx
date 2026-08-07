@@ -17,6 +17,7 @@ import { useLocale } from '../i18n/LocaleProvider.tsx';
 import type { Messages } from '../i18n/messages.ts';
 import type { PunchBlockedReason, PunchQueue, PunchQueueSnapshot } from '../offline/punch-queue.ts';
 import { acceptsNewPunch, createPunchQueue, isPunchQueueOwner } from '../offline/punch-queue.ts';
+import { captureLocation } from '../session/geolocation.ts';
 import { useSession } from '../session/SessionProvider.tsx';
 import {
   formatInstantInTimeZone,
@@ -326,7 +327,17 @@ function EmployeeTodayAttendance({
   function punch(eventType: AttendanceEventType): void {
     if (queue === null) return;
     setError(null);
-    void queue.enqueue(eventType, new Date());
+    // 打刻の時刻は押した瞬間で決める。測位を待ってから決めると、
+    // 待った分だけ時刻がずれる。
+    const occurredAt = new Date();
+    if (session.employee?.locationCapture !== true) {
+      void queue.enqueue(eventType, occurredAt);
+      return;
+    }
+    // 取れなくても打刻は残す。位置情報を理由に打刻を失わせない。
+    void captureLocation().then((location) => {
+      void queue.enqueue(eventType, occurredAt, location ?? undefined);
+    });
   }
 
   function reload(): void {
@@ -504,6 +515,14 @@ function EmployeeTodayAttendance({
       <p className="notice">
         {messages.timeZoneNotice}: <span className="time-zone">{day.timeZone}</span>
       </p>
+
+      {/*
+        取ることそのものを、取る前に伝える。取ったあとで説明しても、
+        断る機会が無かったことに変わりはない。
+      */}
+      {session.employee?.locationCapture === true && (
+        <p className="notice">{messages.locationCaptureNotice}</p>
+      )}
 
       <dl className="details">
         <dt>{messages.firstClockInAt}</dt>

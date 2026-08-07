@@ -119,8 +119,60 @@ export const recordAttendanceEventRequestSchema = objectSchema({
       enum: ['web', 'mobile'],
       description: '打刻の入力元。省略時は web',
     },
+    location: objectSchema({
+      description:
+        '打刻した場所。組織が取ると決めているときだけ保存する。' +
+        '決めていない組織へ送られてきた値は、受け取っても保存しない',
+      properties: {
+        latitude: { type: 'number', minimum: -90, maximum: 90 },
+        longitude: { type: 'number', minimum: -180, maximum: 180 },
+        accuracyMeters: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 100000,
+          description: '端末が申告した精度。粗い測位と正確な測位を混ぜないために要る',
+        },
+      },
+      required: ['latitude', 'longitude', 'accuracyMeters'],
+    }),
   },
   required: ['eventType', 'requestId'],
+});
+
+export const attendanceLocationSchema = objectSchema({
+  description: '打刻した場所。閲覧できるのは本人と、閲覧範囲に入っている相手だけ',
+  properties: {
+    eventId: uuidSchema,
+    businessDate: businessDateSchema,
+    eventType: { type: 'string', enum: [...ATTENDANCE_EVENT_TYPES] },
+    latitude: { type: 'number' },
+    longitude: { type: 'number' },
+    accuracyMeters: { type: 'integer' },
+    capturedAt: timestampSchema,
+  },
+  required: [
+    'eventId',
+    'businessDate',
+    'eventType',
+    'latitude',
+    'longitude',
+    'accuracyMeters',
+    'capturedAt',
+  ],
+});
+
+export const attendanceLocationListSchema = objectSchema({
+  properties: { locations: arraySchema(attendanceLocationSchema) },
+  required: ['locations'],
+});
+
+export const listAttendanceLocationsQuerySchema = objectSchema({
+  properties: {
+    employeeId: uuidSchema,
+    from: businessDateSchema,
+    to: businessDateSchema,
+  },
+  required: ['employeeId', 'from', 'to'],
 });
 
 export const recordAttendanceEventResponseSchema = objectSchema({
