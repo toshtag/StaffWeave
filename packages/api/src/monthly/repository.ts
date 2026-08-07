@@ -15,6 +15,19 @@ import type {
  * SQL で合計すると、未設定を 0 として足すかどうかの判断が SQL の中へ散る。
  */
 export interface MonthlyRepository {
+  /**
+   * 期間に属する日次の最新版。
+   *
+   * 月をまたぐ集計（週・清算期間）で使う。月単位に切って読み直すと、
+   * 月の境界をまたぐ週の合計が、どちらの月へ属するかで変わってしまう。
+   */
+  listDailyTotalsBetween(
+    workspaceId: string,
+    employeeId: string,
+    from: string,
+    to: string,
+  ): Promise<DailyTotals[]>;
+
   /** その月に属する日次の最新版。締めた値と突き合わせるため、版も返す。 */
   listDailyTotals(
     workspaceId: string,
@@ -244,6 +257,18 @@ export function createMonthlyRepository(db: Queryable): MonthlyRepository {
       const versions: Record<string, number> = {};
       for (const row of rows) versions[row.business_date] = row.version;
       return { totals: rows.map(toDailyTotals), versions };
+    },
+
+    async listDailyTotalsBetween(workspaceId, employeeId, from, to) {
+      const rows = await db.query<TotalsRow>(
+        `SELECT DISTINCT ON (business_date) business_date, version, ${TOTALS_COLUMNS}
+           FROM attendance_calculations
+          WHERE workspace_id = $1 AND employee_id = $2
+            AND business_date >= $3::date AND business_date <= $4::date
+          ORDER BY business_date, version DESC`,
+        [workspaceId, employeeId, from, to],
+      );
+      return rows.map(toDailyTotals);
     },
 
     async listMonthEvents(workspaceId, employeeId, period) {

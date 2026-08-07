@@ -60,10 +60,12 @@ export {
 export type { BusinessDate } from './attendance/business-date.js';
 export {
   addDaysToBusinessDate,
+  addMonthsToBusinessDate,
   BUSINESS_DATE_PATTERN,
   businessDateOf,
   compareBusinessDates,
   isBusinessDate,
+  weekdayOfBusinessDate,
 } from './attendance/business-date.js';
 export type {
   ApprovedAdjustments,
@@ -124,6 +126,20 @@ export {
   validateCorrectionOccurredAt,
   validateOccurredAt,
 } from './attendance/occurred-at.js';
+export type {
+  PeriodBounds,
+  PeriodKind,
+  PeriodTotals,
+} from './attendance/period.js';
+export {
+  differenceFromTotal,
+  PERIOD_KINDS,
+  settlementPeriodOf,
+  settlementPeriodsBetween,
+  summarizeDays,
+  weekStartOf,
+  weeksBetween,
+} from './attendance/period.js';
 export type {
   ActivePeriod,
   AttendanceShape,

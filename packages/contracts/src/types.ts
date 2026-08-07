@@ -1205,6 +1205,41 @@ export interface MonthlyTotals {
   countedDays: number;
 }
 
+/**
+ * 週・清算期間・変形労働の対象期間の集計。
+ *
+ * 区切りは設定から決まる。設定が無ければ、その種類の期間は返らない。
+ */
+export interface PeriodSummaryRecord {
+  employeeId: string;
+  kind: 'week' | 'settlement';
+  from: string;
+  to: string;
+  /** 清算期間のとき、その制度。週では null。 */
+  laborSystemType: LaborSystemType | null;
+  workedMinutes: number;
+  scheduledMinutes: number;
+  outsideScheduleMinutes: number;
+  nightMinutes: number;
+  nonWorkingDayMinutes: number;
+  leaveMinutes: number;
+  absenceMinutes: number;
+  recognizedOvertimeMinutes: number | null;
+  legalOvertimeMinutes: number | null;
+  workedDays: number;
+  countedDays: number;
+  /** 期間の総枠。未設定なら null。 */
+  totalMinutes: number | null;
+  /** 総枠との差（実労働 − 総枠）。総枠が未設定なら null。 */
+  differenceMinutes: number | null;
+  /** 締め済みの月を含むか。 */
+  includesClosedMonth: boolean;
+}
+
+export interface PeriodSummaryList {
+  summaries: PeriodSummaryRecord[];
+}
+
 /** 締めた時点で固めた集計。あとから日次を直しても動かない。 */
 export interface MonthlySnapshotRecord extends MonthlyTotals {
   sequence: number;

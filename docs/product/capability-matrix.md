@@ -74,7 +74,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 法定内時間外・法定時間外 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 1 日の閾値は事業者が設定する。未設定なら計算せず未設定として示す |
 | 深夜時間外・深夜休日 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 深夜帯は勤務区分で上書きできる |
 | 遅刻・早退・始業前・終業後 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯との差から出す |
-| 週・月の集計 | partial | `op:listMonthlySummaries` `test:packages/domain/src/attendance/monthly.test.ts` | 月の集計は出る。週の集計は未実装（境界は計算規則の版が持つ） |
+| 週・月の集計 | implemented | `op:listMonthlySummaries` `op:listPeriodSummaries` `test:packages/domain/src/attendance/period.test.ts` `test:packages/api/test/integration/period-summaries.test.ts` | 週の開始曜日は計算規則の版が決める。月をまたぐ週も 1 つとして数える |
 | 認定時間（申請した残業上限の反映） | implemented | `op:decideEmployeeRequest` `test:packages/domain/src/attendance/approved-adjustments.test.ts` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 承認しきった上限時刻までを認定し、超えた分を分けて出す。所定終業が未設定なら 0 ではなく未設定 |
 
 ## 労働形態
@@ -82,9 +82,9 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | 一般勤務（固定・時短・シフト） | implemented | `op:createWorkCategory` `op:assignLaborSystem` | 勤務区分と労働形態の割当で表す |
-| フレックスタイム制 | partial | `op:assignLaborSystem` `migration:0027_create_labor_system_assignments.sql` | 清算期間・総枠・コアタイムを期間つきで持つ。清算期間をまたぐ集計は未実装（月次までは出る） |
+| フレックスタイム制 | implemented | `op:assignLaborSystem` `op:listPeriodSummaries` `migration:0027_create_labor_system_assignments.sql` `test:packages/api/test/integration/period-summaries.test.ts` | 清算期間・総枠・コアタイムを期間つきで持つ。清算期間の集計と総枠との差を出す |
 | 裁量労働制 | implemented | `op:assignLaborSystem` | みなし分数を割当が持ち、実績とは別に出す |
-| 変形労働時間制 | partial | `op:assignLaborSystem` | 対象期間と総枠を期間つきで持つ。対象期間をまたぐ集計は未実装（月次までは出る） |
+| 変形労働時間制 | implemented | `op:assignLaborSystem` `op:listPeriodSummaries` `test:packages/api/test/integration/period-summaries.test.ts` | 対象期間と総枠を期間つきで持つ。対象期間の集計と総枠との差を出す |
 
 ## 休暇
 
