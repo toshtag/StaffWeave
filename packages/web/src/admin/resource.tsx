@@ -25,6 +25,14 @@ export type Loadable<T> =
  *
  * 権限が無いことは失敗として見せない。見せられない設定は、節ごと出さないほうが分かりやすい。
  */
+/**
+ * 画面の側で気付いた、送る前の不備。
+ *
+ * 送ってサーバーに断らせてもよいが、往復のぶんだけ気付くのが遅れる。
+ * 送らずに理由を出す経路を、失敗の扱いと分けて持つ。
+ */
+export class FormValidationError extends Error {}
+
 export function useLoadable<T>(
   load: () => Promise<T>,
   options: { enabled: boolean; failedMessage: string },
