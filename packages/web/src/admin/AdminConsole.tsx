@@ -21,6 +21,9 @@ import { RequestTypeSettings } from './sections/RequestTypeSettings.tsx';
 import { SiteSettings } from './sections/SiteSettings.tsx';
 import { UserScopeSettings } from './sections/UserScopeSettings.tsx';
 import { WorkCategorySettings } from './sections/WorkCategorySettings.tsx';
+import { WorkCycleSettings } from './sections/WorkCycleSettings.tsx';
+import { WorkPatternSettings } from './sections/WorkPatternSettings.tsx';
+import { WorkScheduleSettings } from './sections/WorkScheduleSettings.tsx';
 
 /**
  * 設定の画面。
@@ -109,6 +112,24 @@ function modulesFor(labels: AdminLabels): ModuleDefinition[] {
           label: labels.sectionWorkCategories,
           requires: 'organization.read',
           render: (props) => <WorkCategorySettings {...props} />,
+        },
+        {
+          key: 'patterns',
+          label: labels.sectionWorkPatterns,
+          requires: 'organization.read',
+          render: (props) => <WorkPatternSettings {...props} />,
+        },
+        {
+          key: 'cycles',
+          label: labels.sectionWorkCycles,
+          requires: 'organization.read',
+          render: (props) => <WorkCycleSettings {...props} />,
+        },
+        {
+          key: 'schedules',
+          label: labels.sectionWorkSchedules,
+          requires: 'employee.read',
+          render: (props) => <WorkScheduleSettings {...props} />,
         },
         {
           key: 'rules',
