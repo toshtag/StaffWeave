@@ -16,7 +16,6 @@ import type { LeaveTypeSettingsRecord } from '@staffweave/contracts';
 import type { BusinessDate } from '@staffweave/domain';
 import { businessDateOf, leaveGrantDatesBetween, planLeaveGrants } from '@staffweave/domain';
 import type { AuditRepository } from '../audit/repository.js';
-import { isUniqueViolation } from '../shared/database-errors.js';
 import type { StructuredLogger } from '../shared/logger.js';
 import type { LeaveRepository } from './repository.js';
 import { expiryOf } from './service.js';
@@ -58,8 +57,20 @@ export interface LeaveGrantRunSummary {
 }
 
 export interface LeaveGrantScheduler {
-  /** 今日までの未処理の日を、古い順に処理する。 */
-  run(): Promise<LeaveGrantRunSummary[]>;
+  /**
+   * 1 つのワークスペースの、今日までの未処理の日を古い順に処理する。
+   *
+   * 対象を必ず受け取る。全てを回す入口と同じ関数にすると、要求から呼んだ
+   * ときに、要求とは関係のないワークスペースの台帳まで動く。
+   */
+  runFor(workspaceId: string): Promise<LeaveGrantRunSummary[]>;
+  /**
+   * 全てのワークスペースを処理する。
+   *
+   * 使うのは定期実行の command だけ。自分で建てた環境では 1 つのことが
+   * 多いが、複数ある環境で 1 つの要求が全部を動かしてよい理由は無い。
+   */
+  runAll(): Promise<LeaveGrantRunSummary[]>;
   /**
    * 処理せずに、次に対象となる日と人数だけを出す。
    *
@@ -124,6 +135,12 @@ export function createLeaveGrantScheduler(
     effectiveOn: BusinessDate,
   ): Promise<LeaveGrantRunSummary | null> => {
     const { leave, audit } = repositories;
+
+    // 先にその日を取る。取れなければ、他の実行がすでに取っている。
+    // 付与してから記録する順にすると、二度目は制約で落ちるまで付与を積む
+    // ことになり、落ちる位置に結果が左右される。
+    if (!(await leave.claimGrantRun(workspace.id, leaveType.id, effectiveOn))) return null;
+
     const rules = await leave.listGrantRules(workspace.id, leaveType.id);
     const candidates = await leave.listGrantCandidates(workspace.id, {});
     const plan = planLeaveGrants({
@@ -161,18 +178,12 @@ export function createLeaveGrantScheduler(
       grantedCount += 1;
     }
 
-    try {
-      await leave.recordGrantRun(workspace.id, {
-        leaveTypeId: leaveType.id,
-        effectiveOn,
-        grantedCount,
-        skippedCount,
-      });
-    } catch (error) {
-      // 同じ日を別の実行が先に記録した。付与も含めて丸ごと捨てる。
-      if (isUniqueViolation(error)) return null;
-      throw error;
-    }
+    await leave.recordGrantRunCounts(workspace.id, {
+      leaveTypeId: leaveType.id,
+      effectiveOn,
+      grantedCount,
+      skippedCount,
+    });
 
     await audit.record(workspace.id, {
       actorKind: 'system',
@@ -204,39 +215,51 @@ export function createLeaveGrantScheduler(
     };
   };
 
-  return {
-    async run() {
-      const summaries: LeaveGrantRunSummary[] = [];
-      const workspaces = await deps.listWorkspaces();
+  /** 1 つのワークスペースの未処理の日を、古い順に処理する。 */
+  const runWorkspace = async (workspace: ScheduledWorkspace): Promise<LeaveGrantRunSummary[]> => {
+    const summaries: LeaveGrantRunSummary[] = [];
+    const today = businessDateOf(deps.now(), workspace.timeZone);
+    const leaveTypes = await deps.transaction(({ leave }) =>
+      leave.listAutoGrantLeaveTypes(workspace.id),
+    );
 
-      for (const workspace of workspaces) {
-        const today = businessDateOf(deps.now(), workspace.timeZone);
-        const leaveTypes = await deps.transaction(({ leave }) =>
-          leave.listAutoGrantLeaveTypes(workspace.id),
+    for (const leaveType of leaveTypes) {
+      const dates = await deps.transaction((repositories) =>
+        pendingDatesOf(repositories, workspace.id, leaveType, today),
+      );
+
+      for (const effectiveOn of dates) {
+        // 日ごとにトランザクションを分ける。1 日が失敗しても、それより前の日の
+        // 付与は残す。次の実行は失敗した日から続く。
+        const summary = await deps.transaction((repositories) =>
+          runDay(repositories, workspace, leaveType, effectiveOn),
         );
+        if (summary === null) continue;
+        summaries.push(summary);
+        deps.logger?.info('leave.auto_granted', {
+          workspace: workspace.slug,
+          leaveType: leaveType.code,
+          effectiveOn,
+          granted: summary.grantedCount,
+          skipped: summary.skippedCount,
+        });
+      }
+    }
+    return summaries;
+  };
 
-        for (const leaveType of leaveTypes) {
-          const dates = await deps.transaction((repositories) =>
-            pendingDatesOf(repositories, workspace.id, leaveType, today),
-          );
+  return {
+    async runFor(workspaceId) {
+      const workspaces = await deps.listWorkspaces();
+      const workspace = workspaces.find((candidate) => candidate.id === workspaceId);
+      if (workspace === undefined) return [];
+      return runWorkspace(workspace);
+    },
 
-          for (const effectiveOn of dates) {
-            // 日ごとにトランザクションを分ける。1 日が失敗しても、
-            // それより前の日の付与は残す。次の実行は失敗した日から続く。
-            const summary = await deps.transaction((repositories) =>
-              runDay(repositories, workspace, leaveType, effectiveOn),
-            );
-            if (summary === null) continue;
-            summaries.push(summary);
-            deps.logger?.info('leave.auto_granted', {
-              workspace: workspace.slug,
-              leaveType: leaveType.code,
-              effectiveOn,
-              granted: summary.grantedCount,
-              skipped: summary.skippedCount,
-            });
-          }
-        }
+    async runAll() {
+      const summaries: LeaveGrantRunSummary[] = [];
+      for (const workspace of await deps.listWorkspaces()) {
+        summaries.push(...(await runWorkspace(workspace)));
       }
       return summaries;
     },
