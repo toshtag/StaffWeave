@@ -12,6 +12,8 @@
  * 相手ごとの分岐を増やさないため。
  */
 
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { PcscTransport } from './pcsc.js';
 
 /** 読み込む相手が持っていなければならない形。 */
@@ -50,13 +52,30 @@ function isTransport(value: unknown): value is PcscTransport {
  * @param specifier 読み込む相手。モジュール名でも、ファイルの場所でもよい。
  * @param load 読み込みそのもの。テストから差し替えるために開ける。
  */
+/**
+ * 読み込む相手の書き方を、`import` が受け取れる形へ揃える。
+ *
+ * Windows の絶対パス（`D:\...`）をそのまま渡すと、`d:` という仕組みの名前だと
+ * 読まれて断られる。ファイルの場所は file URL へ直してから渡す。
+ * 名前で指す部品（`pcsclite` など）はそのまま渡す。
+ */
+function importable(specifier: string): string {
+  if (specifier.startsWith('file:')) return specifier;
+  const looksLikePath =
+    specifier.startsWith('.') ||
+    specifier.startsWith('/') ||
+    specifier.startsWith('\\') ||
+    /^[A-Za-z]:[\\/]/.test(specifier);
+  return looksLikePath ? pathToFileURL(resolve(specifier)).href : specifier;
+}
+
 export async function loadPcscTransport(
   specifier: string,
   load: (specifier: string) => Promise<unknown> = (target) => import(target),
 ): Promise<PcscTransport> {
   let module: TransportModule;
   try {
-    module = (await load(specifier)) as TransportModule;
+    module = (await load(importable(specifier))) as TransportModule;
   } catch (error) {
     throw new Error(
       `装置との受け渡しを読み込めませんでした（${specifier}）: ` +

@@ -49,4 +49,30 @@ describe('装置との受け渡しの読み込み', () => {
       loadPcscTransport('fake', async () => ({ createPcscTransport: () => ({ name: 'fake' }) })),
     ).rejects.toThrow(/PcscTransport の形ではありません/);
   });
+
+  /**
+   * ファイルの場所は、`import` が受け取れる形へ直してから渡すこと。
+   *
+   * Windows の絶対パス（`D:\...`）をそのまま渡すと、`d:` という仕組みの名前だと
+   * 読まれて断られる。実際に、常駐が上がらない形で出た。
+   */
+  it('ファイルの場所を file URL へ直して渡す', async () => {
+    const seen: string[] = [];
+    await loadPcscTransport('/opt/staffweave/transport.js', async (specifier) => {
+      seen.push(specifier);
+      return { createPcscTransport: () => transport() };
+    });
+
+    expect(seen[0]?.startsWith('file:')).toBe(true);
+  });
+
+  it('名前で指す部品は、そのまま渡す', async () => {
+    const seen: string[] = [];
+    await loadPcscTransport('pcsclite', async (specifier) => {
+      seen.push(specifier);
+      return { createPcscTransport: () => transport() };
+    });
+
+    expect(seen[0]).toBe('pcsclite');
+  });
 });
