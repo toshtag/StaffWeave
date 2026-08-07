@@ -87,7 +87,13 @@ if (problems.length === 0) {
     try {
       const count = await successfulRunsFor(workflow);
       if (count === 0) {
-        fail(`${workflow} が ${sha} で成功していません`);
+        // 何をすれば通せるかを添える。対象を絞った workflow は、文書だけを
+        // 直した commit では走らない。走っていないことは、確かめていない
+        // ことと区別が付かないため通さないが、手で走らせる道は示す。
+        fail(
+          `${workflow} が ${sha} で成功していません` +
+            `（この commit で走っていない場合は、その ref で手動実行してください）`,
+        );
       } else {
         process.stdout.write(`  OK ${workflow} は ${sha} で成功しています\n`);
       }

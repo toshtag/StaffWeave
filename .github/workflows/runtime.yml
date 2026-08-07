@@ -28,6 +28,13 @@ on:
       - pnpm-workspace.yaml
       - .dockerignore
       - .nvmrc
+  # 対象を絞ると、文書だけを直した commit ではこの workflow が走らない。
+  # 走らない commit は「確かめていない commit」と区別が付かないため、
+  # 配る前のゲート（scripts/verify-release-checks.mjs）がその SHA を通さない。
+  #
+  # 候補として凍結したい commit が文書だけの変更だったときに、手で走らせて
+  # その SHA の成功を作れるようにする。走らせずに通す道は用意しない。
+  workflow_dispatch:
   pull_request:
     paths:
       - packages/**
