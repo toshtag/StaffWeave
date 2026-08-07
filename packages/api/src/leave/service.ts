@@ -8,6 +8,7 @@ import type {
   UpdateLeaveTypeRequest,
 } from '@staffweave/contracts';
 import {
+  addMonthsToBusinessDate,
   buildLeaveBalance,
   businessDateOf,
   hasPermission,
@@ -56,18 +57,15 @@ export interface LeaveService {
   ): Promise<LeaveLedgerEntryRecord>;
 }
 
-/** 付与日から、休暇種別が決めた月数だけ進めた失効日。 */
+/**
+ * 付与日から、休暇種別が決めた月数だけ進めた失効日。
+ *
+ * 月をまたぐ繰り上がりの丸めは業務日の側が持つ。清算期間の区切りと同じ規則で、
+ * 月末の付与が翌月へずれないようにする。
+ */
 export function expiryOf(effectiveOn: string, months: number | null): string | null {
   if (months === null) return null;
-  const [year, month, day] = effectiveOn.split('-').map(Number);
-  if (year === undefined || month === undefined || day === undefined) return null;
-  // 月末の付与で翌月へずれないよう、月をまたぐ繰り上がりは Date に任せず自分で丸める。
-  const total = year * 12 + (month - 1) + months;
-  const targetYear = Math.floor(total / 12);
-  const targetMonth = (total % 12) + 1;
-  const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
-  const targetDay = Math.min(day, lastDay);
-  return `${String(targetYear).padStart(4, '0')}-${String(targetMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+  return addMonthsToBusinessDate(effectiveOn, months);
 }
 
 export function createLeaveService(deps: LeaveServiceDependencies): LeaveService {

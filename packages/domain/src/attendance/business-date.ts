@@ -64,6 +64,34 @@ export function compareBusinessDates(left: BusinessDate, right: BusinessDate): n
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+/**
+ * 月を足す。日は、足した先の月に無ければその月の末日へ丸める。
+ *
+ * `Date` に任せると、1 月 31 日の 1 か月後が 3 月 3 日になる。
+ * 清算期間の区切りにも休暇の失効日にも、繰り上がった日付は使えない。
+ */
+export function addMonthsToBusinessDate(date: BusinessDate, months: number): BusinessDate {
+  const [year, month, day] = date.split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) {
+    throw new Error(`業務日として解釈できません: ${date}`);
+  }
+  const total = year * 12 + (month - 1) + months;
+  const targetYear = Math.floor(total / 12);
+  const targetMonth = (((total % 12) + 12) % 12) + 1;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  const targetDay = Math.min(day, lastDay);
+  return `${String(targetYear).padStart(4, '0')}-${String(targetMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+}
+
+/** 曜日。0 が日曜。業務日は暦日なので、実行環境の時計に依らず UTC で読む。 */
+export function weekdayOfBusinessDate(date: BusinessDate): number {
+  const [year, month, day] = date.split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) {
+    throw new Error(`業務日として解釈できません: ${date}`);
+  }
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
 export function addDaysToBusinessDate(date: BusinessDate, days: number): BusinessDate {
   const [year, month, day] = date.split('-').map(Number);
   if (year === undefined || month === undefined || day === undefined) {
