@@ -327,6 +327,10 @@ export interface EmployeeWorkCycleRecord {
   effectiveTo: string | null;
 }
 
+export interface WorkCycleList {
+  workCycles: WorkCycleRecord[];
+}
+
 export interface EmployeeWorkCycleList {
   assignments: EmployeeWorkCycleRecord[];
 }

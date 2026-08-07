@@ -6,6 +6,7 @@ import type {
   ApprovalDelegationList,
   ApprovalDelegationRecord,
   ApprovalRouteResponse,
+  AssignWorkCycleRequest,
   CalculationRuleVersionList,
   CalculationRuleVersionRecord,
   ChangePasswordRequest,
@@ -25,6 +26,8 @@ import type {
   CreateRequestTypeRequest,
   CreateSiteRequest,
   CreateWorkCategoryRequest,
+  CreateWorkCycleRequest,
+  CreateWorkPatternRequest,
   DailyRequestList,
   DailyRequestRecord,
   DecideDailyRequestRequest,
@@ -33,8 +36,12 @@ import type {
   DiscrepancyReport,
   Employee,
   EmployeeList,
+  EmployeeWorkCycleList,
+  EmployeeWorkCycleRecord,
   ErrorDetail,
   ErrorResponse,
+  GenerateWorkSchedulesRequest,
+  GenerateWorkSchedulesResponse,
   GrantLeaveInBulkRequest,
   GrantLeaveInBulkResponse,
   GrantLeaveRequest,
@@ -77,13 +84,21 @@ import type {
   SiteList,
   SubmitDailyRequestRequest,
   UpdateLeaveTypeRequest,
+  UpdateOrganizationRequest,
   UpdatePreferencesRequest,
   UpdateRequestTypeRequest,
+  UpsertWorkScheduleRequest,
   UserScopeList,
   UserScopeRecord,
   WorkCategoryList,
   WorkCategoryRecord,
+  WorkCycleList,
+  WorkCycleRecord,
   WorkDay,
+  WorkPattern,
+  WorkPatternList,
+  WorkScheduleList,
+  WorkScheduleRecord,
 } from '@staffweave/contracts';
 
 /**
@@ -216,6 +231,35 @@ export const api = {
   listUserScopes: () => request<UserScopeList>('/user-scopes'),
   grantUserScope: (input: GrantUserScopeRequest) =>
     request<UserScopeRecord>('/user-scopes', { method: 'POST', body: JSON.stringify(input) }),
+  listWorkPatterns: () => request<WorkPatternList>('/work-patterns'),
+  createWorkPattern: (input: CreateWorkPatternRequest) =>
+    request<WorkPattern>('/work-patterns', { method: 'POST', body: JSON.stringify(input) }),
+  listWorkCycles: () => request<WorkCycleList>('/work-cycles'),
+  createWorkCycle: (input: CreateWorkCycleRequest) =>
+    request<WorkCycleRecord>('/work-cycles', { method: 'POST', body: JSON.stringify(input) }),
+  listEmployeeWorkCycles: (query: { employeeId: string }) =>
+    request<EmployeeWorkCycleList>(
+      `/employee-work-cycles?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  assignWorkCycle: (input: AssignWorkCycleRequest) =>
+    request<EmployeeWorkCycleRecord>('/employee-work-cycles', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listWorkSchedules: (query: { employeeId: string; from: string; to: string }) =>
+    request<WorkScheduleList>(
+      `/work-schedules?${new URLSearchParams(query as Record<string, string>).toString()}`,
+    ),
+  upsertWorkSchedule: (input: UpsertWorkScheduleRequest) =>
+    request<WorkScheduleRecord>('/work-schedules', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+  generateWorkSchedules: (input: GenerateWorkSchedulesRequest) =>
+    request<GenerateWorkSchedulesResponse>('/work-schedules/generate', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   listWorkCategories: () => request<WorkCategoryList>('/work-categories'),
   createWorkCategory: (input: CreateWorkCategoryRequest) =>
     request<WorkCategoryRecord>('/work-categories', {
@@ -251,6 +295,17 @@ export const api = {
     }),
   importRequestTypesCsv: (text: string) =>
     request<ImportResult>('/request-types/imports', {
+      method: 'POST',
+      headers: { 'content-type': 'text/csv' },
+      body: text,
+    }),
+  updateOrganization: (organizationId: string, input: UpdateOrganizationRequest) =>
+    request<Organization>(`/organizations/${organizationId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  importEmployeesCsv: (text: string) =>
+    request<ImportResult>('/imports/employees', {
       method: 'POST',
       headers: { 'content-type': 'text/csv' },
       body: text,
