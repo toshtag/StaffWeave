@@ -21,6 +21,8 @@ import { recalculateWorkDay } from '../attendance/day.js';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import type { LeaveRepository } from '../leave/repository.js';
+import type { NotificationRepository } from '../notification/repository.js';
+import { notifyRequestEvent } from '../notification/service.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../shared/database-errors.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.js';
@@ -32,6 +34,8 @@ export interface RequestRepositories extends DayRepositories {
   leave: LeaveRepository;
   audit: AuditRepository;
   outbox: NotificationOutbox;
+  /** 利用者への通知。外部への配送とは別に、正本を DB へ残す。 */
+  notifications: NotificationRepository;
 }
 
 export interface RequestServiceDependencies {
@@ -453,7 +457,7 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
     async submit(context, input) {
       await requireSubmittableFor(context, input.employeeId);
 
-      return deps.transaction(async ({ requests, audit }) => {
+      return deps.transaction(async ({ requests, audit, notifications }) => {
         const type = await requests.findRequestType(context.workspace.id, input.requestTypeId);
         if (!type) throw notFound('申請種別');
         if (!type.active) {
@@ -494,6 +498,14 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
             totalSteps: created.totalSteps,
           },
         });
+
+        await notifyRequestEvent(notifications, context.workspace.id, {
+          event: { type: 'submitted' },
+          request: created,
+          typeName: type.name,
+          occurredAt: deps.now(),
+          actorUserId: context.user.id,
+        });
         return created;
       });
     },
@@ -504,7 +516,7 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
       }
 
       return deps.transaction(async (repositories) => {
-        const { requests, audit, outbox } = repositories;
+        const { requests, audit, outbox, notifications } = repositories;
         const existing = await requests.findRequest(context.workspace.id, requestId);
         if (!existing) throw notFound('申請');
 
@@ -593,6 +605,25 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           },
         });
 
+        if (type !== null && (saved.state === 'approved' || saved.state === 'returned')) {
+          await notifyRequestEvent(notifications, context.workspace.id, {
+            event: { type: saved.state === 'approved' ? 'approved' : 'returned' },
+            request: saved,
+            typeName: type.name,
+            occurredAt: now,
+            actorUserId: context.user.id,
+          });
+        }
+        if (type !== null && input.onBehalfOfUserId !== undefined) {
+          await notifyRequestEvent(notifications, context.workspace.id, {
+            event: { type: 'decided_on_behalf', onBehalfOfUserId: input.onBehalfOfUserId },
+            request: saved,
+            typeName: type.name,
+            occurredAt: now,
+            actorUserId: context.user.id,
+          });
+        }
+
         if (saved.state === 'approved' || saved.state === 'returned') {
           await outbox.enqueue(context.workspace.id, {
             eventType:
@@ -614,7 +645,7 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
     },
 
     async resubmit(context, requestId, input) {
-      return deps.transaction(async ({ requests, audit }) => {
+      return deps.transaction(async ({ requests, audit, notifications }) => {
         const existing = await requests.findRequest(context.workspace.id, requestId);
         if (!existing) throw notFound('申請');
         await requireSubmittableFor(context, existing.employeeId);
@@ -657,12 +688,21 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           summary: `${saved.businessDate} の申請を出し直しました（${saved.submissions} 回目）`,
           detail: { employeeId: saved.employeeId, submissions: saved.submissions },
         });
+
+        // 出し直しは新しい提出。もう一度 1 段目の承認者へ知らせる。
+        await notifyRequestEvent(notifications, context.workspace.id, {
+          event: { type: 'submitted' },
+          request: saved,
+          typeName: type.name,
+          occurredAt: deps.now(),
+          actorUserId: context.user.id,
+        });
         return saved;
       });
     },
 
     async cancel(context, requestId) {
-      return deps.transaction(async ({ requests, audit }) => {
+      return deps.transaction(async ({ requests, audit, notifications }) => {
         const existing = await requests.findRequest(context.workspace.id, requestId);
         if (!existing) throw notFound('申請');
         // 取り下げは本人だけが行える。
@@ -688,6 +728,28 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
           summary: `${saved.businessDate} の申請を取り下げました`,
           detail: { employeeId: saved.employeeId, fromState: existing.state },
         });
+
+        // 取り下げは、決裁を待っていた相手へ知らせる。
+        const type = await requests.findRequestType(context.workspace.id, saved.requestTypeId);
+        if (type !== null) {
+          const approvers = await notifications.listApprovers(
+            context.workspace.id,
+            saved.employeeId,
+          );
+          for (const userId of approvers) {
+            if (userId === context.user.id) continue;
+            await notifications.enqueue(context.workspace.id, {
+              userId,
+              kind: 'request_cancelled',
+              subjectType: 'employee_request',
+              subjectId: saved.id,
+              summary: `${saved.businessDate} の${type.name}が取り下げられました`,
+              detail: { requestId: saved.id, employeeId: saved.employeeId },
+              occurredAt: deps.now(),
+              dedupeKey: `${saved.id}:${saved.submissions}:cancelled`,
+            });
+          }
+        }
         return saved;
       });
     },

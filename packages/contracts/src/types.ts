@@ -1136,6 +1136,42 @@ export interface LeaveRegisterList {
   register: LeaveRegisterRecord[];
 }
 
+/** 通知の種類。 */
+export type NotificationKind =
+  | 'request_submitted'
+  | 'request_approved'
+  | 'request_returned'
+  | 'request_cancelled'
+  | 'request_decided_on_behalf';
+
+/** 利用者への通知。読めるのは宛先の本人だけ。 */
+export interface NotificationRecord {
+  id: string;
+  kind: NotificationKind;
+  subjectType: 'employee_request';
+  subjectId: string | null;
+  summary: string;
+  detail: Record<string, unknown>;
+  occurredAt: string;
+  /** 読んだ時刻。未読なら null。 */
+  readAt: string | null;
+}
+
+export interface NotificationList {
+  notifications: NotificationRecord[];
+  unreadCount: number;
+}
+
+export interface MarkNotificationsReadRequest {
+  ids: string[];
+}
+
+export interface MarkNotificationsReadResponse {
+  /** 実際に未読から既読へ変わった件数。 */
+  read: number;
+  unreadCount: number;
+}
+
 /** 申請が何について出されたか。承認後の反映先が変わる。 */
 export type RequestCategory =
   | 'leave'

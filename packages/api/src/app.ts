@@ -46,6 +46,9 @@ import { createPeriodService } from './monthly/period-service.js';
 import { createMonthlyRepository } from './monthly/repository.js';
 import { createMonthlyRoutes } from './monthly/routes.js';
 import { createMonthlyService } from './monthly/service.js';
+import { createNotificationRepository } from './notification/repository.js';
+import { createNotificationRoutes } from './notification/routes.js';
+import { createNotificationService } from './notification/service.js';
 import { createAssignmentRepository } from './organization/assignment-repository.js';
 import { createAssignmentRoutes } from './organization/assignment-routes.js';
 import { createAssignmentService } from './organization/assignment-service.js';
@@ -199,6 +202,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       cards: ReturnType<typeof createCardRepository>;
       observations: ReturnType<typeof createSessionObservationRepository>;
       audit: ReturnType<typeof createAuditRepository>;
+      notifications: ReturnType<typeof createNotificationRepository>;
       outbox: ReturnType<typeof createWebhookOutboxWriter>;
     }) => Promise<T>,
   ): Promise<T> =>
@@ -215,6 +219,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         cards: createCardRepository(tx),
         observations: createSessionObservationRepository(tx),
         audit: createAuditRepository(tx),
+        notifications: createNotificationRepository(tx),
         // 外部への通知は送信待ちとして同じトランザクションで確定させる。
         // 実際の HTTP 送信は webhook-worker が行うため、ここでは通信しない。
         outbox: createWebhookOutboxWriter({
@@ -299,6 +304,10 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     visibility,
   });
 
+  const notificationService = createNotificationService({
+    repository: createNotificationRepository(deps.db),
+  });
+
   const requestService = createRequestService({
     repository: createRequestRepository(deps.db),
     visibility,
@@ -353,6 +362,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));
+  api.route('/', createNotificationRoutes({ service: notificationService }));
   api.route('/', createMonthlyRoutes({ service: monthlyService, periods: periodService }));
   api.route('/', createLeaveRoutes({ service: leaveService, grants: leaveGrantService }));
   api.route('/', createRequestRoutes({ service: requestService }));
