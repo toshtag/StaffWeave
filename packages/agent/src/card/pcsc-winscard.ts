@@ -15,6 +15,7 @@
  */
 
 import type { PcscTransport } from './pcsc.js';
+import { CardReadAborted } from './reader.js';
 
 /** 端末で取り寄せる部品の名前。手順書と検査の両方から参照する。 */
 export const READER_MODULE = 'pcsclite';
@@ -47,6 +48,7 @@ interface PcscLiteReader {
   on(event: 'status', listener: (status: { state: number }) => void): void;
   on(event: 'error', listener: (error: Error) => void): void;
   on(event: 'end', listener: () => void): void;
+  off(event: 'status', listener: (status: { state: number }) => void): void;
   close(): void;
 }
 
@@ -106,14 +108,36 @@ function firstReader(pcsc: PcscLite, timeoutMs: number): Promise<PcscLiteReader>
   });
 }
 
-/** カードが置かれた／離れた、のどちらかになるまで待つ。 */
-function waitForState(reader: PcscLiteReader, present: boolean): Promise<void> {
-  return new Promise((resolve) => {
+/**
+ * カードが置かれた／離れた、のどちらかになるまで待つ。
+ *
+ * 待ち受けは、決まったときにも打ち切られたときにも必ず外す。外さないと、
+ * タップと離脱のたびに 1 つずつ溜まる。据え置きの端末は何か月も動き続けるため、
+ * 溜まったぶんだけ記憶を使い、やがて警告が出るようになる。
+ */
+function waitForState(
+  reader: PcscLiteReader,
+  present: boolean,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const settle = (finish: () => void): void => {
+      reader.off('status', listener);
+      signal?.removeEventListener('abort', onAbort);
+      finish();
+    };
     const listener = (status: { state: number }): void => {
       const isPresent = (status.state & reader.SCARD_STATE_PRESENT) !== 0;
-      if (isPresent === present) resolve();
+      if (isPresent === present) settle(resolve);
     };
+    const onAbort = (): void => settle(() => reject(new CardReadAborted()));
+
+    if (signal?.aborted === true) {
+      reject(new CardReadAborted());
+      return;
+    }
     reader.on('status', listener);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -148,8 +172,8 @@ export async function createPcscTransport(
   return {
     name: reader.name,
 
-    async waitForCard() {
-      await waitForState(reader, true);
+    async waitForCard(signal) {
+      await waitForState(reader, true, signal);
       await connect();
     },
 
@@ -162,8 +186,8 @@ export async function createPcscTransport(
       });
     },
 
-    waitForRemoval() {
-      return waitForState(reader, false);
+    waitForRemoval(signal) {
+      return waitForState(reader, false, signal);
     },
 
     async reconnect() {
