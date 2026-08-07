@@ -16,6 +16,14 @@ export interface WorkCycleDay {
   dayType: DayType;
   /** 勤務日のとき適用する勤務パターン。休日なら null。 */
   workPatternId: string | null;
+  /**
+   * 生成した勤務予定へ引き継ぐ勤務区分。決めていなければ null。
+   *
+   * 勤務パターンは所定時刻だけを持つ。固定休憩・自動休憩・みなし・深夜帯の
+   * 上書き・中抜けの扱いは勤務区分にある。ここを空のままにすると、
+   * 周期から生成した日はそれらの設定が効かない。
+   */
+  workCategoryId?: string | null;
 }
 
 export interface WorkCycle {
@@ -94,6 +102,7 @@ function isPreferredAssignment(
 export interface ResolvedCycleDay {
   dayType: DayType;
   workPatternId: string | null;
+  workCategoryId: string | null;
   position: number;
 }
 
@@ -106,7 +115,12 @@ export function resolveCycleDay(
   const position = cyclePositionOf(assignment.anchorDate, businessDate, cycle.cycleLength);
   const day = cycle.days.find((entry) => entry.position === position);
   if (!day) return null;
-  return { dayType: day.dayType, workPatternId: day.workPatternId, position };
+  return {
+    dayType: day.dayType,
+    workPatternId: day.workPatternId,
+    workCategoryId: day.workCategoryId ?? null,
+    position,
+  };
 }
 
 export type CycleProblem =
