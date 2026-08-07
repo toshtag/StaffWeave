@@ -270,6 +270,26 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
       let endMinutes = input.endMinutes ?? null;
       let breakMinutes = input.breakMinutes ?? 0;
       let workPatternId = input.workPatternId ?? null;
+      const workCategoryId = input.workCategoryId ?? null;
+
+      // 勤務区分は、その日に効いている版がある場合だけ受け取る。
+      // 効いていない版を割り当てると、計算のときに解決できず、
+      // 設定したはずの休憩や深夜帯が黙って外れる。
+      if (workCategoryId !== null) {
+        const category = await deps.categories.findWorkCategoryForDate(
+          workspaceId,
+          workCategoryId,
+          businessDate,
+        );
+        if (!category) {
+          throw invalidRequest([
+            { field: 'workCategoryId', message: 'その業務日に効いている勤務区分ではありません' },
+          ]);
+        }
+        // 所定時刻のひな形として使う。勤務パターンと明示の指定はこの後で上書きする。
+        startMinutes = input.startMinutes ?? category.scheduledStartMinutes;
+        endMinutes = input.endMinutes ?? category.scheduledEndMinutes;
+      }
 
       if (workPatternId !== null) {
         const pattern = await schedule.findWorkPattern(workspaceId, workPatternId);
@@ -310,6 +330,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
             employeeId: input.employeeId,
             businessDate,
             workPatternId,
+            workCategoryId,
             dayType,
             startMinutes,
             endMinutes,
@@ -382,6 +403,7 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
         position: day.position,
         dayType: day.dayType,
         workPatternId: day.workPatternId ?? null,
+        workCategoryId: day.workCategoryId ?? null,
       }));
 
       const problems = validateWorkCycle({ cycleLength: input.cycleLength, days });
@@ -556,10 +578,30 @@ export function createScheduleService(deps: ScheduleServiceDependencies): Schedu
             breakMinutes = pattern.breakMinutes;
           }
 
+          // 周期が勤務区分を持つ日は、その日に効いている版を確かめてから引き継ぐ。
+          // 効いていない版のまま生成すると、計算は勤務区分を解決できず、
+          // 生成した日だけ休憩や深夜帯の設定が外れる。
+          let workCategoryId = resolved.workCategoryId ?? null;
+          if (workCategoryId !== null) {
+            const effective = await deps.categories.findWorkCategoryForDate(
+              workspaceId,
+              workCategoryId,
+              businessDate,
+            );
+            if (effective === null) {
+              uncovered += 1;
+              continue;
+            }
+            workCategoryId = effective.id;
+            startMinutes = startMinutes ?? effective.scheduledStartMinutes;
+            endMinutes = endMinutes ?? effective.scheduledEndMinutes;
+          }
+
           await repositories.schedule.upsertWorkSchedule(workspaceId, {
             employeeId: input.employeeId,
             businessDate,
             workPatternId: resolved.workPatternId,
+            workCategoryId,
             dayType: resolved.dayType,
             startMinutes,
             endMinutes,

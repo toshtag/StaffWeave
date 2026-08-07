@@ -74,6 +74,7 @@ interface CycleDayRow {
   position: number;
   day_type: WorkCycleDayRecord['dayType'];
   work_pattern_id: string | null;
+  work_category_id: string | null;
 }
 
 interface AssignmentRow {
@@ -110,7 +111,7 @@ export function createWorkCycleRepository(db: Queryable): WorkCycleRepository {
   async function daysOf(workspaceId: string, cycleIds: readonly string[]) {
     if (cycleIds.length === 0) return new Map<string, WorkCycleDayRecord[]>();
     const rows = await db.query<CycleDayRow>(
-      `SELECT work_cycle_id, position, day_type, work_pattern_id
+      `SELECT work_cycle_id, position, day_type, work_pattern_id, work_category_id
          FROM work_cycle_days
         WHERE workspace_id = $1 AND work_cycle_id = ANY($2::uuid[])
         ORDER BY position`,
@@ -123,6 +124,7 @@ export function createWorkCycleRepository(db: Queryable): WorkCycleRepository {
         position: row.position,
         dayType: row.day_type,
         workPatternId: row.work_pattern_id,
+        workCategoryId: row.work_category_id,
       });
       grouped.set(row.work_cycle_id, list);
     }
@@ -200,9 +202,16 @@ export function createWorkCycleRepository(db: Queryable): WorkCycleRepository {
       for (const day of input.days) {
         await db.query(
           `INSERT INTO work_cycle_days
-             (workspace_id, work_cycle_id, position, day_type, work_pattern_id)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [workspaceId, row.id, day.position, day.dayType, day.workPatternId],
+             (workspace_id, work_cycle_id, position, day_type, work_pattern_id, work_category_id)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            workspaceId,
+            row.id,
+            day.position,
+            day.dayType,
+            day.workPatternId ?? null,
+            day.workCategoryId ?? null,
+          ],
         );
       }
 
@@ -211,7 +220,14 @@ export function createWorkCycleRepository(db: Queryable): WorkCycleRepository {
         code: row.code,
         name: row.name,
         cycleLength: row.cycle_length,
-        days: [...input.days],
+        // 返す形は読み出しと同じにする。省略された項目は null で埋め、
+        // 作った直後だけ形が違う、という状態を作らない。
+        days: input.days.map((day) => ({
+          position: day.position,
+          dayType: day.dayType,
+          workPatternId: day.workPatternId ?? null,
+          workCategoryId: day.workCategoryId ?? null,
+        })),
         createdAt: row.created_at.toISOString(),
       };
     },

@@ -260,6 +260,13 @@ export interface WorkScheduleRecord {
   employeeId: string;
   businessDate: string;
   workPatternId: string | null;
+  /**
+   * その日に適用する勤務区分。
+   *
+   * 勤務パターンは所定時刻のひな形だけを持つ。固定休憩・自動休憩・みなし・
+   * 深夜帯の上書き・中抜けの扱いは勤務区分にあり、計算はこの列から辿る。
+   */
+  workCategoryId: string | null;
   dayType: DayType;
   startMinutes: number | null;
   endMinutes: number | null;
@@ -285,6 +292,8 @@ export interface WorkCycleDayRecord {
   position: number;
   dayType: 'working_day' | 'non_working_day' | 'public_holiday';
   workPatternId: string | null;
+  /** 生成した勤務予定へ引き継ぐ勤務区分。無ければ予定も勤務区分を持たない。 */
+  workCategoryId: string | null;
 }
 
 export interface WorkCycleRecord {
@@ -300,7 +309,12 @@ export interface CreateWorkCycleRequest {
   code: string;
   name: string;
   cycleLength: number;
-  days: { position: number; dayType: WorkCycleDayRecord['dayType']; workPatternId?: string }[];
+  days: {
+    position: number;
+    dayType: WorkCycleDayRecord['dayType'];
+    workPatternId?: string;
+    workCategoryId?: string;
+  }[];
 }
 
 export interface EmployeeWorkCycleRecord {
@@ -349,6 +363,8 @@ export interface UpsertWorkScheduleRequest {
   employeeId: string;
   businessDate: string;
   workPatternId?: string;
+  /** 勤務区分。`null` を渡すと外す。省略した場合は既存の値をそのまま残さず未設定にする。 */
+  workCategoryId?: string | null;
   dayType?: DayType;
   startMinutes?: number;
   endMinutes?: number;

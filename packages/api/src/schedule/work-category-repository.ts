@@ -18,10 +18,18 @@ export interface WorkCategoryRepository {
     workspaceId: string,
     input: CreateWorkCategoryRequest,
   ): Promise<WorkCategoryRecord>;
-  /** その業務日に効いている勤務区分。無ければ null。 */
+  /**
+   * その業務日に効いている勤務区分。無ければ null。
+   *
+   * 勤務予定が指すのは、割り当てた時点の版の id。版は `code` ごとに
+   * 適用期間で重ねるため、対象日には別の版が効いていることがある。
+   * id から `code` を辿り、その日を含む版を返す。
+   * 対象日を含む版が無ければ（割当より前、または終了済み）null。
+   */
   findWorkCategoryForDate(
     workspaceId: string,
     workCategoryId: string,
+    businessDate: string,
   ): Promise<WorkCategoryRecord | null>;
 
   listCalculationRuleVersions(workspaceId: string): Promise<CalculationRuleVersionRecord[]>;
@@ -52,10 +60,32 @@ interface CategoryRow {
   created_at: Date;
 }
 
-const CATEGORY_COLUMNS = `id, code, internal_name, display_name, category_type,
-  effective_from, effective_to, scheduled_start_minutes, scheduled_end_minutes,
-  prescribed_minutes, deemed_minutes, night_start_minutes, night_end_minutes,
-  gap_treatment, shift, color, counts_as_working_day, created_at`;
+const CATEGORY_COLUMN_NAMES = [
+  'id',
+  'code',
+  'internal_name',
+  'display_name',
+  'category_type',
+  'effective_from',
+  'effective_to',
+  'scheduled_start_minutes',
+  'scheduled_end_minutes',
+  'prescribed_minutes',
+  'deemed_minutes',
+  'night_start_minutes',
+  'night_end_minutes',
+  'gap_treatment',
+  'shift',
+  'color',
+  'counts_as_working_day',
+  'created_at',
+] as const;
+
+const CATEGORY_COLUMNS = CATEGORY_COLUMN_NAMES.join(', ');
+
+// 同じ表を 2 度読む問い合わせでは、列に別名を付けないと `id` がどちらの行か決まらない。
+const categoryColumnsOf = (alias: string): string =>
+  CATEGORY_COLUMN_NAMES.map((column) => `${alias}.${column}`).join(', ');
 
 function toCategory(
   row: CategoryRow,
@@ -191,11 +221,18 @@ export function createWorkCategoryRepository(db: Queryable): WorkCategoryReposit
       return rows.map((row) => toCategory(row, fixed.get(row.id) ?? [], auto.get(row.id) ?? []));
     },
 
-    async findWorkCategoryForDate(workspaceId, workCategoryId) {
+    async findWorkCategoryForDate(workspaceId, workCategoryId, businessDate) {
       const rows = await db.query<CategoryRow>(
-        `SELECT ${CATEGORY_COLUMNS} FROM work_categories
-          WHERE workspace_id = $1 AND id = $2`,
-        [workspaceId, workCategoryId],
+        `SELECT ${categoryColumnsOf('version')}
+           FROM work_categories AS assigned
+           JOIN work_categories AS version
+             ON version.workspace_id = assigned.workspace_id
+            AND version.code = assigned.code
+          WHERE assigned.workspace_id = $1
+            AND assigned.id = $2
+            AND version.effective_from <= $3
+            AND (version.effective_to IS NULL OR version.effective_to >= $3)`,
+        [workspaceId, workCategoryId, businessDate],
       );
       const row = rows[0];
       if (!row) return null;

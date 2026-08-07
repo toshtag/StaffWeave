@@ -49,13 +49,13 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | 勤務パターン（始業・終業・休憩の合計分数） | implemented | `op:createWorkPattern` `op:listWorkPatterns` `migration:0005_create_schedules_and_calculations.sql` | 所定時刻のひな形として持つ |
-| 勤務予定の登録 | implemented | `op:upsertWorkSchedule` `op:listWorkSchedules` | 従業員と業務日ごとに持つ |
+| 勤務予定の登録 | implemented | `op:upsertWorkSchedule` `op:listWorkSchedules` `test:packages/api/test/integration/work-category-calculation.test.ts` | 従業員と業務日ごとに持つ。勤務区分を割り当てられ、その設定が計算まで効く |
 | 勤務周期による予定の生成 | implemented | `op:generateWorkSchedules` `op:createWorkCycle` `test:packages/domain/src/schedule/work-cycle.test.ts` | 曜日を前提にしない |
 | 有効期間付きの制度切り替え | implemented | `op:assignWorkCycle` `op:endWorkCycleAssignment` `migration:0019_exclude_overlapping_work_cycles.sql` | 期間の重なりを DB で排他する |
 | 版管理された勤務区分 | implemented | `op:createWorkCategory` `op:listWorkCategories` `migration:0026_create_work_categories_and_rule_versions.sql` | 同じ code で期間を分けて改定する。期間の重なりを DB で排他する |
-| 複数の固定休憩 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `migration:0026_create_work_categories_and_rule_versions.sql` | 実績と重なる分は二度引かない |
-| 自動休憩（労働時間の閾値で足す） | implemented | `test:packages/domain/src/attendance/breaks.test.ts` | 閾値と追加分数を持つ。段階が複数でも足し合わせない |
-| みなし労働時間 | implemented | `op:createWorkCategory` `op:assignLaborSystem` | 勤務区分と労働形態の両方に持てる。実績とは別に出す |
+| 複数の固定休憩 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` `migration:0026_create_work_categories_and_rule_versions.sql` | 実績と重なる分は二度引かない。勤務予定へ割り当てた勤務区分から効く |
+| 自動休憩（労働時間の閾値で足す） | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` | 閾値と追加分数を持つ。段階が複数でも足し合わせない |
+| みなし労働時間 | partial | `op:createWorkCategory` `test:packages/api/test/integration/work-category-calculation.test.ts` | 勤務区分から日次の計算へ効き、実績とは別の値として残る。労働形態の割当からは計算へ届かない |
 | シフト属性と表示色 | implemented | `op:createWorkCategory` `ui:packages/web/src/admin/sections/WorkCategorySettings.tsx` | 勤務区分が持ち、設定の画面から入れられる |
 | マスターの改定・無効化・コピー | partial | `op:createWorkCategory` `op:updateLeaveType` `op:updateRequestType` | 勤務区分は版を重ねて改定でき、休暇種別と申請種別は無効化できる。勤務周期は作成と一覧のまま |
 
@@ -70,9 +70,9 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 計算ルールの変更 | implemented | `op:createCalculationRuleVersion` `op:listCalculationRuleVersions` | 適用開始日つきの版を作る。過去の集計は当時の版のまま |
 | 所定内・所定外 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯の内外を出す |
 | 休日労働 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 法定休日と法定外休日を分けて出す |
-| 所定休憩の実労働からの控除 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` | 固定休憩は打刻が無くても引く。重なりは二度引かない |
+| 所定休憩の実労働からの控除 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` | 固定休憩は打刻が無くても引く。重なりは二度引かない |
 | 法定内時間外・法定時間外 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 1 日の閾値は事業者が設定する。未設定なら計算せず未設定として示す |
-| 深夜時間外・深夜休日 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 深夜帯は勤務区分で上書きできる |
+| 深夜時間外・深夜休日 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` | 深夜帯は勤務区分で上書きでき、上書きが日次と月次と給与の出力まで効く |
 | 遅刻・早退・始業前・終業後 | implemented | `test:packages/domain/src/attendance/calculation.test.ts` | 所定の時間帯との差から出す |
 | 週・月の集計 | implemented | `op:listMonthlySummaries` `op:listPeriodSummaries` `test:packages/domain/src/attendance/period.test.ts` `test:packages/api/test/integration/period-summaries.test.ts` | 週の開始曜日は計算規則の版が決める。月をまたぐ週も 1 つとして数える |
 | 認定時間（申請した残業上限の反映） | implemented | `op:decideEmployeeRequest` `test:packages/domain/src/attendance/approved-adjustments.test.ts` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 承認しきった上限時刻までを認定し、超えた分を分けて出す。所定終業が未設定なら 0 ではなく未設定 |

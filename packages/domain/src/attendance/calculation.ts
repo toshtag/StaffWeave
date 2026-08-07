@@ -689,6 +689,29 @@ export function fingerprintSource(input: CalculationInput): string {
     input.rules.roundingMode,
   ].join('|');
 
+  // 勤務区分も指紋へ入れる。入れないと、固定休憩や深夜帯を変えても
+  // 「入力は変わっていない」と判断され、前の版の結果が残る。
+  //
+  // 入れるのは計算へ効く値だけにする。表示名や色まで入れると、
+  // 結果が変わらない編集で版が増え、履歴から本当の変更を追えなくなる。
+  const category =
+    input.category === null || input.category === undefined
+      ? 'none'
+      : [
+          input.category.code,
+          input.category.fixedBreaks
+            .map((entry) => `${entry.startMinutes}-${entry.endMinutes}`)
+            .join('+') || 'none',
+          input.category.autoBreaks
+            .map((rule) => `${rule.thresholdMinutes}>${rule.additionalMinutes}`)
+            .join('+') || 'none',
+          input.category.nightStartMinutes === null
+            ? 'none'
+            : `${input.category.nightStartMinutes}-${input.category.nightEndMinutes}`,
+          input.category.gapTreatment,
+          input.category.deemedMinutes === null ? 'none' : String(input.category.deemedMinutes),
+        ].join('|');
+
   // 承認の内容も指紋へ入れる。入れないと、承認しても「入力は変わっていない」と
   // 判断され、認定を反映しないまま前の版が残る。
   const approvals = input.approvals ?? NO_APPROVED_ADJUSTMENTS;
@@ -697,7 +720,13 @@ export function fingerprintSource(input: CalculationInput): string {
     approvals.holidayWorkApproved ? 'holiday' : 'no-holiday',
   ].join('|');
 
-  return [input.businessDate, input.timeZone, schedule, rules, approved, events.join(',')].join(
-    '\n',
-  );
+  return [
+    input.businessDate,
+    input.timeZone,
+    schedule,
+    rules,
+    category,
+    approved,
+    events.join(','),
+  ].join('\n');
 }
