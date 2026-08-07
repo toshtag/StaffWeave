@@ -4,11 +4,12 @@
  *
  *   node scripts/verify-release-assets.mjs
  *
- * 見るのは 5 つ。
+ * 見るのは 6 つ。
  *
  *   checksum の一覧と、実際のファイルが一致すること
  *   端末の配布物の名前が、package.json の版と一致すること
  *   その配布物を展開した中の版も、同じであること
+ *   Windows 向けの配布物が、同じ版・同じ commit で、読み取りの部品まで入っていること
  *   構成一覧に書いてある commit が、いま見ている commit と一致すること
  *   tag を渡された場合、tag が v<版> であること
  *
@@ -29,6 +30,9 @@ const run = promisify(execFile);
 const OUTPUT_DIR = process.env.RELEASE_OUTPUT_DIR ?? 'artifacts/release';
 const EXPECTED_SOURCE_SHA = process.env.RELEASE_EXPECTED_SOURCE_SHA;
 const TAG = process.env.RELEASE_TAG;
+// Windows 向けの配布物は Windows の上でしか組めない。手元では組めないため、
+// 求めるかどうかを外から決める。配る経路では必ず求める。
+const REQUIRE_WINDOWS = process.env.RELEASE_REQUIRE_WINDOWS_AGENT !== undefined;
 
 const problems = [];
 
@@ -112,6 +116,50 @@ if (agent !== undefined) {
   } finally {
     await rm(work, { recursive: true, force: true });
   }
+}
+
+// Windows 向けの配布物。読み取り装置の部品まで含めて配る。
+// 端末で取り寄せる形にすると、確かめた構成と実際に動く構成が別になる。
+if (REQUIRE_WINDOWS) {
+  console.log('Windows 向けの配布物');
+  const windowsName = `staffweave-agent-windows-x64-${version}.zip`;
+  const listedWindows = listed.find((entry) => entry.name === windowsName);
+  check(listedWindows !== undefined, `${windowsName} が並んでいます`);
+
+  if (listedWindows !== undefined) {
+    const work = await mkdtemp(join(tmpdir(), 'staffweave-windows-'));
+    try {
+      await run('unzip', ['-q', join(OUTPUT_DIR, windowsName), '-d', work]);
+      const build = JSON.parse(
+        await readFile(join(work, 'staffweave-agent/agent/build-info.json'), 'utf8'),
+      );
+      check(
+        build.version === version,
+        `Windows の配布物が持つ版が一致しています（${build.version}）`,
+      );
+      if (EXPECTED_SOURCE_SHA !== undefined && EXPECTED_SOURCE_SHA !== '') {
+        check(
+          build.sourceSha === EXPECTED_SOURCE_SHA,
+          'Windows の配布物が持つ commit が、いま見ている commit と一致しています',
+        );
+      }
+      check(build.reader !== '', `読み取り装置の部品が書いてあります（${build.reader}）`);
+
+      // 組み立て済みの部品が実際に入っていること。名前だけでは、端末の前で
+      // 初めて読めないと分かる。
+      const { stdout } = await run('unzip', ['-l', join(OUTPUT_DIR, windowsName)]);
+      check(/\.node(\s|$)/m.test(stdout), '組み立て済みの読み取りの部品が入っています');
+    } catch (error) {
+      check(false, `Windows の配布物を展開して確かめられます（${error.message}）`);
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  }
+
+  check(
+    listed.some((entry) => entry.name === 'staffweave-agent-windows.cdx.json'),
+    'Windows の配布物の構成一覧が並んでいます',
+  );
 }
 
 console.log('構成一覧');
