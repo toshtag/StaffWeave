@@ -1,9 +1,12 @@
 /**
  * 装置との受け渡しを、外の部品から読み込む。
  *
- * PC/SC の実装は OS ごとに native の部品が要る。同梱すると、
- * 確かめていない組み合わせを配ることになる。端末を用意する側が入れ、
- * その置き場をここへ渡す。
+ * 既定では、配布物へ同梱している受け渡し（{@link BUNDLED_PCSC_MODULE}）を読む。
+ * 別のものを使う端末のために、置き場を渡す道は残してある。
+ *
+ * 装置のドライバを叩く部分は OS ごとに組み立てが要るため、同梱しない。
+ * Linux で組み立てたものを Windows へ配ることはできない。端末の側で
+ * 取り寄せる（配布物の install-reader.ps1）。
  *
  * 読み込む相手には 1 つだけを求める。`createPcscTransport` という名前の関数で、
  * {@link PcscTransport} を返すこと。取り決めを 1 つに絞るのは、
@@ -14,6 +17,13 @@ import type { PcscTransport } from './pcsc.js';
 
 /** 読み込む相手が持っていなければならない形。 */
 export const TRANSPORT_FACTORY_NAME = 'createPcscTransport';
+
+/**
+ * 同梱している受け渡し。`--pcsc` を省いたときはこれを読む。
+ *
+ * 配布物の中の場所を指す。外の部品を指すと、配布物だけでは動かない。
+ */
+export const BUNDLED_PCSC_MODULE = './card/pcsc-winscard.js';
 
 interface TransportModule {
   [TRANSPORT_FACTORY_NAME]?: unknown;
