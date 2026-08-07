@@ -280,6 +280,23 @@ describe('release ワークフローの取り決め', () => {
     );
   });
 
+  /**
+   * 検査のための逃げ道が、配る経路へ漏れていないこと。
+   *
+   * `release-manifest.sh` は、コンテナを組む 1 段だけを飛ばせる。数分かかる段を
+   * 検査のたびに通す意味が無いため。ただし配る経路で設定されると、digest を
+   * 出せないまま「配れる」と言うことになる。
+   */
+  it('配る経路は、コンテナを組む段を飛ばさない', async () => {
+    const manifest = await readFile(join(REPOSITORY_ROOT, 'scripts/release-manifest.sh'), 'utf8');
+    expect(manifest).toContain('RELEASE_MANIFEST_SKIP_CONTAINER');
+
+    for (const path of ['.github/workflows/release.yml', '.github/workflows/ci.yml']) {
+      const content = await readFile(join(REPOSITORY_ROOT, path), 'utf8');
+      expect(content).not.toContain('RELEASE_MANIFEST_SKIP_CONTAINER');
+    }
+  });
+
   it('署名はしない', () => {
     // 署名には所有者の鍵が要る。鍵を持たない者の署名は「誰が配ったか」を示せない。
     expect(workflow).not.toContain('cosign');

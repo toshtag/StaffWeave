@@ -43,8 +43,14 @@ fi
 # 2. コンテナ画像
 #
 # digest を出せないなら、配るものを特定できない。
+#
+# 組むのに数分かかるため、この 1 段だけを飛ばせるようにしてある。
+# 飛ばせるのは、構成一覧の側の判定を確かめる検査からだけ。配る経路では
+# 決して設定しない（test/release-assets.test.ts が、そのことを見ている）。
 DIGEST=''
-if ! command -v docker > /dev/null 2>&1; then
+if [ -n "${RELEASE_MANIFEST_SKIP_CONTAINER-}" ]; then
+  note 'コンテナの digest を出していません（検査のために飛ばしています）。'
+elif ! command -v docker > /dev/null 2>&1; then
   note 'docker がありません。コンテナの digest を出せません。'
 elif ! docker info > /dev/null 2>&1; then
   note 'docker が動いていません。コンテナの digest を出せません。'
