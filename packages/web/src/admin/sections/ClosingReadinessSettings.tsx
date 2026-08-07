@@ -1,5 +1,5 @@
-import type { ClosingReadiness } from '@staffweave/contracts';
-import { useCallback, useState } from 'react';
+import type { ClosingReadiness, Employee } from '@staffweave/contracts';
+import { useCallback, useEffect, useState } from 'react';
 import { ApiRequestError, api } from '../../api/client.ts';
 import { useLocale } from '../../i18n/LocaleProvider.tsx';
 import type { SectionProps } from '../AdminConsole.tsx';
@@ -33,6 +33,21 @@ export function ClosingReadinessSettings({ permissions }: SectionProps): React.J
 
   const canClose = permissions.includes('attendance.close');
 
+  // 行の見出しに UUID が出ていると、誰の月を締めるのか押す前に分からない。
+  // 締めは監査へ残るため、押す相手を人が読める形にしておく。
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  useEffect(() => {
+    void api
+      .listEmployees()
+      .then((body) => setEmployees(body.employees))
+      .catch(() => setEmployees([]));
+  }, []);
+
+  const employeeLabel = (id: string): string => {
+    const employee = employees.find((candidate) => candidate.id === id);
+    return employee === undefined ? id : `${employee.employeeNumber} ${employee.displayName}`;
+  };
+
   function run(action: () => Promise<unknown>, done: string, reload: () => Promise<void>): void {
     setOutcome(null);
     action()
@@ -47,7 +62,7 @@ export function ClosingReadinessSettings({ permissions }: SectionProps): React.J
   }
 
   const columns: Column<ClosingReadiness>[] = [
-    { key: 'employee', header: labels.employee, value: (row) => row.employeeId },
+    { key: 'employee', header: labels.employee, value: (row) => employeeLabel(row.employeeId) },
     {
       key: 'blocked',
       header: labels.blocked,

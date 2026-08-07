@@ -1,9 +1,9 @@
-import type { Organization, UserScopeRecord } from '@staffweave/contracts';
+import type { Employee, Organization, UserScopeRecord } from '@staffweave/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { useLocale } from '../../i18n/LocaleProvider.tsx';
 import type { SectionProps } from '../AdminConsole.tsx';
-import { type Column, SelectField, TextField } from '../resource.tsx';
+import { type Column, SelectField } from '../resource.tsx';
 import { SettingsSection } from '../SettingsSection.tsx';
 
 /**
@@ -17,6 +17,7 @@ export function UserScopeSettings({ permissions }: SectionProps): React.JSX.Elem
   const { locale, messages } = useLocale();
   const labels = messages.admin;
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [userId, setUserId] = useState('');
   const [organizationId, setOrganizationId] = useState('');
 
@@ -30,8 +31,26 @@ export function UserScopeSettings({ permissions }: SectionProps): React.JSX.Elem
       .catch(() => setOrganizations([]));
   }, []);
 
+  // 相手を識別子で書かせると、設定する人は画面の外で identifier を調べることになる。
+  // ログインを持つ従業員から選べるようにして、その往復を無くす。
+  useEffect(() => {
+    void api
+      .listEmployees()
+      .then((body) => {
+        const withLogin = body.employees.filter((employee) => employee.userId !== null);
+        setEmployees(withLogin);
+        setUserId((current) => current || (withLogin[0]?.userId ?? ''));
+      })
+      .catch(() => setEmployees([]));
+  }, []);
+
+  const userLabel = (id: string): string => {
+    const employee = employees.find((candidate) => candidate.userId === id);
+    return employee === undefined ? id : `${employee.employeeNumber} ${employee.displayName}`;
+  };
+
   const columns: Column<UserScopeRecord>[] = [
-    { key: 'userId', header: labels.userId, value: (row) => row.userId },
+    { key: 'userId', header: labels.userId, value: (row) => userLabel(row.userId) },
     {
       key: 'organization',
       header: labels.organization,
@@ -70,12 +89,15 @@ export function UserScopeSettings({ permissions }: SectionProps): React.JSX.Elem
       }}
       form={
         <>
-          <TextField
+          <SelectField
             id="scope-user"
             label={labels.userId}
             value={userId}
             onChange={setUserId}
-            required
+            options={employees.map((employee) => ({
+              value: employee.userId ?? '',
+              label: `${employee.employeeNumber} ${employee.displayName}`,
+            }))}
             hint={labels.userIdHint}
           />
           <SelectField

@@ -154,6 +154,8 @@ export interface Messages {
   notRequestedYet: string;
   editingLocked: string;
   approvals: string;
+  dailyApprovals: string;
+  dailyApprovalsHint: string;
   approve: string;
   returnRequest: string;
   returnReason: string;
@@ -718,6 +720,8 @@ const ja: Messages = {
   notRequestedYet: 'まだ申請していません',
   editingLocked: 'この日は打刻の追加や修正ができません',
   approvals: '承認待ちの申請',
+  dailyApprovals: '確定待ちの日次勤怠',
+  dailyApprovalsHint: 'その日の勤怠でよい、という確定です。残っていると月次を締められません。',
   approve: '承認',
   returnRequest: '差し戻し',
   returnReason: '差し戻しの理由',
@@ -940,8 +944,8 @@ const ja: Messages = {
     retireEmployee: '退職にする',
     restoreEmployee: '復帰させる',
     statusChangeReason: '変更の理由を入れてください',
-    userId: '利用者の識別子',
-    userIdHint: '利用者一覧の識別子を貼り付けます。',
+    userId: '利用者',
+    userIdHint: 'ログインを持つ従業員から選びます。',
     grantedAt: '付与日時',
     categoryType: '区分の種別',
     workCategoryType: {
@@ -1358,6 +1362,8 @@ const en: Messages = {
   notRequestedYet: 'Not submitted yet',
   editingLocked: 'Punches for this day can no longer be added or corrected',
   approvals: 'Requests awaiting approval',
+  dailyApprovals: 'Days awaiting confirmation',
+  dailyApprovalsHint: 'Confirms the day as recorded. Unconfirmed days block the monthly close.',
   approve: 'Approve',
   returnRequest: 'Return',
   returnReason: 'Reason for returning',
@@ -1584,8 +1590,8 @@ const en: Messages = {
     retireEmployee: 'Retire',
     restoreEmployee: 'Restore',
     statusChangeReason: 'Enter a reason for the change',
-    userId: 'User identifier',
-    userIdHint: 'Paste the identifier from the user list.',
+    userId: 'User',
+    userIdHint: 'Pick an employee who has a login.',
     grantedAt: 'Granted at',
     categoryType: 'Category type',
     workCategoryType: {
