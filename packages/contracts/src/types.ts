@@ -1195,6 +1195,11 @@ export interface MonthlyTotals {
   lateMinutes: number | null;
   earlyLeaveMinutes: number | null;
   deemedMinutes: number | null;
+  /** 承認しきった申請から来る、認定した分と認定の外に出た分。 */
+  recognizedOvertimeMinutes: number | null;
+  unapprovedOvertimeMinutes: number | null;
+  approvedHolidayMinutes: number | null;
+  unapprovedHolidayMinutes: number | null;
   workedDays: number;
   leaveDays: number;
   countedDays: number;

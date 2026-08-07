@@ -140,7 +140,9 @@ const TOTALS_COLUMNS = `attended_minutes, worked_minutes, break_minutes, schedul
   within_schedule_minutes, outside_schedule_minutes, night_minutes, non_working_day_minutes,
   leave_minutes, absence_minutes, legal_inside_overtime_minutes, legal_overtime_minutes,
   legal_holiday_minutes, non_legal_holiday_minutes, night_overtime_minutes,
-  night_holiday_minutes, late_minutes, early_leave_minutes, deemed_minutes`;
+  night_holiday_minutes, late_minutes, early_leave_minutes, deemed_minutes,
+  recognized_overtime_minutes, unapproved_overtime_minutes,
+  approved_holiday_minutes, unapproved_holiday_minutes`;
 
 interface TotalsRow {
   business_date: string;
@@ -164,6 +166,10 @@ interface TotalsRow {
   late_minutes: number | null;
   early_leave_minutes: number | null;
   deemed_minutes: number | null;
+  recognized_overtime_minutes: number | null;
+  unapproved_overtime_minutes: number | null;
+  approved_holiday_minutes: number | null;
+  unapproved_holiday_minutes: number | null;
 }
 
 function toDailyTotals(row: TotalsRow): DailyTotals {
@@ -188,6 +194,10 @@ function toDailyTotals(row: TotalsRow): DailyTotals {
     lateMinutes: row.late_minutes,
     earlyLeaveMinutes: row.early_leave_minutes,
     deemedMinutes: row.deemed_minutes,
+    recognizedOvertimeMinutes: row.recognized_overtime_minutes,
+    unapprovedOvertimeMinutes: row.unapproved_overtime_minutes,
+    approvedHolidayMinutes: row.approved_holiday_minutes,
+    unapprovedHolidayMinutes: row.unapproved_holiday_minutes,
   };
 }
 
@@ -290,9 +300,12 @@ export function createMonthlyRepository(db: Queryable): MonthlyRepository {
             non_working_day_minutes, leave_minutes, absence_minutes,
             legal_inside_overtime_minutes, legal_overtime_minutes, legal_holiday_minutes,
             non_legal_holiday_minutes, night_overtime_minutes, night_holiday_minutes,
-            late_minutes, early_leave_minutes, deemed_minutes)
+            late_minutes, early_leave_minutes, deemed_minutes,
+            recognized_overtime_minutes, unapproved_overtime_minutes,
+            approved_holiday_minutes, unapproved_holiday_minutes)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                 $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+                 $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+                 $29, $30, $31, $32)
          RETURNING sequence, closed_at, closed_by_user_id, period, counted_days,
                    worked_days, leave_days, ${TOTALS_COLUMNS}`,
         [
@@ -324,6 +337,10 @@ export function createMonthlyRepository(db: Queryable): MonthlyRepository {
           summary.lateMinutes,
           summary.earlyLeaveMinutes,
           summary.deemedMinutes,
+          summary.recognizedOvertimeMinutes,
+          summary.unapprovedOvertimeMinutes,
+          summary.approvedHolidayMinutes,
+          summary.unapprovedHolidayMinutes,
         ],
       );
       const row = rows[0];

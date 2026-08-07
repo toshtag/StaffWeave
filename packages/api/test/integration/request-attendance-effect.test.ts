@@ -417,6 +417,68 @@ describe('打刻修正の反映', () => {
   });
 });
 
+describe('月次と給与への引き渡し', () => {
+  it('認定した分と超えた分が、月次の合計にも出る', async () => {
+    const instance = app();
+    await scheduleDay(instance);
+    await punch(instance, 'clock_in', IN_AT, 'effect-month-in');
+    await punch(instance, 'clock_out', OUT_AT, 'effect-month-out');
+
+    const type = await overtimeType(instance);
+    const request = await submit(instance, type, { overtimeLimitMinutes: 21 * 60 });
+    await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 });
+
+    const response = await instance.request(
+      `/api/monthly-summaries?period=${PERIOD}&employeeId=${fixture.employeeId}`,
+      authorized(fixture.adminCookie),
+    );
+    const { summaries } = (await response.json()) as {
+      summaries: {
+        recognizedOvertimeMinutes: number | null;
+        unapprovedOvertimeMinutes: number | null;
+      }[];
+    };
+
+    expect(summaries[0]?.recognizedOvertimeMinutes).toBe(3 * 60);
+    expect(summaries[0]?.unapprovedOvertimeMinutes).toBe(60);
+  });
+
+  it('給与の CSV は、認定した分を後ろの列として出す', async () => {
+    const instance = app();
+    await scheduleDay(instance);
+    await punch(instance, 'clock_in', IN_AT, 'effect-csv-in');
+    await punch(instance, 'clock_out', OUT_AT, 'effect-csv-out');
+
+    const type = await overtimeType(instance);
+    const request = await submit(instance, type, { overtimeLimitMinutes: 21 * 60 });
+    await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 });
+
+    const response = await instance.request(
+      `/api/exports/payroll.csv?period=${PERIOD}`,
+      authorized(fixture.adminCookie),
+    );
+    const csv = await response.text();
+    const [header, row] = csv.trim().split('\n');
+    const columns = (line: string): string[] =>
+      line.split(',').map((value) => value.replaceAll('"', ''));
+
+    // 既にある列の並びは変えない。後ろへ足す。
+    expect(columns(header ?? '').slice(0, 4)).toEqual([
+      'period',
+      'employee_number',
+      'display_name',
+      'working_days',
+    ]);
+    expect(columns(header ?? '').slice(-4)).toEqual([
+      'recognized_overtime_minutes',
+      'unapproved_overtime_minutes',
+      'approved_holiday_minutes',
+      'unapproved_holiday_minutes',
+    ]);
+    expect(columns(row ?? '').slice(-4)).toEqual(['180', '60', '0', '0']);
+  });
+});
+
 describe('締め済みの期間', () => {
   /** 締めるには、その日の日次が承認済みになっている必要がある。 */
   async function approveDay(instance: TestApp): Promise<void> {

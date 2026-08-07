@@ -31,6 +31,10 @@ export interface DailyTotals {
   lateMinutes: number | null;
   earlyLeaveMinutes: number | null;
   deemedMinutes: number | null;
+  recognizedOvertimeMinutes: number | null;
+  unapprovedOvertimeMinutes: number | null;
+  approvedHolidayMinutes: number | null;
+  unapprovedHolidayMinutes: number | null;
 }
 
 export interface MonthlySummary {
@@ -55,6 +59,11 @@ export interface MonthlySummary {
   lateMinutes: number | null;
   earlyLeaveMinutes: number | null;
   deemedMinutes: number | null;
+  /** 承認しきった申請から来る、認定した分と認定の外に出た分。 */
+  recognizedOvertimeMinutes: number | null;
+  unapprovedOvertimeMinutes: number | null;
+  approvedHolidayMinutes: number | null;
+  unapprovedHolidayMinutes: number | null;
   /** 実労働が 1 分でもあった日の数。 */
   workedDays: number;
   /** 休暇として数えた日の数。 */
@@ -86,6 +95,10 @@ const NULLABLE_KEYS = [
   'lateMinutes',
   'earlyLeaveMinutes',
   'deemedMinutes',
+  'recognizedOvertimeMinutes',
+  'unapprovedOvertimeMinutes',
+  'approvedHolidayMinutes',
+  'unapprovedHolidayMinutes',
 ] as const;
 
 /** その月の 1 日。 */
@@ -120,6 +133,10 @@ export function summarizeMonth(period: string, days: readonly DailyTotals[]): Mo
     lateMinutes: 0,
     earlyLeaveMinutes: 0,
     deemedMinutes: 0,
+    recognizedOvertimeMinutes: 0,
+    unapprovedOvertimeMinutes: 0,
+    approvedHolidayMinutes: 0,
+    unapprovedHolidayMinutes: 0,
     workedDays: 0,
     leaveDays: 0,
     countedDays: days.length,
