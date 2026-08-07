@@ -322,10 +322,12 @@ echo 'ワークフロー'
 #   ci.yml       どの変更でも走らせる静的検証
 #   runtime.yml  データベース・ブラウザ・Docker を動かす検証
 #   sbom.yml     配布物の構成一覧
+#   release.yml  tag から正式版を配る
 ALWAYS_WORKFLOW='.github/workflows/ci.yml'
 RUNTIME_WORKFLOW='.github/workflows/runtime.yml'
 SBOM_WORKFLOW='.github/workflows/sbom.yml'
-for required in "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW"; do
+RELEASE_WORKFLOW='.github/workflows/release.yml'
+for required in "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW" "$RELEASE_WORKFLOW"; do
   if [ -f "$required" ]; then
     pass "$required があります"
   else
@@ -333,15 +335,20 @@ for required in "$ALWAYS_WORKFLOW" "$RUNTIME_WORKFLOW" "$SBOM_WORKFLOW"; do
   fi
 done
 
-# 4 つ目が増えると、この節の検査はその中身を何も見ないまま通る。
-# 分けた意味を保つため、置く場所は 3 つに固定する。
+# 名前を並べていないワークフローが増えると、この節の検査はその中身を
+# 何も見ないまま通る。分けた意味を保つため、置く場所は上の 4 つに固定する。
+#
+# release.yml を足したのは、tag から配る経路が要るため。
+# 走る条件（tag と手動）も、Release を作る手順も CI では確かめられないので、
+# 取り決めそのものは test/release-assets.test.ts が固定している。
 EXTRA=$(git ls-files '.github/workflows/*' \
-  | grep -vxF "$ALWAYS_WORKFLOW" | grep -vxF "$RUNTIME_WORKFLOW" | grep -vxF "$SBOM_WORKFLOW" || true)
+  | grep -vxF "$ALWAYS_WORKFLOW" | grep -vxF "$RUNTIME_WORKFLOW" \
+  | grep -vxF "$SBOM_WORKFLOW" | grep -vxF "$RELEASE_WORKFLOW" || true)
 if [ -n "$EXTRA" ]; then
   printf '  %s\n' "$(printf '%s ' $EXTRA)"
-  fail 'ワークフローが 3 つより多くあります'
+  fail '名前を並べていないワークフローがあります'
 else
-  pass 'ワークフローは 3 つだけです'
+  pass 'ワークフローは決めた 4 つだけです'
 fi
 
 # Secret と、PR が書き換えられるコードを、同じ job へ置かない。

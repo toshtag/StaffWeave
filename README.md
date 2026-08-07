@@ -59,6 +59,24 @@ pnpm dev                                            # API 8787 / 画面 5173
 Docker だけで動かす場合や、初期パスワードを自分で決める場合は
 [getting-started.md](docs/guide/getting-started.md) を見てください。
 
+## 配るもの
+
+版は `package.json` の `version` が正本です。`v<版>` の tag を押すと、
+端末の配布物・構成一覧・checksum を組み、対応を確かめてから GitHub Release を作ります。
+
+手元で同じものを組むには、次を実行します。
+
+```sh
+pnpm release:assets     # 配るものを組む
+pnpm release:verify     # 配るものと元の対応を確かめる
+```
+
+署名はしません。受け取った側は `SHA256SUMS.txt` と、
+構成一覧に書かれた commit で中身を確かめます。
+
+版ごとの変更は [CHANGELOG.md](CHANGELOG.md) にあります。
+手順は [release/checklist.md](docs/release/checklist.md) の 6 章です。
+
 ## ドキュメント
 
 [docs/](docs/README.md) にあります。
