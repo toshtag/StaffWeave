@@ -55,7 +55,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 版管理された勤務区分 | implemented | `op:createWorkCategory` `op:listWorkCategories` `migration:0026_create_work_categories_and_rule_versions.sql` | 同じ code で期間を分けて改定する。期間の重なりを DB で排他する |
 | 複数の固定休憩 | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` `migration:0026_create_work_categories_and_rule_versions.sql` | 実績と重なる分は二度引かない。勤務予定へ割り当てた勤務区分から効く |
 | 自動休憩（労働時間の閾値で足す） | implemented | `test:packages/domain/src/attendance/breaks.test.ts` `test:packages/api/test/integration/work-category-calculation.test.ts` | 閾値と追加分数を持つ。段階が複数でも足し合わせない |
-| みなし労働時間 | partial | `op:createWorkCategory` `test:packages/api/test/integration/work-category-calculation.test.ts` | 勤務区分から日次の計算へ効き、実績とは別の値として残る。労働形態の割当からは計算へ届かない |
+| みなし労働時間 | implemented | `op:createWorkCategory` `op:assignLaborSystem` `test:packages/api/test/integration/work-category-calculation.test.ts` `test:packages/api/test/integration/labor-system-calculation.test.ts` | 勤務区分と労働形態の両方から日次の計算へ効く。裁量の割当がある日は労働形態を正本にする。実績とは別の値として残す |
 | シフト属性と表示色 | implemented | `op:createWorkCategory` `ui:packages/web/src/admin/sections/WorkCategorySettings.tsx` | 勤務区分が持ち、設定の画面から入れられる |
 | マスターの改定・無効化・コピー | partial | `op:createWorkCategory` `op:updateLeaveType` `op:updateRequestType` | 勤務区分は版を重ねて改定でき、休暇種別と申請種別は無効化できる。勤務周期は作成と一覧のまま |
 
@@ -82,9 +82,9 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | 一般勤務（固定・時短・シフト） | implemented | `op:createWorkCategory` `op:assignLaborSystem` | 勤務区分と労働形態の割当で表す |
-| フレックスタイム制 | implemented | `op:assignLaborSystem` `op:listPeriodSummaries` `migration:0027_create_labor_system_assignments.sql` `test:packages/api/test/integration/period-summaries.test.ts` | 清算期間・総枠・コアタイムを期間つきで持つ。清算期間の集計と総枠との差を出す |
-| 裁量労働制 | implemented | `op:assignLaborSystem` | みなし分数を割当が持ち、実績とは別に出す |
-| 変形労働時間制 | implemented | `op:assignLaborSystem` `op:listPeriodSummaries` `test:packages/api/test/integration/period-summaries.test.ts` | 対象期間と総枠を期間つきで持つ。対象期間の集計と総枠との差を出す |
+| フレックスタイム制 | implemented | `op:assignLaborSystem` `op:listPeriodSummaries` `migration:0027_create_labor_system_assignments.sql` `test:packages/api/test/integration/period-summaries.test.ts` `test:packages/api/test/integration/labor-system-calculation.test.ts` `e2e:e2e/admin-console.spec.ts` `ui:packages/web/src/admin/sections/LaborSystemSettings.tsx` | 清算期間・総枠・決め方・コアタイム・フレキシブルタイムを設定の画面から入れられる。清算期間の集計と総枠との差を出す |
+| 裁量労働制 | implemented | `op:assignLaborSystem` `test:packages/api/test/integration/labor-system-calculation.test.ts` `e2e:e2e/admin-console.spec.ts` | みなし分数を割当が持ち、日次の計算へ効く。実績は置き換えず、別の値として残す |
+| 変形労働時間制 | implemented | `op:assignLaborSystem` `op:listPeriodSummaries` `test:packages/api/test/integration/period-summaries.test.ts` `test:packages/api/test/integration/labor-system-calculation.test.ts` `e2e:e2e/admin-console.spec.ts` | 対象期間と総枠を設定の画面から入れられる。対象期間の集計と総枠との差を出す |
 
 ## 休暇
 

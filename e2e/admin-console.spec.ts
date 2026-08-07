@@ -96,6 +96,60 @@ test.describe('設定の画面', () => {
     await expect(card(page).locator('tbody tr', { hasText: 'PAID' })).toContainText('60');
   });
 
+  /**
+   * フレックスと変形は、DB が清算期間の総枠を必須にしている。
+   * 画面がその欄を持たないと、制度は選べるのに登録だけが失敗する。
+   * 送って終わりにせず、一覧へ現れるところまで見る。
+   */
+  test('フレックスの割当を、清算期間の総枠まで入れて登録できる', async ({ page }) => {
+    await page.goto('/#/admin/work/labor-systems');
+    await expect(page.getByRole('heading', { level: 2, name: '労働形態' })).toBeVisible();
+
+    // 割当は期間が重ならない。検査どうしが同じ従業員を取り合わないよう、
+    // 対象者を分け、終了日も入れて閉じておく。
+    await card(page).getByLabel('従業員').selectOption({ label: 'E010 検証 十郎' });
+    await card(page).getByLabel('労働形態').selectOption('flex');
+    await card(page).getByLabel('適用開始日').fill('2027-01-01');
+    await card(page).getByLabel('清算期間の月数').fill('3');
+    await card(page).getByLabel('清算期間の起算日').fill('2027-01-01');
+    await card(page).getByLabel('清算期間の総枠（分）').fill('9000');
+    await card(page).getByLabel('総枠の決め方').selectOption('prescribed');
+    await card(page).getByLabel('コアタイムの開始（分）').fill('660');
+    await card(page).getByLabel('コアタイムの終了（分）').fill('900');
+    await card(page).getByRole('button', { name: '保存', exact: true }).click();
+
+    await expect(card(page).getByRole('status')).toHaveText('保存しました');
+    await expect(card(page).locator('tbody tr', { hasText: '2027-01-01' })).toContainText('9000');
+  });
+
+  test('変形の割当も、清算期間の総枠まで入れて登録できる', async ({ page }) => {
+    await page.goto('/#/admin/work/labor-systems');
+
+    await card(page).getByLabel('従業員').selectOption({ label: 'E011 検証 十一郎' });
+    await card(page).getByLabel('労働形態').selectOption('variable');
+    await card(page).getByLabel('適用開始日').fill('2027-04-01');
+    await card(page).getByLabel('清算期間の月数').fill('1');
+    await card(page).getByLabel('清算期間の起算日').fill('2027-04-01');
+    await card(page).getByLabel('清算期間の総枠（分）').fill('10440');
+    await card(page).getByRole('button', { name: '保存', exact: true }).click();
+
+    await expect(card(page).getByRole('status')).toHaveText('保存しました');
+    await expect(card(page).locator('tbody tr', { hasText: '2027-04-01' })).toContainText('10440');
+  });
+
+  test('裁量の割当は、みなし分数を入れて登録できる', async ({ page }) => {
+    await page.goto('/#/admin/work/labor-systems');
+
+    await card(page).getByLabel('従業員').selectOption({ label: 'E012 検証 十二郎' });
+    await card(page).getByLabel('労働形態').selectOption('discretionary');
+    await card(page).getByLabel('適用開始日').fill('2027-07-01');
+    await card(page).getByLabel('みなし分数').fill('420');
+    await card(page).getByRole('button', { name: '保存', exact: true }).click();
+
+    await expect(card(page).getByRole('status')).toHaveText('保存しました');
+    await expect(card(page).locator('tbody tr', { hasText: '2027-07-01' })).toContainText('420');
+  });
+
   test('月次の集計を、対象月を選んで見られる', async ({ page }) => {
     await page.goto('/#/admin/monthly/summaries');
     await expect(page.getByRole('heading', { level: 2, name: '月次の集計' })).toBeVisible();
