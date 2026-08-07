@@ -2,13 +2,14 @@ import type { CorrectAttendanceRequest, RecordAttendanceEventRequest } from '@st
 import {
   correctAttendanceRequestSchema,
   honoPath,
+  listAttendanceLocationsQuerySchema,
   operations,
   recordAttendanceEventRequestSchema,
 } from '@staffweave/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { currentAuth } from '../shared/context.js';
-import { pathParam, readBody } from '../shared/request.js';
+import { pathParam, readBody, readQuery } from '../shared/request.js';
 import type { AttendanceService } from './service.js';
 
 export interface AttendanceRouteDependencies {
@@ -17,6 +18,15 @@ export interface AttendanceRouteDependencies {
 
 export function createAttendanceRoutes(deps: AttendanceRouteDependencies): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+
+  app.get(operations.listAttendanceLocations.path, async (c) => {
+    const auth = currentAuth(c);
+    const query = readQuery<{ employeeId: string; from: string; to: string }>(
+      c,
+      listAttendanceLocationsQuerySchema,
+    );
+    return c.json({ locations: await deps.service.listLocations(auth, query) }, 200);
+  });
 
   app.post(operations.recordAttendanceEvent.path, async (c) => {
     const auth = currentAuth(c);

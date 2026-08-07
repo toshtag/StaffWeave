@@ -56,6 +56,11 @@ export interface EmployeeSummary {
   employeeNumber: string;
   displayName: string;
   organizationId: string;
+  /**
+   * 所属する組織が、打刻時の位置情報を取ると決めているか。
+   * 画面はこれを見て、求めるかどうかを決める。
+   */
+  locationCapture: boolean;
 }
 
 export interface SessionUser {
@@ -128,7 +133,13 @@ export interface Organization {
   id: string;
   code: string;
   name: string;
+  /** 打刻時の位置情報を取るか。既定は取らない。 */
+  locationCapture: boolean;
   createdAt: string;
+}
+
+export interface UpdateOrganizationRequest {
+  locationCapture: boolean;
 }
 
 export interface OrganizationList {
@@ -487,12 +498,38 @@ export interface CorrectAttendanceResponse {
   duplicate: boolean;
 }
 
+/** 打刻した場所。組織が取ると決めているときだけ保存する。 */
+export interface AttendanceLocationInput {
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+}
+
+export interface AttendanceLocationRecord {
+  eventId: string;
+  businessDate: string;
+  eventType: AttendanceEventType;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAt: string;
+}
+
+export interface AttendanceLocationList {
+  locations: AttendanceLocationRecord[];
+}
+
 export interface RecordAttendanceEventRequest {
   eventType: AttendanceEventType;
   occurredAt?: string;
   requestId: string;
   /** 画面からの打刻の入力元。端末や修正はこの経路では指定できない。 */
   source?: 'web' | 'mobile';
+  /**
+   * 打刻した場所。組織が取ると決めているときだけ保存する。
+   * 取れなくても打刻は残る。位置情報を理由に打刻を失わせない。
+   */
+  location?: AttendanceLocationInput;
 }
 
 export interface RecordAttendanceEventResponse {

@@ -71,6 +71,42 @@ export interface AttendanceRepository {
     workspaceId: string,
     input: InsertAttendanceEventInput,
   ): Promise<AttendanceEventRecord>;
+
+  /** その従業員の組織が、打刻時の位置情報を取ると決めているか。既定は取らない。 */
+  capturesLocation(workspaceId: string, employeeId: string): Promise<boolean>;
+
+  /**
+   * 打刻へ位置情報を添える。
+   *
+   * 打刻そのものとは別の行として持つ。同じ行に持つと、位置情報を消すために
+   * 打刻の行へ触れることになり、追記のみという取り決めと衝突する。
+   */
+  attachLocation(workspaceId: string, input: AttendanceLocationInput): Promise<void>;
+
+  /** 期間の位置情報。閲覧の権限は呼ぶ側が確かめる。 */
+  listLocations(
+    workspaceId: string,
+    employeeId: string,
+    range: { from: BusinessDate; to: BusinessDate },
+  ): Promise<AttendanceLocationRecordRow[]>;
+}
+
+export interface AttendanceLocationInput {
+  eventId: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAt: Date;
+}
+
+export interface AttendanceLocationRecordRow {
+  eventId: string;
+  businessDate: string;
+  eventType: AttendanceEventType;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  capturedAt: string;
 }
 
 interface AttendanceEventRow {
@@ -206,6 +242,69 @@ export function createAttendanceRepository(db: Queryable): AttendanceRepository 
       const row = rows[0];
       if (!row) throw new Error('打刻を記録できませんでした');
       return toEvent(row);
+    },
+
+    async capturesLocation(workspaceId, employeeId) {
+      const rows = await db.query<{ location_capture: boolean }>(
+        `SELECT organizations.location_capture
+           FROM employees
+           JOIN organizations
+             ON organizations.id = employees.organization_id
+            AND organizations.workspace_id = employees.workspace_id
+          WHERE employees.workspace_id = $1 AND employees.id = $2`,
+        [workspaceId, employeeId],
+      );
+      return rows[0]?.location_capture ?? false;
+    },
+
+    async attachLocation(workspaceId, input) {
+      await db.query(
+        `INSERT INTO attendance_event_locations
+           (event_id, workspace_id, latitude, longitude, accuracy_meters, captured_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (event_id) DO NOTHING`,
+        [
+          input.eventId,
+          workspaceId,
+          input.latitude,
+          input.longitude,
+          input.accuracyMeters,
+          input.capturedAt,
+        ],
+      );
+    },
+
+    async listLocations(workspaceId, employeeId, range) {
+      const rows = await db.query<{
+        event_id: string;
+        business_date: string;
+        event_type: AttendanceEventType;
+        latitude: string;
+        longitude: string;
+        accuracy_meters: number;
+        captured_at: Date;
+      }>(
+        `SELECT locations.event_id, events.business_date, events.event_type,
+                locations.latitude, locations.longitude, locations.accuracy_meters,
+                locations.captured_at
+           FROM attendance_event_locations AS locations
+           JOIN attendance_events AS events
+             ON events.id = locations.event_id AND events.workspace_id = locations.workspace_id
+          WHERE locations.workspace_id = $1 AND events.employee_id = $2
+            AND events.business_date BETWEEN $3::date AND $4::date
+          ORDER BY events.business_date, locations.captured_at`,
+        [workspaceId, employeeId, range.from, range.to],
+      );
+      return rows.map((row) => ({
+        eventId: row.event_id,
+        businessDate: row.business_date,
+        eventType: row.event_type,
+        // numeric は文字列で返る。数として扱う前に、ここで一度だけ直す。
+        latitude: Number(row.latitude),
+        longitude: Number(row.longitude),
+        accuracyMeters: row.accuracy_meters,
+        capturedAt: row.captured_at.toISOString(),
+      }));
     },
   };
 }

@@ -38,6 +38,8 @@ export interface EmployeeLinkRecord {
   employeeNumber: string;
   displayName: string;
   organizationId: string;
+  /** 所属する組織が、打刻時の位置情報を取ると決めているか。 */
+  locationCapture: boolean;
 }
 
 export interface SessionRecord {
@@ -194,6 +196,7 @@ interface SessionContextRow extends SessionRow {
   employee_number: string | null;
   employee_display_name: string | null;
   organization_id: string | null;
+  location_capture: boolean;
   roles: Role[];
   organization_ids: string[];
 }
@@ -228,6 +231,7 @@ function toSessionContext(row: SessionContextRow): SessionContextRecord {
             employeeNumber: row.employee_number,
             displayName: row.employee_display_name,
             organizationId: row.organization_id,
+            locationCapture: row.location_capture,
           },
     organizationScopes: row.organization_ids,
   };
@@ -314,10 +318,16 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
         employee_number: string;
         display_name: string;
         organization_id: string;
+        location_capture: boolean;
       }>(
-        `SELECT id, employee_number, display_name, organization_id
+        `SELECT employees.id, employees.employee_number, employees.display_name,
+                employees.organization_id,
+                coalesce(organizations.location_capture, false) AS location_capture
            FROM employees
-          WHERE workspace_id = $1 AND user_id = $2`,
+           LEFT JOIN organizations
+             ON organizations.id = employees.organization_id
+            AND organizations.workspace_id = employees.workspace_id
+          WHERE employees.workspace_id = $1 AND employees.user_id = $2`,
         [workspaceId, userId],
       );
       const row = rows[0];
@@ -327,6 +337,7 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
         employeeNumber: row.employee_number,
         displayName: row.display_name,
         organizationId: row.organization_id,
+        locationCapture: row.location_capture,
       };
     },
 
@@ -417,6 +428,7 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
                 employees.employee_number,
                 employees.display_name AS employee_display_name,
                 employees.organization_id,
+                coalesce(organizations.location_capture, false) AS location_capture,
                 coalesce(granted.roles, '{}') AS roles,
                 coalesce(scoped.organization_ids, '{}') AS organization_ids
            FROM sessions
@@ -427,6 +439,9 @@ export function createIdentityRepository(db: Queryable): IdentityRepository {
            LEFT JOIN employees
              ON employees.user_id = users.id
             AND employees.workspace_id = sessions.workspace_id
+           LEFT JOIN organizations
+             ON organizations.id = employees.organization_id
+            AND organizations.workspace_id = employees.workspace_id
            -- 並び順は分けて引いていたときと同じにする。応答へそのまま出る。
            LEFT JOIN LATERAL (
              SELECT array_agg(user_roles.role ORDER BY user_roles.role) AS roles

@@ -24,8 +24,10 @@ import {
   userScopeSchema,
 } from './schemas/assignment.js';
 import {
+  attendanceLocationListSchema,
   correctAttendanceRequestSchema,
   correctAttendanceResponseSchema,
+  listAttendanceLocationsQuerySchema,
   recordAttendanceEventRequestSchema,
   recordAttendanceEventResponseSchema,
   workDaySchema,
@@ -151,6 +153,7 @@ import {
   organizationSchema,
   siteListSchema,
   siteSchema,
+  updateOrganizationRequestSchema,
 } from './schemas/organization.js';
 import {
   assignWorkCycleRequestSchema,
@@ -1966,6 +1969,38 @@ export const operations = {
       forbidden,
       conflict,
       { status: 404, description: '申請が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  updateOrganization: {
+    operationId: 'updateOrganization',
+    method: 'patch',
+    path: '/organizations/{organizationId}',
+    summary: '組織の設定を直す（打刻時の位置情報を取るかどうか）',
+    tags: ['organization'],
+    security: 'session',
+    pathParameters: [{ name: 'organizationId', description: '組織の識別子', schema: uuidSchema }],
+    requestBody: updateOrganizationRequestSchema,
+    responses: [
+      { status: 200, description: '直した組織', schema: organizationSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+      { status: 404, description: '組織が見つからない', schema: errorResponseSchema },
+    ],
+  },
+  listAttendanceLocations: {
+    operationId: 'listAttendanceLocations',
+    method: 'get',
+    path: '/attendance/locations',
+    summary: '打刻した場所を一覧する（本人と、閲覧範囲に入っている相手だけ）',
+    tags: ['attendance'],
+    security: 'session',
+    query: listAttendanceLocationsQuerySchema,
+    responses: [
+      { status: 200, description: '打刻した場所', schema: attendanceLocationListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
     ],
   },
   listOvertimeWarnings: {

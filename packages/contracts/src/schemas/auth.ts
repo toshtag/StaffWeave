@@ -31,8 +31,12 @@ export const employeeSummarySchema = objectSchema({
     employeeNumber: { type: 'string' },
     displayName: nameSchema,
     organizationId: uuidSchema,
+    locationCapture: {
+      type: 'boolean',
+      description: '所属する組織が、打刻時の位置情報を取ると決めているか',
+    },
   },
-  required: ['id', 'employeeNumber', 'displayName', 'organizationId'],
+  required: ['id', 'employeeNumber', 'displayName', 'organizationId', 'locationCapture'],
 });
 
 export const sessionUserSchema = objectSchema({

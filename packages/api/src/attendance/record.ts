@@ -185,6 +185,24 @@ export async function recordAttendanceEvent(
     throw error;
   }
 
+  // 位置情報は、組織が取ると決めているときだけ残す。
+  // 決めていない組織へ送られてきた値は、受け取っても保存しない。
+  //
+  // 位置情報を残せなくても打刻は残る。ここで失敗させると、
+  // 測位できない場所に居る人が打刻できなくなる。
+  if (
+    input.location !== undefined &&
+    (await attendance.capturesLocation(workspaceId, employeeId))
+  ) {
+    await attendance.attachLocation(workspaceId, {
+      eventId: event.id,
+      latitude: input.location.latitude,
+      longitude: input.location.longitude,
+      accuracyMeters: input.location.accuracyMeters,
+      capturedAt: occurredAt,
+    });
+  }
+
   await audit.record(workspaceId, {
     actorKind: actor.actorKind,
     actorUserId: actor.userId,

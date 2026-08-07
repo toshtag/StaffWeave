@@ -7,6 +7,7 @@ import type {
   Employee,
   Organization,
   Site,
+  UpdateOrganizationRequest,
 } from '@staffweave/contracts';
 import type { Role } from '@staffweave/domain';
 import {
@@ -34,6 +35,11 @@ export interface OrganizationServiceDependencies {
 export interface OrganizationService {
   listOrganizations(workspaceId: string): Promise<Organization[]>;
   createOrganization(workspaceId: string, input: CreateOrganizationRequest): Promise<Organization>;
+  updateOrganization(
+    workspaceId: string,
+    organizationId: string,
+    input: UpdateOrganizationRequest,
+  ): Promise<Organization>;
   listSites(workspaceId: string): Promise<Site[]>;
   createSite(workspaceId: string, input: CreateSiteRequest): Promise<Site>;
   listDepartments(workspaceId: string): Promise<Department[]>;
@@ -59,6 +65,12 @@ export function createOrganizationService(
 
   return {
     listOrganizations: (workspaceId) => repository.listOrganizations(workspaceId),
+
+    async updateOrganization(workspaceId, organizationId, input) {
+      const updated = await repository.updateOrganization(workspaceId, organizationId, input);
+      if (!updated) throw notFound('組織');
+      return updated;
+    },
 
     async createOrganization(workspaceId, input) {
       const code = requireValidCode('code', input.code);

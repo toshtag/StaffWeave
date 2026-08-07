@@ -3,18 +3,21 @@ import type {
   CreateEmployeeRequest,
   CreateOrganizationRequest,
   CreateSiteRequest,
+  UpdateOrganizationRequest,
 } from '@staffweave/contracts';
 import {
   createDepartmentRequestSchema,
   createEmployeeRequestSchema,
   createOrganizationRequestSchema,
   createSiteRequestSchema,
+  honoPath,
   operations,
+  updateOrganizationRequestSchema,
 } from '@staffweave/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
 import { requirePermission } from '../shared/context.js';
-import { readBody } from '../shared/request.js';
+import { pathParam, readBody } from '../shared/request.js';
 import type { OrganizationService } from './service.js';
 
 export interface OrganizationRouteDependencies {
@@ -34,6 +37,19 @@ export function createOrganizationRoutes(deps: OrganizationRouteDependencies): H
     const auth = requirePermission(c, 'organization.manage');
     const body = await readBody<CreateOrganizationRequest>(c, createOrganizationRequestSchema);
     return c.json(await service.createOrganization(auth.workspace.id, body), 201);
+  });
+
+  app.patch(honoPath(operations.updateOrganization), async (c) => {
+    const auth = requirePermission(c, 'organization.manage');
+    const body = await readBody<UpdateOrganizationRequest>(c, updateOrganizationRequestSchema);
+    return c.json(
+      await deps.service.updateOrganization(
+        auth.workspace.id,
+        pathParam(c, 'organizationId'),
+        body,
+      ),
+      200,
+    );
   });
 
   app.get(operations.listSites.path, async (c) => {
