@@ -38,6 +38,7 @@ import {
   createWebhookNetworkPolicy,
   createWebhookTargetValidator,
 } from './integration/webhook-network-policy.js';
+import { createLeaveGrantService } from './leave/grant-service.js';
 import { createLeaveRepository } from './leave/repository.js';
 import { createLeaveRoutes } from './leave/routes.js';
 import { createLeaveService } from './leave/service.js';
@@ -80,7 +81,10 @@ import { createOriginCheck } from './shared/security/origin.js';
 import { createSystemRoutes } from './system/routes.js';
 
 /** 上限を大きく取る経路。API は `/api` の下に置くため、要求から見える形で持つ。 */
-const BULK_REQUEST_PATHS = [`/api${operations.importEmployeesCsv.path}`] as const;
+const BULK_REQUEST_PATHS = [
+  `/api${operations.importEmployeesCsv.path}`,
+  `/api${operations.importLeaveGrantsCsv.path}`,
+] as const;
 
 export interface AppDependencies {
   db: Database;
@@ -267,6 +271,13 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     transaction: withTransaction,
   });
 
+  const leaveGrantService = createLeaveGrantService({
+    repository: createLeaveRepository(deps.db),
+    visibility,
+    now,
+    transaction: withTransaction,
+  });
+
   const leaveService = createLeaveService({
     repository: createLeaveRepository(deps.db),
     visibility,
@@ -343,7 +354,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
   api.route('/', createScheduleRoutes({ service: scheduleService }));
   api.route('/', createApprovalRoutes({ service: approvalService }));
   api.route('/', createMonthlyRoutes({ service: monthlyService, periods: periodService }));
-  api.route('/', createLeaveRoutes({ service: leaveService }));
+  api.route('/', createLeaveRoutes({ service: leaveService, grants: leaveGrantService }));
   api.route('/', createRequestRoutes({ service: requestService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));
   // 指紋鍵が無い構成では、カードの経路を受け付けない。

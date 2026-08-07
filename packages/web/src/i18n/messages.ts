@@ -341,6 +341,31 @@ export interface AdminMessages {
   editingRequestType: string;
   stopEditing: string;
   moduleMonthly: string;
+  sectionLeaveGrantRules: string;
+  leaveGrantRulesHint: string;
+  noLeaveGrantRules: string;
+  grantServiceMonths: string;
+  grantMinutes: string;
+  grantBasis: string;
+  grantBasisLabel: { fixed_date: string; hire_anniversary: string };
+  grantEffectiveOn: string;
+  runBulkGrant: string;
+  bulkGrantOutcome: (granted: number, skipped: number) => string;
+  sectionLeaveRegister: string;
+  leaveRegisterHint: string;
+  noLeaveRegister: string;
+  registerOpening: string;
+  registerGranted: string;
+  registerConsumed: string;
+  registerExpired: string;
+  registerAdjusted: string;
+  registerClosing: string;
+  sectionLeaveExpirations: string;
+  leaveExpirationsHint: string;
+  noLeaveExpirations: string;
+  remainingMinutes: string;
+  asOf: string;
+  through: string;
   sectionMonthlySummaries: string;
   sectionPeriodSummaries: string;
   periodSummariesHint: string;
@@ -766,6 +791,33 @@ const ja: Messages = {
     editingRequestType: 'この申請種別を直しています。',
     stopEditing: 'やめて新しく作る',
     moduleMonthly: '月次',
+    sectionLeaveGrantRules: '付与規則と一括付与',
+    leaveGrantRulesHint:
+      '勤続の段ごとに付与する分数を決めます。段を置かないかぎり、自動でも一斉でも 1 分も付与しません。',
+    noLeaveGrantRules: '段がありません。勤続と分数を決めてください。',
+    grantServiceMonths: '勤続（月）',
+    grantMinutes: '付与（分）',
+    grantBasis: '付与の基準',
+    grantBasisLabel: { fixed_date: '一斉付与', hire_anniversary: '入社日基準' },
+    grantEffectiveOn: '付与日',
+    runBulkGrant: 'まとめて付与する',
+    bulkGrantOutcome: (granted: number, skipped: number) =>
+      `${granted} 名へ付与し、${skipped} 名は付与しませんでした。`,
+    sectionLeaveRegister: '休暇管理簿',
+    leaveRegisterHint: '期首・付与・消化・失効・期末を、台帳から組み立てて出します。',
+    noLeaveRegister: 'この期間に記録がありません。',
+    registerOpening: '期首（分）',
+    registerGranted: '付与（分）',
+    registerConsumed: '消化（分）',
+    registerExpired: '失効（分）',
+    registerAdjusted: '手当て（分）',
+    registerClosing: '期末（分）',
+    sectionLeaveExpirations: '失効の予定',
+    leaveExpirationsHint: '指定した日までに失効する付与と、その時点の残りを出します。',
+    noLeaveExpirations: 'この範囲に失効する付与はありません。',
+    remainingMinutes: '残り（分）',
+    asOf: '基準日',
+    through: 'この日まで',
     sectionMonthlySummaries: '月次の集計',
     sectionPeriodSummaries: '期間の集計',
     periodSummariesHint:
@@ -1208,6 +1260,33 @@ const en: Messages = {
     editingRequestType: 'Editing this request type.',
     stopEditing: 'Stop and add a new one',
     moduleMonthly: 'Monthly',
+    sectionLeaveGrantRules: 'Grant rules and bulk grant',
+    leaveGrantRulesHint:
+      'Minutes granted at each length of service. Without a rule, neither the automatic nor the bulk grant gives a single minute.',
+    noLeaveGrantRules: 'No rules yet. Decide the length of service and the minutes.',
+    grantServiceMonths: 'Service (months)',
+    grantMinutes: 'Granted (minutes)',
+    grantBasis: 'Grant basis',
+    grantBasisLabel: { fixed_date: 'Fixed date', hire_anniversary: 'Hire anniversary' },
+    grantEffectiveOn: 'Effective on',
+    runBulkGrant: 'Grant in bulk',
+    bulkGrantOutcome: (granted: number, skipped: number) =>
+      `Granted to ${granted}; skipped ${skipped}.`,
+    sectionLeaveRegister: 'Leave register',
+    leaveRegisterHint: 'Opening, granted, used, expired and closing, rebuilt from the ledger.',
+    noLeaveRegister: 'No records in this range.',
+    registerOpening: 'Opening (minutes)',
+    registerGranted: 'Granted (minutes)',
+    registerConsumed: 'Used (minutes)',
+    registerExpired: 'Expired (minutes)',
+    registerAdjusted: 'Adjusted (minutes)',
+    registerClosing: 'Closing (minutes)',
+    sectionLeaveExpirations: 'Upcoming expirations',
+    leaveExpirationsHint: 'Grants expiring by the chosen date, with what is left of them.',
+    noLeaveExpirations: 'Nothing expires in this range.',
+    remainingMinutes: 'Remaining (minutes)',
+    asOf: 'As of',
+    through: 'Through',
     sectionMonthlySummaries: 'Monthly totals',
     sectionPeriodSummaries: 'Period totals',
     periodSummariesHint:

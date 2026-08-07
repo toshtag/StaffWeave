@@ -5,7 +5,12 @@
  * 足し忘れても気付けない。台帳から組み立てれば、合わないときに原因を辿れる。
  */
 import { describe, expect, it } from 'vitest';
-import { buildLeaveBalance, type LeaveLedgerEntry, validateLeaveConsumption } from './ledger.js';
+import {
+  buildLeaveBalance,
+  type LeaveLedgerEntry,
+  summarizeLeaveRegister,
+  validateLeaveConsumption,
+} from './ledger.js';
 
 const HOUR = 60;
 const DAY = 8 * HOUR;
@@ -268,5 +273,78 @@ describe('消化の検査', () => {
 
   it('単位が決まっていなければ、倍数は見ない', () => {
     expect(check({ minutes: 3 * HOUR })).toEqual([]);
+  });
+});
+
+/** 付与の行。管理簿の確認で使う。 */
+function grant(
+  id: string,
+  minutes: number,
+  effectiveOn: string,
+  expiresOn: string | null,
+): LeaveLedgerEntry {
+  return { id, entryType: 'grant', minutes, effectiveOn, expiresOn, reversesEntryId: null };
+}
+
+/** 消化の行。分数は正で渡し、台帳へは負として積む。 */
+function consume(id: string, minutes: number, effectiveOn: string): LeaveLedgerEntry {
+  return {
+    id,
+    entryType: 'consume',
+    minutes: -minutes,
+    effectiveOn,
+    expiresOn: null,
+    reversesEntryId: null,
+  };
+}
+
+describe('休暇管理簿', () => {
+  it('期首・付与・消化・失効・期末を、台帳から組み立てる', () => {
+    const entries: LeaveLedgerEntry[] = [
+      grant('g1', 10 * 480, '2025-04-01', '2027-03-31'),
+      consume('c0', 2 * 480, '2025-06-01'),
+      grant('g2', 11 * 480, '2026-04-01', '2028-03-31'),
+      consume('c1', 3 * 480, '2026-05-10'),
+    ];
+
+    const row = summarizeLeaveRegister(entries, '2026-04-01', '2027-03-31');
+
+    // 期首は 2026-03-31 時点。10 日付与して 2 日消化した残り。
+    expect(row.openingMinutes).toBe(8 * 480);
+    expect(row.grantedMinutes).toBe(11 * 480);
+    expect(row.consumedMinutes).toBe(3 * 480);
+    expect(row.closingMinutes).toBe(16 * 480);
+  });
+
+  it('期限切れで落ちた分を、失効として数える', () => {
+    const entries: LeaveLedgerEntry[] = [
+      grant('g1', 5 * 480, '2025-04-01', '2026-03-31'),
+      grant('g2', 5 * 480, '2026-04-01', '2027-03-31'),
+    ];
+
+    // 期首（2026-03-31）ではまだ失効していない。期末までに g1 が落ちる。
+    const row = summarizeLeaveRegister(entries, '2026-04-01', '2026-12-31');
+
+    expect(row.expiredMinutes).toBe(5 * 480);
+    expect(row.closingMinutes).toBe(5 * 480);
+  });
+
+  it('取り消した記録は、どの欄にも入らない', () => {
+    const entries: LeaveLedgerEntry[] = [
+      grant('g1', 5 * 480, '2026-04-01', null),
+      {
+        id: 'r1',
+        entryType: 'reverse',
+        minutes: -5 * 480,
+        effectiveOn: '2026-04-02',
+        expiresOn: null,
+        reversesEntryId: 'g1',
+      },
+    ];
+
+    const row = summarizeLeaveRegister(entries, '2026-04-01', '2026-04-30');
+
+    expect(row.grantedMinutes).toBe(0);
+    expect(row.closingMinutes).toBe(0);
   });
 });

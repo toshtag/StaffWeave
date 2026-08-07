@@ -1,3 +1,4 @@
+import { LEAVE_GRANT_BASES } from '@staffweave/domain';
 import { arraySchema, objectSchema } from '../json-schema.js';
 import { timestampSchema, uuidSchema } from './common.js';
 
@@ -151,6 +152,10 @@ export const updateLeaveTypeRequestSchema = objectSchema({
       oneOf: [{ type: 'integer', minimum: 1, maximum: 240 }, { type: 'null' }],
       description: '付与から失効までの月数。空なら失効しない',
     },
+    grantBasis: {
+      oneOf: [{ type: 'string', enum: [...LEAVE_GRANT_BASES] }, { type: 'null' }],
+      description: '自動付与の基準。空なら自動付与しない',
+    },
     active: { type: 'boolean' },
   },
   required: [],
@@ -165,6 +170,9 @@ export const leaveTypeSettingsSchema = objectSchema({
     unitMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
     dayMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
     expiresAfterMonths: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    grantBasis: {
+      oneOf: [{ type: 'string', enum: [...LEAVE_GRANT_BASES] }, { type: 'null' }],
+    },
     active: { type: 'boolean' },
     createdAt: timestampSchema,
   },
@@ -176,6 +184,7 @@ export const leaveTypeSettingsSchema = objectSchema({
     'unitMinutes',
     'dayMinutes',
     'expiresAfterMonths',
+    'grantBasis',
     'active',
     'createdAt',
   ],
@@ -184,4 +193,163 @@ export const leaveTypeSettingsSchema = objectSchema({
 export const leaveTypeSettingsListSchema = objectSchema({
   properties: { leaveTypes: arraySchema(leaveTypeSettingsSchema) },
   required: ['leaveTypes'],
+});
+
+/**
+ * 付与規則と一括付与。
+ *
+ * 何か月の勤続で何分を付与するかは事業者が決める。
+ * 製品は法定の日数を既定値として持たない。規則を置かないかぎり 1 分も付与しない。
+ */
+export const leaveGrantRuleSchema = objectSchema({
+  description: '勤続の段ごとの付与分数',
+  properties: {
+    id: uuidSchema,
+    leaveTypeId: uuidSchema,
+    serviceMonths: { type: 'integer', description: 'この勤続月数に達したら付与する' },
+    minutes: { type: 'integer' },
+    createdAt: timestampSchema,
+  },
+  required: ['id', 'leaveTypeId', 'serviceMonths', 'minutes', 'createdAt'],
+});
+
+export const leaveGrantRuleListSchema = objectSchema({
+  properties: { leaveGrantRules: arraySchema(leaveGrantRuleSchema) },
+  required: ['leaveGrantRules'],
+});
+
+export const createLeaveGrantRuleRequestSchema = objectSchema({
+  properties: {
+    leaveTypeId: uuidSchema,
+    serviceMonths: { type: 'integer', minimum: 0, maximum: 600 },
+    minutes: { type: 'integer', minimum: 1, maximum: 525600 },
+  },
+  required: ['leaveTypeId', 'serviceMonths', 'minutes'],
+});
+
+export const listLeaveGrantRulesQuerySchema = objectSchema({
+  properties: { leaveTypeId: uuidSchema },
+  required: [],
+});
+
+export const grantLeaveInBulkRequestSchema = objectSchema({
+  description: 'まとめて付与する。付与する分数は規則から決まり、規則が無ければ 1 分も付与しない',
+  properties: {
+    leaveTypeId: uuidSchema,
+    basis: {
+      type: 'string',
+      enum: [...LEAVE_GRANT_BASES],
+      description: 'hire_anniversary は入社記念日の人だけ、fixed_date は対象の全員',
+    },
+    effectiveOn: { type: 'string', format: 'date' },
+    organizationId: uuidSchema,
+  },
+  required: ['leaveTypeId', 'basis', 'effectiveOn'],
+});
+
+export const grantLeaveInBulkResponseSchema = objectSchema({
+  properties: {
+    granted: arraySchema(
+      objectSchema({
+        properties: {
+          employeeId: uuidSchema,
+          minutes: { type: 'integer' },
+          serviceMonths: { type: 'integer' },
+        },
+        required: ['employeeId', 'minutes', 'serviceMonths'],
+      }),
+    ),
+    skipped: arraySchema(
+      objectSchema({
+        description: '付与しなかった相手と理由。黙って飛ばすと、漏れに気付けない',
+        properties: {
+          employeeId: uuidSchema,
+          reason: {
+            type: 'string',
+            enum: ['no_hire_date', 'not_anniversary', 'no_rule_reached', 'already_granted'],
+          },
+        },
+        required: ['employeeId', 'reason'],
+      }),
+    ),
+  },
+  required: ['granted', 'skipped'],
+});
+
+export const leaveExpirationSchema = objectSchema({
+  description: 'ある日までに失効する付与と、その時点の残り',
+  properties: {
+    employeeId: uuidSchema,
+    employeeNumber: { type: 'string' },
+    leaveTypeId: uuidSchema,
+    entryId: { type: 'string' },
+    expiresOn: { type: 'string', format: 'date' },
+    remainingMinutes: { type: 'integer' },
+  },
+  required: [
+    'employeeId',
+    'employeeNumber',
+    'leaveTypeId',
+    'entryId',
+    'expiresOn',
+    'remainingMinutes',
+  ],
+});
+
+export const leaveExpirationListSchema = objectSchema({
+  properties: { expirations: arraySchema(leaveExpirationSchema) },
+  required: ['expirations'],
+});
+
+export const listLeaveExpirationsQuerySchema = objectSchema({
+  properties: {
+    asOf: { type: 'string', format: 'date' },
+    through: { type: 'string', format: 'date', description: 'この日までに失効する分を出す' },
+    employeeId: uuidSchema,
+  },
+  required: ['asOf', 'through'],
+});
+
+export const leaveRegisterSchema = objectSchema({
+  description: '休暇管理簿の 1 行。台帳から組み立てる',
+  properties: {
+    employeeId: uuidSchema,
+    employeeNumber: { type: 'string' },
+    leaveTypeId: uuidSchema,
+    from: { type: 'string', format: 'date' },
+    to: { type: 'string', format: 'date' },
+    openingMinutes: { type: 'integer' },
+    grantedMinutes: { type: 'integer' },
+    consumedMinutes: { type: 'integer' },
+    expiredMinutes: { type: 'integer' },
+    adjustedMinutes: { type: 'integer' },
+    closingMinutes: { type: 'integer' },
+  },
+  required: [
+    'employeeId',
+    'employeeNumber',
+    'leaveTypeId',
+    'from',
+    'to',
+    'openingMinutes',
+    'grantedMinutes',
+    'consumedMinutes',
+    'expiredMinutes',
+    'adjustedMinutes',
+    'closingMinutes',
+  ],
+});
+
+export const leaveRegisterListSchema = objectSchema({
+  properties: { register: arraySchema(leaveRegisterSchema) },
+  required: ['register'],
+});
+
+export const listLeaveRegisterQuerySchema = objectSchema({
+  properties: {
+    from: { type: 'string', format: 'date' },
+    to: { type: 'string', format: 'date' },
+    employeeId: uuidSchema,
+  },
+  required: ['from', 'to'],
 });

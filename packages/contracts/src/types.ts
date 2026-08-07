@@ -21,6 +21,7 @@ import type {
   DeviceOs,
   DeviceState,
   Discrepancy,
+  LeaveGrantBasis,
   Locale,
   MonthlyClosingState,
   Permission,
@@ -1040,6 +1041,8 @@ export interface LeaveTypeSettingsRecord {
   unitMinutes: number | null;
   dayMinutes: number | null;
   expiresAfterMonths: number | null;
+  /** 自動付与の基準。空なら自動付与しない。 */
+  grantBasis: LeaveGrantBasis | null;
   active: boolean;
   createdAt: string;
 }
@@ -1054,7 +1057,83 @@ export interface UpdateLeaveTypeRequest {
   unitMinutes?: number | null;
   dayMinutes?: number | null;
   expiresAfterMonths?: number | null;
+  grantBasis?: LeaveGrantBasis | null;
   active?: boolean;
+}
+
+/** 勤続の段ごとの付与分数。規則が無ければ自動でも一斉でも付与しない。 */
+export interface LeaveGrantRuleRecord {
+  id: string;
+  leaveTypeId: string;
+  serviceMonths: number;
+  minutes: number;
+  createdAt: string;
+}
+
+export interface LeaveGrantRuleList {
+  leaveGrantRules: LeaveGrantRuleRecord[];
+}
+
+export interface CreateLeaveGrantRuleRequest {
+  leaveTypeId: string;
+  serviceMonths: number;
+  minutes: number;
+}
+
+export interface GrantLeaveInBulkRequest {
+  leaveTypeId: string;
+  /** `hire_anniversary` は入社記念日の人だけ、`fixed_date` は対象の全員。 */
+  basis: LeaveGrantBasis;
+  effectiveOn: string;
+  /** 対象を絞る組織。省略すると、閲覧できる全員。 */
+  organizationId?: string;
+}
+
+export interface GrantLeaveInBulkResponse {
+  /** 積んだ付与。 */
+  granted: { employeeId: string; minutes: number; serviceMonths: number }[];
+  /** 付与しなかった相手と理由。 */
+  skipped: { employeeId: string; reason: LeaveGrantSkipReason }[];
+}
+
+export type LeaveGrantSkipReason =
+  | 'no_hire_date'
+  | 'not_anniversary'
+  | 'no_rule_reached'
+  | 'already_granted';
+
+/** ある日までに失効する付与。 */
+export interface LeaveExpirationRecord {
+  employeeId: string;
+  employeeNumber: string;
+  leaveTypeId: string;
+  entryId: string;
+  expiresOn: string;
+  /** その時点で、まだ消化していない分。 */
+  remainingMinutes: number;
+}
+
+export interface LeaveExpirationList {
+  expirations: LeaveExpirationRecord[];
+}
+
+/** 休暇管理簿の 1 行。従業員と休暇種別ごと。 */
+export interface LeaveRegisterRecord {
+  employeeId: string;
+  employeeNumber: string;
+  leaveTypeId: string;
+  from: string;
+  to: string;
+  openingMinutes: number;
+  grantedMinutes: number;
+  consumedMinutes: number;
+  expiredMinutes: number;
+  adjustedMinutes: number;
+  closingMinutes: number;
+}
+
+export interface LeaveRegisterList {
+  register: LeaveRegisterRecord[];
 }
 
 /** 申請が何について出されたか。承認後の反映先が変わる。 */

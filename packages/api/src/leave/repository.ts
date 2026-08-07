@@ -35,6 +35,62 @@ export interface LeaveRepository {
   ): Promise<LeaveLedgerEntryRecord[]>;
   findEntry(workspaceId: string, entryId: string): Promise<LeaveLedgerEntryRecord | null>;
   addEntry(workspaceId: string, input: NewLeaveLedgerEntry): Promise<LeaveLedgerEntryRecord>;
+
+  /**
+   * 複数の従業員の台帳をまとめて読む。
+   *
+   * 管理簿と失効予定は人数ぶんの残数を組み立てる。1 人ずつ読むと、
+   * 人数ぶんの問い合わせが並ぶ。
+   */
+  listEntriesForEmployees(
+    workspaceId: string,
+    employeeIds: readonly string[],
+    leaveTypeId?: string,
+  ): Promise<Map<string, LeaveLedgerEntryRecord[]>>;
+
+  /** 付与規則。休暇種別を指定すると、その種別だけ。 */
+  listGrantRules(workspaceId: string, leaveTypeId?: string): Promise<LeaveGrantRuleRecord[]>;
+  createGrantRule(
+    workspaceId: string,
+    input: { leaveTypeId: string; serviceMonths: number; minutes: number },
+  ): Promise<LeaveGrantRuleRecord>;
+
+  /**
+   * 一括付与の対象になりうる従業員。
+   *
+   * 在籍中の従業員だけを返す。退職者へ付与しても、使われないまま残数だけが増える。
+   */
+  listGrantCandidates(
+    workspaceId: string,
+    filter: { organizationId?: string },
+  ): Promise<{ id: string; employeeNumber: string; hiredOn: string | null }[]>;
+
+  /**
+   * その日にすでに自動・取込で付与されている従業員。
+   *
+   * 積む前に読む。制約の違反を捕まえて続けることはできない。
+   * PostgreSQL では、違反した時点でトランザクション全体が中断する。
+   */
+  listBulkGrantedEmployees(
+    workspaceId: string,
+    leaveTypeId: string,
+    effectiveOn: string,
+  ): Promise<Set<string>>;
+
+  /** 従業員番号から識別子を引く。CSV の取込で使う。 */
+  findEmployeeIdsByNumber(
+    workspaceId: string,
+    numbers: readonly string[],
+  ): Promise<Map<string, string>>;
+}
+
+/** 勤続の段ごとの付与分数。 */
+export interface LeaveGrantRuleRecord {
+  id: string;
+  leaveTypeId: string;
+  serviceMonths: number;
+  minutes: number;
+  createdAt: string;
 }
 
 export interface NewLeaveLedgerEntry {
@@ -48,6 +104,8 @@ export interface NewLeaveLedgerEntry {
   requestId?: string | null;
   reason?: string | null;
   createdByUserId?: string | null;
+  /** どこから来た記録か。二重付与を止める制約は、自動と取込にだけ当てる。 */
+  source?: 'manual' | 'rule' | 'import' | 'request';
 }
 
 interface LeaveTypeRow {
@@ -58,12 +116,13 @@ interface LeaveTypeRow {
   unit_minutes: number | null;
   day_minutes: number | null;
   expires_after_months: number | null;
+  grant_basis: LeaveTypeSettingsRecord['grantBasis'];
   active: boolean;
   created_at: Date;
 }
 
-const LEAVE_TYPE_COLUMNS =
-  'id, code, name, paid, unit_minutes, day_minutes, expires_after_months, active, created_at';
+const LEAVE_TYPE_COLUMNS = `id, code, name, paid, unit_minutes, day_minutes, expires_after_months,
+   grant_basis, active, created_at`;
 
 function toLeaveType(row: LeaveTypeRow): LeaveTypeSettingsRecord {
   return {
@@ -74,6 +133,7 @@ function toLeaveType(row: LeaveTypeRow): LeaveTypeSettingsRecord {
     unitMinutes: row.unit_minutes,
     dayMinutes: row.day_minutes,
     expiresAfterMonths: row.expires_after_months,
+    grantBasis: row.grant_basis,
     active: row.active,
     createdAt: row.created_at.toISOString(),
   };
@@ -114,6 +174,24 @@ function toEntry(row: EntryRow): LeaveLedgerEntryRecord {
   };
 }
 
+interface GrantRuleRow {
+  id: string;
+  leave_type_id: string;
+  service_months: number;
+  minutes: number;
+  created_at: Date;
+}
+
+function toGrantRule(row: GrantRuleRow): LeaveGrantRuleRecord {
+  return {
+    id: row.id,
+    leaveTypeId: row.leave_type_id,
+    serviceMonths: row.service_months,
+    minutes: row.minutes,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
 export function createLeaveRepository(db: Queryable): LeaveRepository {
   return {
     async listLeaveTypes(workspaceId) {
@@ -143,7 +221,8 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
                 day_minutes = CASE WHEN $7::boolean THEN $8 ELSE day_minutes END,
                 expires_after_months =
                   CASE WHEN $9::boolean THEN $10 ELSE expires_after_months END,
-                active = COALESCE($11, active)
+                grant_basis = CASE WHEN $11::boolean THEN $12 ELSE grant_basis END,
+                active = COALESCE($13, active)
           WHERE workspace_id = $1 AND id = $2
         RETURNING ${LEAVE_TYPE_COLUMNS}`,
         [
@@ -157,6 +236,8 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
           input.dayMinutes ?? null,
           'expiresAfterMonths' in input,
           input.expiresAfterMonths ?? null,
+          'grantBasis' in input,
+          input.grantBasis ?? null,
           input.active ?? null,
         ],
       );
@@ -196,8 +277,8 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
       const rows = await db.query<EntryRow>(
         `INSERT INTO leave_ledger_entries
            (workspace_id, employee_id, leave_type_id, entry_type, minutes, effective_on,
-            expires_on, reverses_entry_id, request_id, reason, created_by_user_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            expires_on, reverses_entry_id, request_id, reason, created_by_user_id, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING ${ENTRY_COLUMNS}`,
         [
           workspaceId,
@@ -211,11 +292,94 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
           input.requestId ?? null,
           input.reason ?? null,
           input.createdByUserId ?? null,
+          input.source ?? 'manual',
         ],
       );
       const row = rows[0];
       if (!row) throw new Error('台帳へ記録できませんでした');
       return toEntry(row);
+    },
+
+    async listEntriesForEmployees(workspaceId, employeeIds, leaveTypeId) {
+      const byEmployee = new Map<string, LeaveLedgerEntryRecord[]>();
+      if (employeeIds.length === 0) return byEmployee;
+
+      const rows = await db.query<EntryRow>(
+        `SELECT ${ENTRY_COLUMNS} FROM leave_ledger_entries
+          WHERE workspace_id = $1 AND employee_id = ANY($2::uuid[])
+            AND ($3::uuid IS NULL OR leave_type_id = $3)
+          ORDER BY effective_on, created_at, id`,
+        [workspaceId, employeeIds as string[], leaveTypeId ?? null],
+      );
+      for (const row of rows) {
+        const list = byEmployee.get(row.employee_id) ?? [];
+        list.push(toEntry(row));
+        byEmployee.set(row.employee_id, list);
+      }
+      return byEmployee;
+    },
+
+    async listGrantRules(workspaceId, leaveTypeId) {
+      const rows = await db.query<GrantRuleRow>(
+        `SELECT id, leave_type_id, service_months, minutes, created_at
+           FROM leave_grant_rules
+          WHERE workspace_id = $1 AND ($2::uuid IS NULL OR leave_type_id = $2)
+          ORDER BY leave_type_id, service_months`,
+        [workspaceId, leaveTypeId ?? null],
+      );
+      return rows.map(toGrantRule);
+    },
+
+    async createGrantRule(workspaceId, input) {
+      const rows = await db.query<GrantRuleRow>(
+        `INSERT INTO leave_grant_rules (workspace_id, leave_type_id, service_months, minutes)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, leave_type_id, service_months, minutes, created_at`,
+        [workspaceId, input.leaveTypeId, input.serviceMonths, input.minutes],
+      );
+      const row = rows[0];
+      if (!row) throw new Error('付与規則を保存できませんでした');
+      return toGrantRule(row);
+    },
+
+    async listGrantCandidates(workspaceId, filter) {
+      const rows = await db.query<{
+        id: string;
+        employee_number: string;
+        hired_on: string | null;
+      }>(
+        `SELECT id, employee_number, hired_on FROM employees
+          WHERE workspace_id = $1
+            AND status = 'active'
+            AND ($2::uuid IS NULL OR organization_id = $2)
+          ORDER BY employee_number`,
+        [workspaceId, filter.organizationId ?? null],
+      );
+      return rows.map((row) => ({
+        id: row.id,
+        employeeNumber: row.employee_number,
+        hiredOn: row.hired_on,
+      }));
+    },
+
+    async listBulkGrantedEmployees(workspaceId, leaveTypeId, effectiveOn) {
+      const rows = await db.query<{ employee_id: string }>(
+        `SELECT employee_id FROM leave_ledger_entries
+          WHERE workspace_id = $1 AND leave_type_id = $2 AND effective_on = $3
+            AND entry_type = 'grant' AND source IN ('rule', 'import')`,
+        [workspaceId, leaveTypeId, effectiveOn],
+      );
+      return new Set(rows.map((row) => row.employee_id));
+    },
+
+    async findEmployeeIdsByNumber(workspaceId, numbers) {
+      if (numbers.length === 0) return new Map();
+      const rows = await db.query<{ id: string; employee_number: string }>(
+        `SELECT id, employee_number FROM employees
+          WHERE workspace_id = $1 AND employee_number = ANY($2::text[])`,
+        [workspaceId, numbers as string[]],
+      );
+      return new Map(rows.map((row) => [row.employee_number, row.id]));
     },
   };
 }
