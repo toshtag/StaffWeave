@@ -281,12 +281,33 @@ export {
   WEBHOOK_SIGNING_KEY_DERIVATION,
 } from './integration/webhook.js';
 export type {
+  GrantCandidate,
+  GrantPlan,
+  LeaveGrantBasis,
+  LeaveGrantRule,
+  PlannedGrant,
+  SkipReason,
+} from './leave/grant.js';
+export {
+  grantMinutesFor,
+  isLeaveGrantBasis,
+  LEAVE_GRANT_BASES,
+  planLeaveGrants,
+  serviceMonthsBetween,
+} from './leave/grant.js';
+export type {
   LeaveBalance,
   LeaveConsumeProblem,
   LeaveEntryType,
   LeaveLedgerEntry,
+  LeaveRegisterRow,
 } from './leave/ledger.js';
-export { buildLeaveBalance, UNALLOCATED, validateLeaveConsumption } from './leave/ledger.js';
+export {
+  buildLeaveBalance,
+  summarizeLeaveRegister,
+  UNALLOCATED,
+  validateLeaveConsumption,
+} from './leave/ledger.js';
 export type {
   AccessPeriod,
   AssignmentContract,

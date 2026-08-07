@@ -202,3 +202,67 @@ export function validateLeaveConsumption(input: {
 
 /** まだ積んでいない消化を表す識別子。並びの末尾へ来るよう、他より大きい値にする。 */
 const PROPOSED = '~proposed';
+
+export interface LeaveRegisterRow {
+  /** 期首（`from` の前日時点）の残数。 */
+  openingMinutes: number;
+  /** 期間に効いた付与。 */
+  grantedMinutes: number;
+  /** 期間に消化した分（正の数で示す）。 */
+  consumedMinutes: number;
+  /** 期間に失効した分（正の数で示す）。 */
+  expiredMinutes: number;
+  /** 期間の手当て。増減の合計。 */
+  adjustedMinutes: number;
+  /** 期末（`to` 時点）の残数。 */
+  closingMinutes: number;
+}
+
+/**
+ * 休暇管理簿の 1 行。
+ *
+ * 台帳から組み立てる。合計を別に保存しない。
+ * 保存すると、台帳と合計が食い違ったときにどちらが正しいのかを決められない。
+ *
+ * 失効は「期末の失効累計 − 期首の失効累計」で出す。台帳の `expire` の行だけを
+ * 数えると、期限切れで自然に落ちた分（記録の無い失効）を数え落とす。
+ */
+export function summarizeLeaveRegister(
+  entries: readonly LeaveLedgerEntry[],
+  from: string,
+  to: string,
+): LeaveRegisterRow {
+  const reversed = reversedIds(entries);
+  const effective = entries
+    .filter((entry) => !reversed.has(entry.id))
+    .filter((entry) => entry.effectiveOn >= from && entry.effectiveOn <= to);
+
+  const sumOf = (type: LeaveEntryType, sign: 1 | -1): number =>
+    effective
+      .filter((entry) => entry.entryType === type)
+      .reduce((total, entry) => total + entry.minutes * sign, 0);
+
+  // 期首は `from` の前日時点。`from` 当日の付与を期首へ入れると、
+  // 「期首にあった分」と「期間に増えた分」が二重になる。
+  const opening = buildLeaveBalance(entries, previousDay(from));
+  const closing = buildLeaveBalance(entries, to);
+
+  return {
+    openingMinutes: opening.availableMinutes,
+    grantedMinutes: sumOf('grant', 1),
+    consumedMinutes: sumOf('consume', -1),
+    expiredMinutes: closing.expiredMinutes - opening.expiredMinutes,
+    adjustedMinutes: sumOf('adjust', 1),
+    closingMinutes: closing.availableMinutes,
+  };
+}
+
+/** 前日。台帳の日付は暦日なので、実行環境の時計に依らず UTC で数える。 */
+function previousDay(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) {
+    throw new Error(`日付として解釈できません: ${date}`);
+  }
+  const shifted = new Date(Date.UTC(year, month - 1, day - 1));
+  return shifted.toISOString().slice(0, 10);
+}
