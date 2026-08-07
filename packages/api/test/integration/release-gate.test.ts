@@ -34,7 +34,13 @@ async function gate(): Promise<{ code: number; message: string }> {
   try {
     const result = await run(MANIFEST, [], {
       cwd: REPOSITORY_ROOT,
-      env: { ...process.env, SBOM_OUTPUT_DIR: sbomDirectory },
+      // コンテナを組む段は飛ばす。ここで見たいのは構成一覧の側の判定で、
+      // 数分かけて画像を組んでも、その判定は何も変わらない。
+      env: {
+        ...process.env,
+        SBOM_OUTPUT_DIR: sbomDirectory,
+        RELEASE_MANIFEST_SKIP_CONTAINER: '1',
+      },
     });
     return { code: 0, message: result.stdout };
   } catch (error) {
