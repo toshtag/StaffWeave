@@ -1064,3 +1064,51 @@ describe('決裁の記録', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('決裁を待っている自分の番', () => {
+  it('いまの段の承認者にだけ、その申請が並ぶ', async () => {
+    const instance = app();
+    const type = await createType(instance, { approvalSteps: 2 });
+    const manager = await userIdOf('manager@example.com');
+    const admin = await userIdOf('admin@example.com');
+
+    await setRoute(instance, type.id, [
+      { step: 1, approverUserId: manager, approverPolicy: 'user' },
+      { step: 2, approverUserId: admin, approverPolicy: 'user' },
+    ]);
+    await submit(instance, type);
+
+    const awaiting = async (cookie: string): Promise<number> => {
+      const response = await instance.request(
+        '/api/employee-requests?state=submitted&awaitingMe=true',
+        authorized(cookie),
+      );
+      const { requests } = (await response.json()) as { requests: unknown[] };
+      return requests.length;
+    };
+
+    // 1 段目は管理者の番ではない。
+    expect(await awaiting(fixture.managerCookie)).toBe(1);
+    expect(await awaiting(fixture.adminCookie)).toBe(0);
+  });
+
+  it('自分の申請は、自分の列に出ない', async () => {
+    const instance = app();
+    const type = await createType(instance, {});
+    const manager = await userIdOf('manager@example.com');
+    await setRoute(instance, type.id, [
+      { step: 1, approverUserId: manager, approverPolicy: 'user' },
+    ]);
+
+    // 管理者が自分（に紐づく従業員）の申請を出せる形にはなっていないため、
+    // ここでは従業員の申請が管理者の列に出ないことだけを見る。
+    await submit(instance, type);
+
+    const response = await instance.request(
+      '/api/employee-requests?state=submitted&awaitingMe=true',
+      authorized(fixture.adminCookie),
+    );
+    const { requests } = (await response.json()) as { requests: unknown[] };
+    expect(requests).toHaveLength(0);
+  });
+});

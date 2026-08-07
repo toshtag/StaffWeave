@@ -113,12 +113,12 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | --- | --- | --- | --- |
 | 日次勤怠の申請・承認・差し戻し・取消 | implemented | `op:submitDailyRequest` `op:approveDailyRequest` `op:returnDailyRequest` `op:cancelDailyRequest` `test:packages/domain/src/approval/daily-request.test.ts` | 遷移の履歴を追記で残す |
 | 自己承認の禁止 | implemented | `test:packages/domain/src/identity/roles.test.ts` | 承認者と対象者が同じなら断る |
-| 申請区分（休暇・残業・休日出勤・打刻修正など） | implemented | `op:createRequestType` `op:listRequestTypes` `op:submitEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 組織が定義する。従業員と日付ごとに 1 件という制限は無い |
-| 区分ごとの入力項目と必須の設定 | partial | `op:createRequestType` `op:updateRequestType` | 理由・休暇種別・時間帯・残業の上限時刻の要否を区分ごとに決められる。添付は未実装 |
+| 申請区分（休暇・残業・休日出勤・打刻修正など） | implemented | `op:createRequestType` `op:listRequestTypes` `op:submitEmployeeRequest` `ui:packages/web/src/pages/RequestCenter.tsx` `test:packages/api/test/integration/employee-request.test.ts` `e2e:e2e/request-center.spec.ts` | 組織が定義する。従業員と日付ごとに 1 件という制限は無い。従業員は申請の画面から出せる |
+| 区分ごとの入力項目と必須の設定 | partial | `op:createRequestType` `op:updateRequestType` `ui:packages/web/src/pages/RequestCenter.tsx` `e2e:e2e/request-center.spec.ts` | 理由・休暇種別・時間帯・残業の上限時刻の要否を区分ごとに決め、申請の画面が求めるものだけを出す。添付は未実装 |
 | 1〜4 段階の承認と申請時点の経路の固定 | implemented | `op:decideEmployeeRequest` `op:replaceApprovalRoute` `test:packages/domain/src/approval/approval-route.test.ts` `test:packages/api/test/integration/employee-request.test.ts` `migration:0041_create_approval_routes.sql` | 段ごとに承認者または承認方針を決め、提出した時点の経路を写す。決まっていない段があれば提出を断る。現在の段の対象外の利用者による決裁も断る |
 | 決裁の再送で段が進まないこと | implemented | `migration:0030_create_request_types_and_approvals.sql` `test:packages/api/test/integration/employee-request.test.ts` | 何段目・何回目の提出かを添えさせ、同じ組み合わせの二度目は一意制約が断る |
 | 代理承認・不在対応 | partial | `op:createApprovalDelegation` `op:decideEmployeeRequest` `test:packages/domain/src/approval/approval-route.test.ts` `test:packages/api/test/integration/employee-request.test.ts` | 委任のある相手だけが代理で決裁でき、本来の承認者が監査へ残る。不在時の自動委任は無い |
-| 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
+| 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `ui:packages/web/src/pages/RequestCenter.tsx` `test:packages/domain/src/approval/staged-request.test.ts` `e2e:e2e/request-center.spec.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る。申請の画面から行える |
 | 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` `migration:0039_allow_multi_day_leave_consumption.sql` | 承認しきった休暇の申請だけを、同じトランザクションで消化する。複数日の申請は対象の日数ぶんを日ごとの記録として原子的に引く。予定が休みの日は引かない |
 | 承認結果の勤怠への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 残業・休日出勤・打刻修正を、承認しきった時点だけ日次へ効かせる。締め済みの期間を含む申請は承認を断る |
 | 利用者への通知 | implemented | `op:listNotifications` `op:markNotificationsRead` `test:packages/api/test/integration/notifications.test.ts` `ui:packages/web/src/pages/NotificationPanel.tsx` | 申請・承認・差し戻し・取消・代理承認を、製品内で届ける。正本は DB に残す |
@@ -158,7 +158,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | ログインと当日の勤怠・打刻・訂正 | implemented | `ui:packages/web/src/pages/SignInPage.tsx` `ui:packages/web/src/pages/TodayAttendance.tsx` | 日本語と英語 |
-| 承認待ちの一覧と承認 | partial | `ui:packages/web/src/pages/PendingApprovals.tsx` | 旧の日次申請の画面だけ。申請種別に基づく段階承認は画面から扱えない（#214） |
+| 承認待ちの一覧と承認 | implemented | `ui:packages/web/src/pages/PendingApprovals.tsx` `op:listEmployeeRequests` `e2e:e2e/request-center.spec.ts` | いまの段が自分の番のものだけを列として出す。押しても断られる申請は混ぜない |
 | 差異と異常の表示 | implemented | `ui:packages/web/src/pages/DiscrepancyPanel.tsx` `ui:packages/web/src/pages/AnomalyPanel.tsx` | 根拠つきで出す |
 | 組織の一覧表示 | implemented | `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` | 設定の画面から登録もできる |
 | API キーの管理 | implemented | `ui:packages/web/src/pages/ApiKeys.tsx` | 作成・一覧・失効 |
