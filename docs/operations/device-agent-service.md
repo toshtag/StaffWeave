@@ -129,23 +129,56 @@ icacls "C:\ProgramData\StaffWeave" /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "A
 
 ## IC カードの読み取り装置
 
-読み取り装置は OS ごとに異なるため、このリポジトリには含めません。
-含めるのは「読み取った識別子をどう扱うか」の取り決めだけです。
+対応する標準インターフェースは **PC/SC** の 1 つだけです。
+複数に広げると、どれも実機で確かめないまま増えます。
+PC/SC は Windows（WinSCard）と Linux・macOS（PCSC-Lite）の両方にあり、
+据え置きの打刻端末でいちばん行き渡っています。
 
 生の識別子は端末の外へ出しません。サーバーへ送るのは一方向の指紋だけです。
 データベースには指紋しか残らないため、その内容だけでは物理カードと結び付きません。
 
-自分の装置をつなぐときは `CardReader` を実装します。
+### 何がリポジトリの中にあるか
+
+カードから識別子を読む擬似 APDU（`FF CA 00 00 00`）の送信、応答の状態語の判定、
+同じカードの連続タップの扱い、装置が外れたときの開き直しは、リポジトリの中にあります
+（`packages/agent/src/card/pcsc.ts`）。
+
+装置そのものを叩く部分は含めません。OS ごとに native の部品が要り、
+同梱すると確かめていない組み合わせを配ることになります。
+
+### 装置との受け渡しをつなぐ
+
+端末を用意する側が、その OS 向けの PC/SC の部品を入れ、次の形で公開します。
 
 ```ts
-export interface CardReader {
-  read(): Promise<string>;
-  readonly name: string;
+export function createPcscTransport(): PcscTransport {
+  return {
+    name: '<装置の名前>',
+    waitForCard: async () => {/* カードが置かれるまで待つ */},
+    transmit: async (command) => {/* APDU を送り、応答を返す */},
+    waitForRemoval: async () => {/* カードが離れるまで待つ */},
+    reconnect: async () => {/* 装置を開き直す */},
+    close: async () => {/* 閉じる */},
+  };
 }
 ```
 
-実機がない場所では `createScriptedCardReader` を使います。あらかじめ与えた識別子を
-順に返すため、登録から打刻までの流れを装置なしで通せます。
+その置き場を渡して常駐させます。
+
+```sh
+pnpm agent card-watch --pcsc /opt/staffweave/pcsc-transport.js
+```
+
+`--pcsc` を渡さなければ動きません。検証用のアダプターへ黙って落とすと、
+実機のつもりで動かしている端末が、何も読まないまま静かに立っていることになります。
+
+形が合わない部品は、打刻の途中ではなく読み込みの時点で断ります。
+途中で落ちると、端末の前の人が何が起きたのかを判断できません。
+
+### 実機がない場所
+
+`createScriptedCardReader` を使います。あらかじめ与えた識別子を順に返すため、
+登録から打刻までの流れを装置なしで通せます。
 
 ## 実機で確かめること
 
@@ -156,12 +189,13 @@ export interface CardReader {
 
 ### 物理の IC カード
 
-- [ ] 使う装置向けの `CardReader` を書き、`pnpm agent card-register` でカードを登録できる
-- [ ] 登録したカードを `pnpm agent card-punch` でかざすと打刻が記録される
-- [ ] 登録していないカードをかざすと、打刻されず、理由が記録される
+- [ ] その OS 向けの `createPcscTransport` を書き、`pnpm agent card-register` でカードを登録できる
+- [ ] 登録したカードを `pnpm agent card-watch --pcsc <モジュール>` でかざすと打刻が記録される
+- [ ] 登録していないカードをかざすと、打刻されず、理由が端末へ出て、連番が進まない
 - [ ] 失効させたカードをかざすと、打刻されない
 - [ ] 同じカードを続けて 2 回かざしたとき、二重の打刻にならない
-- [ ] 読み取り装置を抜き差ししても、常駐が落ちない
+- [ ] 読み取り装置を抜き差ししても、常駐が落ちず、間を広げながら開き直す
+- [ ] 端末のログに、カードの生の識別子も指紋も出ない
 
 ### Windows のサービス
 

@@ -10,6 +10,7 @@
  *   pnpm agent status        保存されている資格情報を表示する
  *   pnpm agent card-register --token-file <path> --card-stdin
  *   pnpm agent card-punch --card-stdin
+ *   pnpm agent card-watch --pcsc <モジュール>   実機の読み取り装置から打刻し続ける
  *   pnpm agent session-observe --employee E001 --type sign_in [--at <ISO日時>]
  *   pnpm agent queue --employee E001 --type clock_in   送信待ちへ積むだけ
  *   pnpm agent serve                                   常駐して送信待ちを送り続ける
@@ -27,6 +28,8 @@ import { randomUUID } from 'node:crypto';
 import { requireSecureBaseUrl } from '@staffweave/contracts';
 import type { AttendanceEventType } from '@staffweave/domain';
 import { isAttendanceEventType, isSessionObservationType } from '@staffweave/domain';
+import { createPcscCardReader } from './card/pcsc.js';
+import { loadPcscTransport } from './card/pcsc-module.js';
 import { cardFingerprint } from './card/reader.js';
 import {
   AgentRequestError,
@@ -215,6 +218,66 @@ async function runCardPunch(): Promise<void> {
   console.log(`記録した打刻: ${body.eventType}（${body.businessDate}）`);
 }
 
+/**
+ * 実機の読み取り装置から、打刻し続ける。
+ *
+ * 装置との受け渡しは外の部品が持つ（`--pcsc`）。指定が無ければ動かさない。
+ * 検証用のアダプターへ黙って落とすと、実機のつもりで動かしている端末が
+ * 何も読まないまま静かに立っていることになる。
+ *
+ * 未登録・失効したカードは、サーバーが断る。断られたことを端末へ出し、
+ * 読み取りへ戻る。止めると、次の人が打刻できない。
+ */
+async function runCardWatch(): Promise<void> {
+  const credentials = (await loadCredentials(storePath())) as StoredCredentials;
+  const specifier = option('pcsc');
+  if (specifier === undefined) {
+    throw new Error(
+      '--pcsc に装置との受け渡しを渡してください（docs/operations/device-agent-service.md）',
+    );
+  }
+
+  const transport = await loadPcscTransport(specifier);
+  const reader = createPcscCardReader(transport, {
+    log: (entry) => console.log(JSON.stringify({ level: 'info', ...entry })),
+  });
+  console.log(`読み取りを始めます: ${reader.name}`);
+
+  let sequence = credentials.nextSequence;
+  for (;;) {
+    const rawCardId = await reader.read();
+    const now = new Date();
+    try {
+      const { status, body } = await sendCardEvent(
+        { ...credentials, nextSequence: sequence },
+        {
+          sequence,
+          requestId: randomUUID(),
+          cardFingerprint: cardFingerprint(requireCardKey(credentials), rawCardId),
+          occurredAt: now.toISOString(),
+          deviceTime: now.toISOString(),
+        },
+      );
+      sequence += 1;
+      await saveCredentials(storePath(), { ...credentials, nextSequence: sequence });
+      console.log(
+        `${status === 201 ? '受理' : '再送として受理'}: ` +
+          `${body.employeeDisplayName} / ${body.eventType}（${body.businessDate}）`,
+      );
+    } catch (error) {
+      // 断られたカードで連番は進めない。進めると、次の打刻が連番の飛びとして拒まれる。
+      // 生の識別子は出さない。端末の画面に残る。
+      console.error(
+        error instanceof AgentRequestError
+          ? `受け付けられませんでした（HTTP ${error.status}）: ${error.message}`
+          : error instanceof Error
+            ? error.message
+            : String(error),
+      );
+    }
+  }
+}
+
 async function runSessionObserve(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
   const employeeNumber = requireOption('employee');
@@ -383,6 +446,8 @@ async function main(): Promise<void> {
       return runCardRegister();
     case 'card-punch':
       return runCardPunch();
+    case 'card-watch':
+      return runCardWatch();
     case 'session-observe':
       return runSessionObserve();
     case 'status':
@@ -395,8 +460,8 @@ async function main(): Promise<void> {
       return runDiagnose();
     default:
       throw new Error(
-        'enroll / punch / replay / card-register / card-punch / session-observe / status / ' +
-          'queue / serve / diagnose のいずれかを指定してください',
+        'enroll / punch / replay / card-register / card-punch / card-watch / ' +
+          'session-observe / status / queue / serve / diagnose のいずれかを指定してください',
       );
   }
 }
