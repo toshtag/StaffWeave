@@ -103,7 +103,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 残数の台帳（付与・消化・失効・調整・取消） | implemented | `op:grantLeave` `op:adjustLeave` `op:reverseLeaveEntry` `op:listLeaveLedger` `test:packages/domain/src/leave/ledger.test.ts` `test:packages/api/test/integration/leave-ledger.test.ts` | 追記のみ。残数は保存せず、任意の時点の値を台帳から組み立てる |
 | 残数の再構築と失効の反映 | implemented | `op:listLeaveBalances` `test:packages/domain/src/leave/ledger.test.ts` `test:packages/api/test/integration/leave-ledger.test.ts` | 期限の近い付与から先に消化する。期限を過ぎた分は残数から外れる |
 | 自動付与・一斉付与・CSV 取込 | implemented | `op:runLeaveGrants` `op:previewLeaveGrants` `op:grantLeaveInBulk` `op:importLeaveGrantsCsv` `op:createLeaveGrantRule` `test:packages/domain/src/leave/grant.test.ts` `test:packages/api/test/integration/leave-grants.test.ts` `test:packages/api/test/integration/leave-grant-isolation.test.ts` `migration:0040_create_leave_grant_runs.sql` | 自動付与は日次の command（`pnpm leave:grants`）が動かす。設定の画面からの実行は、そのワークスペースだけを処理する。止まっていた期間は次の実行で追いつき、同時に走らせても同じ日を二度付与しない。手で押す一斉付与は別に残す。勤続の段から分数が決まり、段が無ければ 1 分も付与しない |
-| 半日・時間単位の取得 | implemented | `op:updateLeaveType` `test:packages/domain/src/leave/ledger.test.ts` | 取得の単位を分で設定し、その倍数だけを受け付ける |
+| 半日・時間単位の取得 | partial | `op:updateLeaveType` `test:packages/domain/src/leave/ledger.test.ts` | 休暇種別ごとに単位を決める。**台帳と残数までは通るが、設定から取得までを縦に通した証拠が無い** |
 | 申請と残数の原子的な予約・消化・返却 | implemented | `op:decideEmployeeRequest` `migration:0029_create_leave_ledger.sql` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった時点で同じトランザクションで消化する。残数不足は承認ごと断る。二重反映は一意制約が止める |
 | 休暇管理簿と失効予定の出力 | implemented | `op:listLeaveRegister` `op:listLeaveExpirations` `ui:packages/web/src/admin/sections/LeaveRegisterSettings.tsx` | 期首・付与・消化・失効・期末を台帳から組み立てる。画面から CSV で持ち出せる |
 
@@ -143,11 +143,11 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | 端末の登録・失効と受領記録 | partial | `op:registerDevice` `op:enrollDevice` `op:revokeDevice` `op:listDeviceReceipts` `test:packages/api/test/integration/device.test.ts` | 登録トークンに有効期限がある。**API のみで、登録・失効の画面が無い** |
-| 端末シミュレーターによる打刻の確認 | implemented | `test:packages/agent/src/client.test.ts` | 実機なしで取り決めを確かめられる |
+| 端末シミュレーターによる打刻の確認 | implemented | `test:packages/agent/src/client.test.ts` `test:packages/api/test/integration/agent-package.test.ts` | 実機なしで取り決めを確かめられる |
 | IC カードの登録・失効 | partial | `op:createCardRegistration` `op:revokeCardCredential` `op:listCardCredentials` `test:packages/api/test/integration/card.test.ts` | 指紋だけを保存する。**API のみで、登録・失効の画面が無い** |
-| 端末の常駐と送信待ちの保管 | implemented | `test:packages/agent/src/service/spool.test.ts` `test:packages/agent/src/service/runner.test.ts` | 1 件 1 ファイルで書き、落ちても消えない。送る順番は崩さない |
-| 端末のログの秘匿 | implemented | `test:packages/agent/src/service/redact.test.ts` | 秘密鍵・トークン・カードの指紋は、書く側が忘れても伏せる |
-| 端末の診断 | implemented | `test:packages/agent/src/service/spool.test.ts` | 接続先・連番・送信待ちの件数を出す。秘密は出さない |
+| 端末の常駐と送信待ちの保管 | implemented | `test:packages/agent/src/service/spool.test.ts` `test:packages/agent/src/service/runner.test.ts` `test:packages/api/test/integration/agent-package.test.ts` | 1 件 1 ファイルで書き、落ちても消えない。送る順番は崩さない |
+| 端末のログの秘匿 | partial | `test:packages/agent/src/service/redact.test.ts` | 秘匿の規則は固定しているが、**常駐した端末のログを実機で確かめていない** |
+| 端末の診断 | partial | `test:packages/agent/src/service/spool.test.ts` | 送信待ちの状態を読める。**実機での確認は済んでいない** |
 | Windows のサービスとしての登録・削除 | partial | `test:packages/api/test/integration/agent-package.test.ts` `docs:operations/device-agent-service.md` | 手順と配布物を作る仕組みはある。**実機での起動と再起動は未確認** |
 | 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/pcsc.test.ts` `test:packages/agent/src/card/pcsc-module.test.ts` `docs:operations/device-agent-service.md` | PC/SC を 1 つの対応先として実装した。`pnpm agent card-watch` で常駐する。**実機の読み取り装置では未確認** |
 | 端末の自動更新 | planned | - | 署名と配布の方式が決まってから（P26） |
@@ -185,7 +185,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 従業員の CSV 取込 | implemented | `op:importEmployeesCsv` `test:packages/api/test/integration/integration.test.ts` | 全行を先に確かめ、1 つのトランザクションで作る。1 行でも取り込めなければ 1 件も作らず、位置つきで理由を返す |
 | API キーとスコープ | implemented | `op:createApiKey` `op:revokeApiKey` `test:packages/domain/src/integration/api-key-usage.test.ts` `test:packages/api/test/integration/integration.test.ts` `test:e2e/api-key-console.spec.ts` | 生の鍵は作成時に 1 度だけ返す |
 | Webhook の署名と送信先の制約 | implemented | `op:createWebhookEndpoint` `op:listWebhookDeliveries` `migration:0014_create_webhook_outbox.sql` `test:packages/api/test/integration/webhook-outbox.test.ts` `test:packages/api/test/integration/webhook-endpoint-network.test.ts` | 送信待ちは業務処理と同じトランザクションで積む。送信先を登録する画面は無く、API から登録する |
-| connector SDK | implemented | `test:packages/connector/src/index.test.ts` | 外部連携を作るための足場 |
+| connector SDK | implemented | `test:packages/connector/src/index.test.ts` `test:packages/api/test/integration/integration.test.ts` | 外部連携を作るための足場 |
 | 給与連携の CSV 出力 | implemented | `op:exportPayrollCsv` `ui:packages/web/src/admin/sections/ClosingReadinessSettings.tsx` `test:packages/api/test/integration/monthly-reporting.test.ts` `e2e:e2e/monthly-closing.spec.ts` | 締めた月は締めた時点の値を出す。設定の画面から取り出せる |
 | Webhook の自動再送とデッドレター | implemented | `op:listAbandonedDeliveries` `op:requeueAbandonedDelivery` `test:packages/domain/src/integration/retry.test.ts` `test:packages/api/test/integration/webhook-outbox.test.ts` | 間隔を広げながら送り直し、諦めた行は残す。人が手で送り直せる |
 | 送り直す意味のある失敗の見分け | implemented | `test:packages/domain/src/integration/retry.test.ts` `test:packages/api/test/integration/webhook-outbox.test.ts` | 要求そのものを断られたものは送り直さない |
@@ -199,7 +199,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | パスワードの変更 | implemented | `op:changePassword` `test:packages/domain/src/identity/credentials.test.ts` `test:packages/api/test/integration/auth.test.ts` |  |
 | ロールによる権限制御 | implemented | `test:packages/domain/src/identity/roles.test.ts` `test:packages/api/test/integration/employee-visibility.test.ts` | ワークスペース管理者・組織管理者・従業員 |
 | 契約・配属・閲覧範囲 | implemented | `op:createAssignmentContract` `op:createEmployeeAssignment` `op:grantUserScope` `test:packages/domain/src/organization/assignment.test.ts` `test:packages/api/test/integration/assignment.test.ts` | 期間付きで持つ |
-| 日本語と英語の切り替え | implemented | `op:updatePreferences` `test:packages/domain/src/i18n/locale.test.ts` |  |
+| 日本語と英語の切り替え | implemented | `op:updatePreferences` `test:packages/domain/src/i18n/locale.test.ts` `ui:packages/web/src/i18n/LocaleProvider.tsx` `test:e2e/punch.spec.ts` |  |
 | 管理者による他の利用者のセッション失効 | implemented | `op:revokeUserSessions` `test:packages/api/test/integration/session-management.test.ts` | 退職・端末紛失のとき、本人が操作できなくても終わらせられる |
 | 管理者によるパスワードの再設定 | implemented | `op:resetUserPassword` `test:packages/api/test/integration/session-management.test.ts` | 再設定するとセッションも終わる。本人が入れなくなったときの復旧 |
 | 招待・パスワード再設定の自己申請・メールアドレス変更 | planned | - | 送信の仕組みを持たない。管理者が作り、初回のパスワードを渡す（v0.1 の範囲外） |
@@ -214,7 +214,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | マイグレーションの検証 | implemented | `test:packages/db/src/migrator.test.ts` `test:packages/api/test/integration/migration-concurrency.test.ts` | 二重適用・内容変更・DB 名の誤指定を止める |
 | 書き出しと復元の突き合わせ | implemented | `test:scripts/verify-restore.sh` `test:packages/api/test/integration/backup-scripts.test.ts` | 46 テーブルの行数と中身の要約が一致することを CI で見る |
 | 定期的な復元の演習（実運用のデータでの） | planned | - | 自動の突き合わせはあるが、実運用のデータでの演習は別に要る |
-| 構造化ログ | implemented | `test:packages/agent/src/service/redact.test.ts` | 1 行 1 件の JSON。秘密は書く側が忘れても伏せる |
+| 構造化ログ | partial | `test:packages/agent/src/service/redact.test.ts` | 秘匿の規則は固定しているが、**運用の経路で出る形を縦に通していない** |
 | 稼働の確認 | implemented | `test:packages/api/test/integration/load-and-faults.test.ts` | データベースへ届かないとき、生存は返し受け入れ可否は不調にする |
 | メトリクス・アラート | planned | - | v0.1 の範囲外。構造化ログを既存のログ基盤で拾う |
 | Row-Level Security | planned | - | アプリ側の認可が正本。採否を決める（P25） |
