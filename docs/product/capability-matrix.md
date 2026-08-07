@@ -35,7 +35,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 署名付き端末イベントの受理 | implemented | `op:recordDeviceEvent` `test:packages/domain/src/device/protocol.test.ts` | 署名・連番・時計差を検証して受け取る。送る側はシミュレーター |
 | 実運用できる共有打刻端末 | planned | - | 常駐する実機が無く、シミュレーターから送っている（P24） |
 | カードイベントの受理と指紋の登録 | implemented | `op:recordCardEvent` `op:registerCard` | 生の識別子は送らず保存もしない |
-| 実カードリーダーからの読み取り | planned | - | シミュレーターが識別子を手入力で受け取っている（P24） |
+| 実カードリーダーからの読み取り | partial | `test:packages/agent/src/card/pcsc.test.ts` `docs:operations/device-agent-service.md` | PC/SC の経路（APDU・状態語・連続タップ・開き直し）はある。装置を叩く部品は端末側で用意する。**実機の読み取り装置では未確認** |
 | PC セッション観測の受理と差異の提示 | implemented | `op:recordSessionObservations` `op:getDiscrepancyReport` `test:packages/domain/src/attendance/session-observations.test.ts` | 勤務時間は自動確定しない |
 | OS からのセッション観測の自動取得 | planned | - | 送る側は常駐サービスが要る（P24） |
 | 拠点のタイムゾーンによる業務日判定 | implemented | `test:packages/domain/src/attendance/business-date.test.ts` | 現地の暦日と時刻で決める。夏時間の切り替わる日もずれない |
@@ -141,7 +141,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 端末のログの秘匿 | implemented | `test:packages/agent/src/service/redact.test.ts` | 秘密鍵・トークン・カードの指紋は、書く側が忘れても伏せる |
 | 端末の診断 | implemented | `test:packages/agent/src/service/spool.test.ts` | 接続先・連番・送信待ちの件数を出す。秘密は出さない |
 | Windows のサービスとしての登録・削除 | partial | `test:packages/api/test/integration/agent-package.test.ts` `docs:operations/device-agent-service.md` | 手順と配布物を作る仕組みはある。**実機での起動と再起動は未確認** |
-| 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/reader.test.ts` `docs:operations/device-agent-service.md` | 取り決めと検証用のアダプターはある。**実機の読み取り装置では未確認** |
+| 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/pcsc.test.ts` `test:packages/agent/src/card/pcsc-module.test.ts` `docs:operations/device-agent-service.md` | PC/SC を 1 つの対応先として実装した。`pnpm agent card-watch` で常駐する。**実機の読み取り装置では未確認** |
 | 端末の自動更新 | planned | - | 署名と配布の方式が決まってから（P26） |
 | 打刻時の位置情報 | planned | - | 同意と保持期間の扱いを決めてから |
 
