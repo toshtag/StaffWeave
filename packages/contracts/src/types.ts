@@ -289,6 +289,32 @@ export interface CreateLeaveTypeRequest {
   paid?: boolean;
 }
 
+/**
+ * 月の日ごとの勤怠。
+ *
+ * 一覧のための軽い形にする。1 日の詳細（打刻の履歴・訂正・根拠）は
+ * その日を開いたときに読む。全部を一覧へ載せると、月を開くだけで
+ * 月ぶんの根拠を運ぶことになる。
+ */
+export interface AttendanceDaySummary {
+  businessDate: string;
+  state: WorkDayState;
+  firstClockInAt: string | null;
+  lastClockOutAt: string | null;
+  workedMinutes: number | null;
+  attendedMinutes: number | null;
+  /** その日の申請の状態。無ければ null。 */
+  requestState: DailyRequestState | null;
+  /** その日を含む月の締めの状態。無ければ null。 */
+  closingState: MonthlyClosingState | null;
+  /** 打刻の追加・訂正を受け付ける日か。 */
+  editable: boolean;
+}
+
+export interface AttendanceDayList {
+  days: AttendanceDaySummary[];
+}
+
 export interface LeaveTypeList {
   leaveTypes: LeaveTypeRecord[];
 }

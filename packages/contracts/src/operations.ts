@@ -134,7 +134,9 @@ import {
   updateLeaveTypeRequestSchema,
 } from './schemas/leave.js';
 import {
+  attendanceDayListSchema,
   closingReadinessListSchema,
+  listAttendanceDaysQuerySchema,
   listMonthlySummariesQuerySchema,
   listPeriodSummariesQuerySchema,
   monthlySummaryListSchema,
@@ -2140,6 +2142,21 @@ export const operations = {
     query: listPeriodSummariesQuerySchema,
     responses: [
       { status: 200, description: '期間の集計', schema: periodSummaryListSchema },
+      invalidRequest,
+      unauthorized,
+      forbidden,
+    ],
+  },
+  listAttendanceDays: {
+    operationId: 'listAttendanceDays',
+    method: 'get',
+    path: '/attendance/days',
+    summary: '対象月の日ごとの勤怠を一覧する',
+    tags: ['attendance'],
+    security: 'session',
+    query: listAttendanceDaysQuerySchema,
+    responses: [
+      { status: 200, description: '日ごとの勤怠', schema: attendanceDayListSchema },
       invalidRequest,
       unauthorized,
       forbidden,
