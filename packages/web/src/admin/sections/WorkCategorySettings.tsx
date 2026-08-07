@@ -103,6 +103,19 @@ export function WorkCategorySettings({ permissions }: SectionProps): React.JSX.E
       load={load}
       canRead={permissions.includes('organization.read')}
       importCsv={api.importWorkCategoriesCsv}
+      importColumns={[
+        { key: 'code', value: (row) => row.code },
+        { key: 'internal_name', value: (row) => row.internalName },
+        { key: 'display_name', value: (row) => row.displayName },
+        // 値の集合は機械の値で出す。表示の名前で出すと、そのまま戻せない。
+        { key: 'category_type', value: (row) => row.categoryType },
+        { key: 'effective_from', value: (row) => row.effectiveFrom },
+        { key: 'effective_to', value: (row) => row.effectiveTo ?? '' },
+        { key: 'scheduled_start', value: (row) => row.scheduledStartMinutes ?? '' },
+        { key: 'scheduled_end', value: (row) => row.scheduledEndMinutes ?? '' },
+        { key: 'shift', value: (row) => String(row.shift) },
+        { key: 'counts_as_working_day', value: (row) => String(row.countsAsWorkingDay) },
+      ]}
       canWrite={permissions.includes('organization.manage')}
       emptyMessage={labels.noWorkCategories}
       onCopy={(row) => {

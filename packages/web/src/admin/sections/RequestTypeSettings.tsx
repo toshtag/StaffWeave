@@ -137,6 +137,16 @@ export function RequestTypeSettings({ permissions }: SectionProps): React.JSX.El
       load={load}
       canRead={permissions.includes('request.manage')}
       importCsv={api.importRequestTypesCsv}
+      importColumns={[
+        { key: 'code', value: (row) => row.code },
+        { key: 'name', value: (row) => row.name },
+        { key: 'category', value: (row) => row.category },
+        { key: 'approval_steps', value: (row) => row.approvalSteps },
+        { key: 'requires_reason', value: (row) => String(row.requiresReason) },
+        { key: 'requires_leave_type', value: (row) => String(row.requiresLeaveType) },
+        { key: 'requires_time_range', value: (row) => String(row.requiresTimeRange) },
+        { key: 'requires_overtime_limit', value: (row) => String(row.requiresOvertimeLimit) },
+      ]}
       canWrite={canWrite}
       emptyMessage={labels.noRequestTypes}
       copyLabel={labels.editRow}

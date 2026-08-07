@@ -176,6 +176,41 @@ test.describe('設定の画面', () => {
     await expect(card(page).locator('tbody tr', { hasText: '2027-07-01' })).toContainText('420');
   });
 
+  /**
+   * 画面の表は表示の言語で出し、取込は機械の見出しを求める。
+   * 同じ CSV を両方に使うと、表示の言語を変えただけで取り込めなくなる。
+   * 取込用の出力が、本当に機械の見出しで出ることを見る。
+   */
+  test('取込用の CSV は、機械の見出しと値で出る', async ({ page }) => {
+    await page.goto('/#/admin/work/categories');
+
+    // 出す対象が無いと、取り出す操作そのものが出ない。1 件作ってから見る。
+    const code = `CSV${Date.now() % 100000}`;
+    await card(page).getByLabel('コード').fill(code);
+    await card(page).getByLabel('管理用の名称').fill('取り出しの検証');
+    await card(page).getByLabel('従業員へ見せる名称').fill('日勤');
+    await card(page).getByLabel('区分の種別').selectOption('working_day');
+    await card(page).getByLabel('適用開始日').fill('2027-06-01');
+    await card(page).getByRole('button', { name: '保存', exact: true }).click();
+    await expect(card(page).getByRole('status')).toHaveText('保存しました');
+
+    const download = page.waitForEvent('download');
+    await card(page).getByRole('button', { name: '取込用の CSV を取り出す' }).click();
+    const file = await download;
+
+    expect(file.suggestedFilename()).toBe('work-categories-import.csv');
+
+    const stream = await file.createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    const text = Buffer.concat(chunks).toString('utf8');
+
+    // 見出しは機械の名前。表示の名前では出さない。
+    expect(text).toContain('code');
+    expect(text).toContain('category_type');
+    expect(text).not.toContain('区分の種別');
+  });
+
   test('月次の集計を、対象月を選んで見られる', async ({ page }) => {
     await page.goto('/#/admin/monthly/summaries');
     await expect(page.getByRole('heading', { level: 2, name: '月次の集計' })).toBeVisible();

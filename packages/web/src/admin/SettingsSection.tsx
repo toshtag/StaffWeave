@@ -26,6 +26,16 @@ export interface SettingsSectionProps<T> {
   columns: readonly Column<T>[];
   rowKey: (row: T) => string;
   load: () => Promise<T[]>;
+  /**
+   * 取込の契約に合わせた列。
+   *
+   * 画面の表は、見出しも値も表示の言語で出す。取込は機械の見出しと値を求める。
+   * 同じ CSV を両方に使うと、表示の言語を変えただけで取り込めなくなる。
+   *
+   * ここを渡した節では、取込用の CSV を別に取り出せるようにする。
+   * 取り出した CSV は、そのまま取込へ戻せる。
+   */
+  importColumns?: readonly { key: string; value: (row: T) => string | number | null }[];
   canRead: boolean;
   /** 作る操作を出してよいか。読めるだけの利用者には form を出さない。 */
   canWrite: boolean;
@@ -211,6 +221,28 @@ export function SettingsSection<T>(props: SettingsSectionProps<T>): React.JSX.El
             >
               {messages.downloadCsv}
             </button>
+            {props.importColumns !== undefined && (
+              <button
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    `${props.csvName}-import.csv`,
+                    csvOf(
+                      (props.importColumns ?? []).map((column) => ({
+                        key: column.key,
+                        // 取込は機械の見出しを求める。表示の言語で出すと、
+                        // 言語を変えただけで取り込めなくなる。
+                        header: column.key,
+                        value: column.value,
+                      })),
+                      rows,
+                    ),
+                  )
+                }
+              >
+                {labels.downloadImportCsv}
+              </button>
+            )}
           </div>
         </>
       )}
