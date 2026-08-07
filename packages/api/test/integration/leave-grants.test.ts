@@ -492,3 +492,201 @@ describe('休暇管理簿', () => {
     expect(response.status).toBe(403);
   });
 });
+
+describe('自動付与の定期実行', () => {
+  /** 自動付与を有効にする。基準を置いただけでは動かない。 */
+  async function enableAutoGrant(
+    instance: TestApp,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    return instance.request(
+      `/api/leave-type-settings/${fixture.paidLeaveId}`,
+      authorized(fixture.adminCookie, { method: 'PATCH', body }),
+    );
+  }
+
+  async function runNow(instance: TestApp, cookie = fixture.adminCookie): Promise<Response> {
+    return instance.request('/api/leave-grant-runs', authorized(cookie, { method: 'POST' }));
+  }
+
+  async function runs(
+    instance: TestApp,
+  ): Promise<{ effectiveOn: string; grantedCount: number; skippedCount: number }[]> {
+    const response = await instance.request(
+      `/api/leave-grant-runs?leaveTypeId=${fixture.paidLeaveId}`,
+      authorized(fixture.adminCookie),
+    );
+    const { runs: rows } = (await response.json()) as {
+      runs: { effectiveOn: string; grantedCount: number; skippedCount: number }[];
+    };
+    return rows;
+  }
+
+  async function availableMinutes(instance: TestApp, employeeId: string): Promise<number> {
+    const response = await instance.request(
+      `/api/leave-balances?employeeId=${employeeId}&asOf=2026-10-01`,
+      authorized(fixture.adminCookie),
+    );
+    const { balances } = (await response.json()) as {
+      balances: { leaveTypeId: string; availableMinutes: number }[];
+    };
+    return (
+      balances.find((balance) => balance.leaveTypeId === fixture.paidLeaveId)?.availableMinutes ?? 0
+    );
+  }
+
+  it('有効にしていなければ、動かしても何も起きない', async () => {
+    const instance = app();
+    expect((await addRule(instance, 6, 10 * DAY)).status).toBe(201);
+    // 基準だけを置く。有効にはしない。
+    expect((await enableAutoGrant(instance, { grantBasis: 'hire_anniversary' })).status).toBe(200);
+
+    expect((await runNow(instance)).status).toBe(200);
+    expect(await runs(instance)).toEqual([]);
+    expect(await availableMinutes(instance, fixture.seniorId)).toBe(0);
+  });
+
+  /**
+   * 止まっていた期間を追いつく。
+   *
+   * 開始日を過去へ置いて動かすと、その日から今日までの日を古い順に処理する。
+   * 入社日基準では、その日が記念日の人だけが対象になる。
+   */
+  it('開始日から今日までを追いつき、記念日の人へ付与する', async () => {
+    const instance = app();
+    expect((await addRule(instance, 6, 10 * DAY)).status).toBe(201);
+    expect(
+      (
+        await enableAutoGrant(instance, {
+          grantBasis: 'hire_anniversary',
+          autoGrantEnabled: true,
+          autoGrantFrom: '2026-09-25',
+        })
+      ).status,
+    ).toBe(200);
+
+    expect((await runNow(instance)).status).toBe(200);
+
+    // 2026-09-25 から 2026-10-01 の 7 日ぶんを処理する。
+    const processed = await runs(instance);
+    expect(processed.map((run) => run.effectiveOn).sort()).toEqual([
+      '2026-09-25',
+      '2026-09-26',
+      '2026-09-27',
+      '2026-09-28',
+      '2026-09-29',
+      '2026-09-30',
+      '2026-10-01',
+    ]);
+
+    // 2025-04-01 入社の相手は、この期間に記念日が来ない。
+    expect(await availableMinutes(instance, fixture.seniorId)).toBe(0);
+  });
+
+  it('二度動かしても、同じ日を二度付与しない', async () => {
+    const instance = app();
+    expect((await addRule(instance, 6, 10 * DAY)).status).toBe(201);
+    expect(
+      (
+        await enableAutoGrant(instance, {
+          grantBasis: 'fixed_date',
+          autoGrantEnabled: true,
+          autoGrantFrom: '2026-09-01',
+          grantFixedMonth: 9,
+          grantFixedDay: 15,
+        })
+      ).status,
+    ).toBe(200);
+
+    await runNow(instance);
+    const first = await availableMinutes(instance, fixture.seniorId);
+    expect(first).toBe(10 * DAY);
+
+    await runNow(instance);
+    expect(await availableMinutes(instance, fixture.seniorId)).toBe(first);
+    // 処理した日は 1 件のまま。二度目は追いつく日が無い。
+    expect(await runs(instance)).toHaveLength(1);
+  });
+
+  it('対象が誰も居なかった日も記録し、次から飛ばす', async () => {
+    const instance = app();
+    // 規則を置かない。誰も付与の段に達しない。
+    expect(
+      (
+        await enableAutoGrant(instance, {
+          grantBasis: 'fixed_date',
+          autoGrantEnabled: true,
+          autoGrantFrom: '2026-09-01',
+          grantFixedMonth: 9,
+          grantFixedDay: 15,
+        })
+      ).status,
+    ).toBe(200);
+
+    await runNow(instance);
+    const processed = await runs(instance);
+
+    expect(processed).toHaveLength(1);
+    expect(processed[0]).toMatchObject({ effectiveOn: '2026-09-15', grantedCount: 0 });
+    // 記録が残らないと、対象の居ない日を毎回やり直すことになり追いつきが進まない。
+    expect(processed[0]?.skippedCount).toBeGreaterThan(0);
+  });
+
+  it('次に対象となる日と人数を、動かさずに見られる', async () => {
+    const instance = app();
+    expect((await addRule(instance, 6, 10 * DAY)).status).toBe(201);
+    expect(
+      (
+        await enableAutoGrant(instance, {
+          grantBasis: 'fixed_date',
+          autoGrantEnabled: true,
+          autoGrantFrom: '2026-09-01',
+          grantFixedMonth: 9,
+          grantFixedDay: 15,
+        })
+      ).status,
+    ).toBe(200);
+
+    const response = await instance.request(
+      `/api/leave-grant-runs/preview?leaveTypeId=${fixture.paidLeaveId}`,
+      authorized(fixture.adminCookie),
+    );
+    const preview = (await response.json()) as {
+      effectiveOn: string | null;
+      grantedCount: number;
+    };
+
+    expect(preview.effectiveOn).toBe('2026-09-15');
+    expect(preview.grantedCount).toBeGreaterThan(0);
+    // 見ただけでは積まない。
+    expect(await availableMinutes(instance, fixture.seniorId)).toBe(0);
+    expect(await runs(instance)).toEqual([]);
+  });
+
+  it('休暇を扱えない利用者は動かせない', async () => {
+    const instance = app();
+    expect((await runNow(instance, fixture.managerCookie)).status).toBe(403);
+  });
+
+  it('止めた休暇種別へは自動付与しない', async () => {
+    const instance = app();
+    expect((await addRule(instance, 6, 10 * DAY)).status).toBe(201);
+    expect(
+      (
+        await enableAutoGrant(instance, {
+          grantBasis: 'fixed_date',
+          autoGrantEnabled: true,
+          autoGrantFrom: '2026-09-01',
+          grantFixedMonth: 9,
+          grantFixedDay: 15,
+          active: false,
+        })
+      ).status,
+    ).toBe(200);
+
+    await runNow(instance);
+
+    expect(await runs(instance)).toEqual([]);
+    expect(await availableMinutes(instance, fixture.seniorId)).toBe(0);
+  });
+});
