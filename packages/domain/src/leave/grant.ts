@@ -8,6 +8,7 @@
  */
 
 import type { BusinessDate } from '../attendance/business-date.js';
+import { addDaysToBusinessDate } from '../attendance/business-date.js';
 
 /** 自動付与の基準。 */
 export const LEAVE_GRANT_BASES = ['hire_anniversary', 'fixed_date'] as const;
@@ -134,4 +135,46 @@ export function planLeaveGrants(input: {
   }
 
   return { grants, skipped };
+}
+
+/**
+ * 自動付与で処理すべき日を、古い順に並べる。
+ *
+ * 定期実行は止まることがある。止まっていた期間を追いつくには、
+ * 「どこから今日までを処理するか」を日の並びとして決める必要がある。
+ *
+ * 入社日基準では、すべての日が対象になる。その日が誰の記念日かは
+ * `planLeaveGrants` が判断するため、ここでは日を落とさない。
+ *
+ * 一斉付与では、基準の月日に当たる日だけが対象になる。
+ *
+ * @param from 処理する最初の日。ここより前へは遡らない。
+ * @param through 処理する最後の日。ふつうはその環境の「今日」。
+ */
+export function leaveGrantDatesBetween(input: {
+  basis: LeaveGrantBasis;
+  from: BusinessDate;
+  through: BusinessDate;
+  /** 一斉付与の基準日。入社日基準では見ない。 */
+  fixedMonth?: number | null;
+  fixedDay?: number | null;
+}): BusinessDate[] {
+  if (input.from > input.through) return [];
+
+  const dates: BusinessDate[] = [];
+  for (
+    let cursor = input.from;
+    cursor <= input.through;
+    cursor = addDaysToBusinessDate(cursor, 1)
+  ) {
+    if (input.basis === 'hire_anniversary') {
+      dates.push(cursor);
+      continue;
+    }
+    // 一斉付与は、月日が決まっていなければ日そのものが決まらない。
+    if (input.fixedMonth == null || input.fixedDay == null) return [];
+    const [, month, day] = cursor.split('-').map(Number);
+    if (month === input.fixedMonth && day === input.fixedDay) dates.push(cursor);
+  }
+  return dates;
 }

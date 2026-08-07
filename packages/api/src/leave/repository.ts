@@ -1,4 +1,5 @@
 import type {
+  LeaveGrantRunRecord,
   LeaveLedgerEntryRecord,
   LeaveTypeSettingsRecord,
   UpdateLeaveTypeRequest,
@@ -47,6 +48,41 @@ export interface LeaveRepository {
     employeeIds: readonly string[],
     leaveTypeId?: string,
   ): Promise<Map<string, LeaveLedgerEntryRecord[]>>;
+
+  /**
+   * 自動付与を動かす休暇種別。
+   *
+   * 基準を置いただけでは動かさない。有効にしたものだけを返す。
+   * 使えない休暇種別も返さない。止めた種別へ付与が続くと、
+   * 止めたつもりの設定が残数を増やし続ける。
+   */
+  listAutoGrantLeaveTypes(workspaceId: string): Promise<LeaveTypeSettingsRecord[]>;
+
+  /** 自動付与を最後に処理した日。一度も処理していなければ null。 */
+  findLastGrantRun(workspaceId: string, leaveTypeId: string): Promise<string | null>;
+
+  /**
+   * 自動付与を処理した日を記録する。
+   *
+   * 付与が 0 件でも記録する。残さないと、対象が誰も居なかった日を
+   * 毎回やり直すことになり、追いつきが進まない。
+   */
+  recordGrantRun(
+    workspaceId: string,
+    input: {
+      leaveTypeId: string;
+      effectiveOn: string;
+      grantedCount: number;
+      skippedCount: number;
+    },
+  ): Promise<void>;
+
+  /** 直近の実行の記録。管理の画面が「いつ、何件」を出すために読む。 */
+  listGrantRuns(
+    workspaceId: string,
+    leaveTypeId: string,
+    limit: number,
+  ): Promise<LeaveGrantRunRecord[]>;
 
   /** 付与規則。休暇種別を指定すると、その種別だけ。 */
   listGrantRules(workspaceId: string, leaveTypeId?: string): Promise<LeaveGrantRuleRecord[]>;
@@ -117,12 +153,17 @@ interface LeaveTypeRow {
   day_minutes: number | null;
   expires_after_months: number | null;
   grant_basis: LeaveTypeSettingsRecord['grantBasis'];
+  auto_grant_enabled: boolean;
+  auto_grant_from: string | null;
+  grant_fixed_month: number | null;
+  grant_fixed_day: number | null;
   active: boolean;
   created_at: Date;
 }
 
 const LEAVE_TYPE_COLUMNS = `id, code, name, paid, unit_minutes, day_minutes, expires_after_months,
-   grant_basis, active, created_at`;
+   grant_basis, auto_grant_enabled, auto_grant_from, grant_fixed_month, grant_fixed_day,
+   active, created_at`;
 
 function toLeaveType(row: LeaveTypeRow): LeaveTypeSettingsRecord {
   return {
@@ -134,6 +175,10 @@ function toLeaveType(row: LeaveTypeRow): LeaveTypeSettingsRecord {
     dayMinutes: row.day_minutes,
     expiresAfterMonths: row.expires_after_months,
     grantBasis: row.grant_basis,
+    autoGrantEnabled: row.auto_grant_enabled,
+    autoGrantFrom: row.auto_grant_from,
+    grantFixedMonth: row.grant_fixed_month,
+    grantFixedDay: row.grant_fixed_day,
     active: row.active,
     createdAt: row.created_at.toISOString(),
   };
@@ -222,7 +267,12 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
                 expires_after_months =
                   CASE WHEN $9::boolean THEN $10 ELSE expires_after_months END,
                 grant_basis = CASE WHEN $11::boolean THEN $12 ELSE grant_basis END,
-                active = COALESCE($13, active)
+                auto_grant_enabled = COALESCE($13, auto_grant_enabled),
+                auto_grant_from = CASE WHEN $14::boolean THEN $15::date ELSE auto_grant_from END,
+                grant_fixed_month =
+                  CASE WHEN $16::boolean THEN $17 ELSE grant_fixed_month END,
+                grant_fixed_day = CASE WHEN $16::boolean THEN $18 ELSE grant_fixed_day END,
+                active = COALESCE($19, active)
           WHERE workspace_id = $1 AND id = $2
         RETURNING ${LEAVE_TYPE_COLUMNS}`,
         [
@@ -238,6 +288,13 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
           input.expiresAfterMonths ?? null,
           'grantBasis' in input,
           input.grantBasis ?? null,
+          input.autoGrantEnabled ?? null,
+          'autoGrantFrom' in input,
+          input.autoGrantFrom ?? null,
+          // 月と日は、そろって初めて基準日になる。片方だけ書き換えない。
+          'grantFixedMonth' in input || 'grantFixedDay' in input,
+          input.grantFixedMonth ?? null,
+          input.grantFixedDay ?? null,
           input.active ?? null,
         ],
       );
@@ -317,6 +374,63 @@ export function createLeaveRepository(db: Queryable): LeaveRepository {
         byEmployee.set(row.employee_id, list);
       }
       return byEmployee;
+    },
+
+    async listAutoGrantLeaveTypes(workspaceId) {
+      const rows = await db.query<LeaveTypeRow>(
+        `SELECT ${LEAVE_TYPE_COLUMNS} FROM leave_types
+          WHERE workspace_id = $1
+            AND active = true
+            AND auto_grant_enabled = true
+            AND grant_basis IS NOT NULL
+          ORDER BY code`,
+        [workspaceId],
+      );
+      return rows.map(toLeaveType);
+    },
+
+    async findLastGrantRun(workspaceId, leaveTypeId) {
+      const rows = await db.query<{ effective_on: string }>(
+        `SELECT to_char(max(effective_on), 'YYYY-MM-DD') AS effective_on
+           FROM leave_grant_runs
+          WHERE workspace_id = $1 AND leave_type_id = $2`,
+        [workspaceId, leaveTypeId],
+      );
+      return rows[0]?.effective_on ?? null;
+    },
+
+    async recordGrantRun(workspaceId, input) {
+      await db.query(
+        `INSERT INTO leave_grant_runs
+           (workspace_id, leave_type_id, effective_on, granted_count, skipped_count)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [workspaceId, input.leaveTypeId, input.effectiveOn, input.grantedCount, input.skippedCount],
+      );
+    },
+
+    async listGrantRuns(workspaceId, leaveTypeId, limit) {
+      const rows = await db.query<{
+        leave_type_id: string;
+        effective_on: string;
+        ran_at: Date;
+        granted_count: number;
+        skipped_count: number;
+      }>(
+        `SELECT leave_type_id, to_char(effective_on, 'YYYY-MM-DD') AS effective_on,
+                ran_at, granted_count, skipped_count
+           FROM leave_grant_runs
+          WHERE workspace_id = $1 AND leave_type_id = $2
+          ORDER BY effective_on DESC
+          LIMIT $3`,
+        [workspaceId, leaveTypeId, limit],
+      );
+      return rows.map((row) => ({
+        leaveTypeId: row.leave_type_id,
+        effectiveOn: row.effective_on,
+        ranAt: row.ran_at.toISOString(),
+        grantedCount: row.granted_count,
+        skippedCount: row.skipped_count,
+      }));
     },
 
     async listGrantRules(workspaceId, leaveTypeId) {

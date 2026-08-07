@@ -156,6 +156,22 @@ export const updateLeaveTypeRequestSchema = objectSchema({
       oneOf: [{ type: 'string', enum: [...LEAVE_GRANT_BASES] }, { type: 'null' }],
       description: '自動付与の基準。空なら自動付与しない',
     },
+    autoGrantEnabled: {
+      type: 'boolean',
+      description: '定期実行で自動付与を動かすか。基準を置いただけでは動かさない',
+    },
+    autoGrantFrom: {
+      oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }],
+      description: '自動付与を始める日。ここより前へは遡らない',
+    },
+    grantFixedMonth: {
+      oneOf: [{ type: 'integer', minimum: 1, maximum: 12 }, { type: 'null' }],
+      description: '一斉付与の基準日の月',
+    },
+    grantFixedDay: {
+      oneOf: [{ type: 'integer', minimum: 1, maximum: 28 }, { type: 'null' }],
+      description: '一斉付与の基準日の日。月末の無い年を作らないため 28 までにする',
+    },
     active: { type: 'boolean' },
   },
   required: [],
@@ -173,6 +189,10 @@ export const leaveTypeSettingsSchema = objectSchema({
     grantBasis: {
       oneOf: [{ type: 'string', enum: [...LEAVE_GRANT_BASES] }, { type: 'null' }],
     },
+    autoGrantEnabled: { type: 'boolean' },
+    autoGrantFrom: { oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+    grantFixedMonth: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+    grantFixedDay: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
     active: { type: 'boolean' },
     createdAt: timestampSchema,
   },
@@ -185,6 +205,10 @@ export const leaveTypeSettingsSchema = objectSchema({
     'dayMinutes',
     'expiresAfterMonths',
     'grantBasis',
+    'autoGrantEnabled',
+    'autoGrantFrom',
+    'grantFixedMonth',
+    'grantFixedDay',
     'active',
     'createdAt',
   ],
@@ -230,6 +254,47 @@ export const createLeaveGrantRuleRequestSchema = objectSchema({
 export const listLeaveGrantRulesQuerySchema = objectSchema({
   properties: { leaveTypeId: uuidSchema },
   required: [],
+});
+
+export const leaveGrantRunSchema = objectSchema({
+  description: '自動付与を処理した日の記録。付与が 0 件の日も残す',
+  properties: {
+    leaveTypeId: uuidSchema,
+    effectiveOn: { type: 'string', format: 'date' },
+    ranAt: timestampSchema,
+    grantedCount: { type: 'integer', minimum: 0 },
+    skippedCount: { type: 'integer', minimum: 0 },
+  },
+  required: ['leaveTypeId', 'effectiveOn', 'ranAt', 'grantedCount', 'skippedCount'],
+});
+
+export const leaveGrantRunListSchema = objectSchema({
+  properties: { runs: arraySchema(leaveGrantRunSchema) },
+  required: ['runs'],
+});
+
+export const listLeaveGrantRunsQuerySchema = objectSchema({
+  properties: { leaveTypeId: uuidSchema },
+  required: ['leaveTypeId'],
+});
+
+export const leaveGrantPreviewSchema = objectSchema({
+  description:
+    '次に自動付与の対象になる日と人数。処理はしない。' +
+    '見せずに動かすと、設定を間違えたことに付与された後で気付く',
+  properties: {
+    leaveTypeId: uuidSchema,
+    effectiveOn: { oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+    grantedCount: { type: 'integer', minimum: 0 },
+    skippedCount: { type: 'integer', minimum: 0 },
+  },
+  required: ['leaveTypeId', 'effectiveOn', 'grantedCount', 'skippedCount'],
+});
+
+export const runLeaveGrantsResponseSchema = objectSchema({
+  description: '自動付与を動かした結果。処理した日ごとの件数',
+  properties: { runs: arraySchema(leaveGrantRunSchema) },
+  required: ['runs'],
 });
 
 export const grantLeaveInBulkRequestSchema = objectSchema({

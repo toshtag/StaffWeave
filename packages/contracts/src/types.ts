@@ -1104,6 +1104,13 @@ export interface LeaveTypeSettingsRecord {
   expiresAfterMonths: number | null;
   /** 自動付与の基準。空なら自動付与しない。 */
   grantBasis: LeaveGrantBasis | null;
+  /** 定期実行で自動付与を動かすか。基準を置いただけでは動かさない。 */
+  autoGrantEnabled: boolean;
+  /** 自動付与を始める日。ここより前へは遡らない。 */
+  autoGrantFrom: string | null;
+  /** 一斉付与の基準日。入社日基準では使わない。 */
+  grantFixedMonth: number | null;
+  grantFixedDay: number | null;
   active: boolean;
   createdAt: string;
 }
@@ -1119,7 +1126,33 @@ export interface UpdateLeaveTypeRequest {
   dayMinutes?: number | null;
   expiresAfterMonths?: number | null;
   grantBasis?: LeaveGrantBasis | null;
+  autoGrantEnabled?: boolean;
+  autoGrantFrom?: string | null;
+  grantFixedMonth?: number | null;
+  grantFixedDay?: number | null;
   active?: boolean;
+}
+
+/** 自動付与を処理した日の記録。付与が 0 件の日も残す。 */
+export interface LeaveGrantRunRecord {
+  leaveTypeId: string;
+  /** 付与の効力を持たせた日。追いつきでは、過去の日を今日実行する。 */
+  effectiveOn: string;
+  ranAt: string;
+  grantedCount: number;
+  skippedCount: number;
+}
+
+export interface LeaveGrantRunList {
+  runs: LeaveGrantRunRecord[];
+}
+
+/** 次に自動付与の対象になる日と人数。対象の日が無ければ `effectiveOn` は null。 */
+export interface LeaveGrantPreview {
+  leaveTypeId: string;
+  effectiveOn: string | null;
+  grantedCount: number;
+  skippedCount: number;
 }
 
 /** 勤続の段ごとの付与分数。規則が無ければ自動でも一斉でも付与しない。 */
