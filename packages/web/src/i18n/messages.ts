@@ -362,6 +362,16 @@ export interface AdminMessages {
   grantBasis: string;
   grantBasisLabel: { fixed_date: string; hire_anniversary: string };
   grantEffectiveOn: string;
+  autoGrantEnabled: string;
+  autoGrantFrom: string;
+  grantFixedMonth: string;
+  grantFixedDay: string;
+  autoGrantHint: string;
+  previewAutoGrant: string;
+  runAutoGrant: string;
+  autoGrantNext: (date: string, granted: number) => string;
+  autoGrantNoTarget: string;
+  autoGrantOutcome: (days: number, granted: number) => string;
   runBulkGrant: string;
   bulkGrantOutcome: (granted: number, skipped: number) => string;
   sectionLeaveRegister: string;
@@ -842,6 +852,18 @@ const ja: Messages = {
     grantBasis: '付与の基準',
     grantBasisLabel: { fixed_date: '一斉付与', hire_anniversary: '入社日基準' },
     grantEffectiveOn: '付与日',
+    autoGrantEnabled: '自動付与を動かす',
+    autoGrantFrom: '自動付与を始める日',
+    grantFixedMonth: '一斉付与の月',
+    grantFixedDay: '一斉付与の日',
+    autoGrantHint:
+      '基準を置いただけでは動きません。有効にすると、定期実行が始める日から今日までを追いつきます。',
+    previewAutoGrant: '次の対象を見る',
+    runAutoGrant: '自動付与をいま動かす',
+    autoGrantNext: (date: string, granted: number) => `次は ${date}。${granted} 名が対象です。`,
+    autoGrantNoTarget: 'いま対象になる日はありません。',
+    autoGrantOutcome: (days: number, granted: number) =>
+      `${days} 日ぶんを処理し、${granted} 件を付与しました。`,
     runBulkGrant: 'まとめて付与する',
     bulkGrantOutcome: (granted: number, skipped: number) =>
       `${granted} 名へ付与し、${skipped} 名は付与しませんでした。`,
@@ -1343,6 +1365,19 @@ const en: Messages = {
     grantBasis: 'Grant basis',
     grantBasisLabel: { fixed_date: 'Fixed date', hire_anniversary: 'Hire anniversary' },
     grantEffectiveOn: 'Effective on',
+    autoGrantEnabled: 'Run automatic grants',
+    autoGrantFrom: 'Automatic grants start on',
+    grantFixedMonth: 'Fixed grant month',
+    grantFixedDay: 'Fixed grant day',
+    autoGrantHint:
+      'Setting a basis alone does nothing. Once enabled, the scheduled run catches up from the start date to today.',
+    previewAutoGrant: 'Show the next target',
+    runAutoGrant: 'Run automatic grants now',
+    autoGrantNext: (date: string, granted: number) =>
+      `Next is ${date}, covering ${granted} people.`,
+    autoGrantNoTarget: 'No day is due right now.',
+    autoGrantOutcome: (days: number, granted: number) =>
+      `Processed ${days} day(s) and granted ${granted} entries.`,
     runBulkGrant: 'Grant in bulk',
     bulkGrantOutcome: (granted: number, skipped: number) =>
       `Granted to ${granted}; skipped ${skipped}.`,

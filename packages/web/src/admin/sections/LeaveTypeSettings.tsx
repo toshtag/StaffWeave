@@ -27,6 +27,10 @@ export function LeaveTypeSettings({ permissions }: SectionProps): React.JSX.Elem
   const [unitMinutes, setUnitMinutes] = useState('');
   const [dayMinutes, setDayMinutes] = useState('');
   const [expiresAfterMonths, setExpiresAfterMonths] = useState('');
+  const [autoGrantEnabled, setAutoGrantEnabled] = useState(false);
+  const [autoGrantFrom, setAutoGrantFrom] = useState('');
+  const [grantFixedMonth, setGrantFixedMonth] = useState('');
+  const [grantFixedDay, setGrantFixedDay] = useState('');
   const [active, setActive] = useState(true);
 
   const unset = labels.unconfigured;
@@ -41,6 +45,12 @@ export function LeaveTypeSettings({ permissions }: SectionProps): React.JSX.Elem
       key: 'expires',
       header: labels.expiresAfterMonths,
       value: (row) => row.expiresAfterMonths ?? labels.neverExpires,
+    },
+    {
+      key: 'autoGrant',
+      header: labels.autoGrantEnabled,
+      value: (row) =>
+        row.autoGrantEnabled ? `${labels.yes} (${row.autoGrantFrom ?? unset})` : labels.no,
     },
     {
       key: 'active',
@@ -71,6 +81,10 @@ export function LeaveTypeSettings({ permissions }: SectionProps): React.JSX.Elem
         setExpiresAfterMonths(
           row.expiresAfterMonths === null ? '' : String(row.expiresAfterMonths),
         );
+        setAutoGrantEnabled(row.autoGrantEnabled);
+        setAutoGrantFrom(row.autoGrantFrom ?? '');
+        setGrantFixedMonth(row.grantFixedMonth === null ? '' : String(row.grantFixedMonth));
+        setGrantFixedDay(row.grantFixedDay === null ? '' : String(row.grantFixedDay));
         setActive(row.active);
       }}
       submit={
@@ -81,6 +95,10 @@ export function LeaveTypeSettings({ permissions }: SectionProps): React.JSX.Elem
                 unitMinutes: numberOrNull(unitMinutes),
                 dayMinutes: numberOrNull(dayMinutes),
                 expiresAfterMonths: numberOrNull(expiresAfterMonths),
+                autoGrantEnabled,
+                autoGrantFrom: autoGrantFrom.trim() === '' ? null : autoGrantFrom,
+                grantFixedMonth: numberOrNull(grantFixedMonth),
+                grantFixedDay: numberOrNull(grantFixedDay),
                 active,
               });
               // 直したあとも選んだままにする。ここで選択を外すと、
@@ -121,6 +139,37 @@ export function LeaveTypeSettings({ permissions }: SectionProps): React.JSX.Elem
               min={1}
               max={240}
               hint={labels.expiresAfterMonthsHint}
+            />
+            <CheckboxField
+              label={labels.autoGrantEnabled}
+              checked={autoGrantEnabled}
+              onChange={setAutoGrantEnabled}
+            />
+            <TextField
+              id="leave-auto-grant-from"
+              label={labels.autoGrantFrom}
+              type="date"
+              value={autoGrantFrom}
+              onChange={setAutoGrantFrom}
+              hint={labels.autoGrantHint}
+            />
+            <TextField
+              id="leave-grant-fixed-month"
+              label={labels.grantFixedMonth}
+              type="number"
+              value={grantFixedMonth}
+              onChange={setGrantFixedMonth}
+              min={1}
+              max={12}
+            />
+            <TextField
+              id="leave-grant-fixed-day"
+              label={labels.grantFixedDay}
+              type="number"
+              value={grantFixedDay}
+              onChange={setGrantFixedDay}
+              min={1}
+              max={28}
             />
             <CheckboxField label={labels.activeLabel} checked={active} onChange={setActive} />
           </>

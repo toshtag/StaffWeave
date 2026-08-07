@@ -15,6 +15,7 @@ import {
   listLeaveBalancesQuerySchema,
   listLeaveExpirationsQuerySchema,
   listLeaveGrantRulesQuerySchema,
+  listLeaveGrantRunsQuerySchema,
   listLeaveLedgerQuerySchema,
   listLeaveRegisterQuerySchema,
   operations,
@@ -85,6 +86,23 @@ export function createLeaveRoutes(deps: LeaveRouteDependencies): Hono<AppEnv> {
     const auth = currentAuth(c);
     const query = readQuery<{ leaveTypeId?: string }>(c, listLeaveGrantRulesQuerySchema);
     return c.json({ leaveGrantRules: await grants.listRules(auth, query.leaveTypeId) }, 200);
+  });
+
+  app.get(operations.listLeaveGrantRuns.path, async (c) => {
+    const auth = currentAuth(c);
+    const query = readQuery<{ leaveTypeId: string }>(c, listLeaveGrantRunsQuerySchema);
+    return c.json({ runs: await grants.listRuns(auth, query.leaveTypeId) }, 200);
+  });
+
+  app.get(honoPath(operations.previewLeaveGrants), async (c) => {
+    const auth = currentAuth(c);
+    const query = readQuery<{ leaveTypeId: string }>(c, listLeaveGrantRunsQuerySchema);
+    return c.json(await grants.previewRuns(auth, query.leaveTypeId), 200);
+  });
+
+  app.post(operations.runLeaveGrants.path, async (c) => {
+    const auth = currentAuth(c);
+    return c.json({ runs: await grants.runNow(auth) }, 200);
   });
 
   app.post(operations.createLeaveGrantRule.path, async (c) => {

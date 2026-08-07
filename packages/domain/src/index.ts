@@ -297,6 +297,7 @@ export {
   grantMinutesFor,
   isLeaveGrantBasis,
   LEAVE_GRANT_BASES,
+  leaveGrantDatesBetween,
   planLeaveGrants,
   serviceMonthsBetween,
 } from './leave/grant.js';
