@@ -101,7 +101,27 @@ async function createType(instance: TestApp): Promise<RequestTypeRecord> {
     }),
   );
   if (response.status !== 201) throw new Error(`申請種別を作れませんでした: ${response.status}`);
-  return (await response.json()) as RequestTypeRecord;
+  const type = (await response.json()) as RequestTypeRecord;
+
+  // 経路が決まっていない申請種別では提出できない。ここで見たいのは承認の効き方
+  // なので、既定の経路を置いてから返す。
+  const route = await instance.request(
+    `/api/request-types/${type.id}/approval-route`,
+    authorized(fixture.adminCookie, {
+      method: 'PUT',
+      body: {
+        steps: Array.from({ length: type.approvalSteps }, (_unused, index) => ({
+          step: index + 1,
+          approverUserId: null,
+          approverPolicy: 'workspace_admin',
+        })),
+      },
+    }),
+  );
+  if (route.status !== 200) {
+    throw new Error(`承認経路を置けませんでした: ${route.status} ${await route.text()}`);
+  }
+  return type;
 }
 
 async function submit(instance: TestApp, type: RequestTypeRecord): Promise<EmployeeRequestRecord> {

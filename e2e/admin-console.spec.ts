@@ -69,6 +69,9 @@ test.describe('設定の画面', () => {
     await card(page).getByLabel('名称').fill('検証用の申請');
     await card(page).getByLabel('区分').selectOption('overtime');
     await card(page).getByLabel('承認の段数').fill('2');
+    // 段ごとの承認者を決めるまでは保存できない。既定では埋まっていない。
+    await card(page).getByLabel('1 段目 承認者').selectOption('workspace_admin');
+    await card(page).getByLabel('2 段目 承認者').selectOption('organization_manager');
     await card(page).getByRole('button', { name: '保存', exact: true }).click();
 
     const row = card(page).locator('tbody tr', { hasText: code });
@@ -76,9 +79,32 @@ test.describe('設定の画面', () => {
 
     await row.getByRole('button', { name: 'この行を直す' }).click();
     await card(page).getByLabel('承認の段数').fill('3');
+    await card(page).getByLabel('3 段目 承認者').selectOption('workspace_admin');
     await card(page).getByRole('button', { name: '保存', exact: true }).click();
 
     await expect(card(page).locator('tbody tr', { hasText: code })).toContainText('3');
+  });
+
+  /**
+   * 決めていない段があるまま保存させない。
+   *
+   * 保存できてしまうと、設定の画面では正しく見えるのに、その種別では
+   * 申請を出せない状態が残る。
+   */
+  test('承認者を決めていない段があると保存できない', async ({ page }) => {
+    await page.goto('/#/admin/request/request-types');
+    const code = `REQ${(Date.now() + 1) % 100000}`;
+
+    await card(page).getByLabel('コード').fill(code);
+    await card(page).getByLabel('名称').fill('経路なしの申請');
+    await card(page).getByLabel('区分').selectOption('other');
+    await card(page).getByLabel('承認の段数').fill('2');
+    await card(page).getByLabel('1 段目 承認者').selectOption('workspace_admin');
+    // 2 段目は未設定のまま。
+    await card(page).getByRole('button', { name: '保存', exact: true }).click();
+
+    await expect(card(page).getByRole('alert')).toContainText('すべての段の承認者');
+    await expect(card(page).locator('tbody')).not.toContainText(code);
   });
 
   test('休暇種別は既定では未設定で、あとから取得の単位を入れられる', async ({ page }) => {

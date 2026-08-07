@@ -115,7 +115,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 自己承認の禁止 | implemented | `test:packages/domain/src/identity/roles.test.ts` | 承認者と対象者が同じなら断る |
 | 申請区分（休暇・残業・休日出勤・打刻修正など） | implemented | `op:createRequestType` `op:listRequestTypes` `op:submitEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 組織が定義する。従業員と日付ごとに 1 件という制限は無い |
 | 区分ごとの入力項目と必須の設定 | partial | `op:createRequestType` `op:updateRequestType` | 理由・休暇種別・時間帯・残業の上限時刻の要否を区分ごとに決められる。添付は未実装 |
-| 1〜4 段階の承認と申請時点の経路の固定 | implemented | `op:decideEmployeeRequest` `op:replaceApprovalRoute` `test:packages/domain/src/approval/approval-route.test.ts` `test:packages/api/test/integration/employee-request.test.ts` `migration:0041_create_approval_routes.sql` | 段ごとに承認者または承認方針を決め、提出した時点の経路を写す。現在の段の対象外の利用者による決裁は断る |
+| 1〜4 段階の承認と申請時点の経路の固定 | implemented | `op:decideEmployeeRequest` `op:replaceApprovalRoute` `test:packages/domain/src/approval/approval-route.test.ts` `test:packages/api/test/integration/employee-request.test.ts` `migration:0041_create_approval_routes.sql` | 段ごとに承認者または承認方針を決め、提出した時点の経路を写す。決まっていない段があれば提出を断る。現在の段の対象外の利用者による決裁も断る |
 | 決裁の再送で段が進まないこと | implemented | `migration:0030_create_request_types_and_approvals.sql` `test:packages/api/test/integration/employee-request.test.ts` | 何段目・何回目の提出かを添えさせ、同じ組み合わせの二度目は一意制約が断る |
 | 代理承認・不在対応 | partial | `op:createApprovalDelegation` `op:decideEmployeeRequest` `test:packages/domain/src/approval/approval-route.test.ts` `test:packages/api/test/integration/employee-request.test.ts` | 委任のある相手だけが代理で決裁でき、本来の承認者が監査へ残る。不在時の自動委任は無い |
 | 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
