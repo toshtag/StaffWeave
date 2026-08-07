@@ -66,6 +66,7 @@ export {
   isBusinessDate,
 } from './attendance/business-date.js';
 export type {
+  ApprovedAdjustments,
   CalculationBasis,
   CalculationInput,
   CalculationResult,
@@ -82,6 +83,7 @@ export {
   DEFAULT_CALCULATION_RULES,
   fingerprintSource,
   isDayType,
+  NO_APPROVED_ADJUSTMENTS,
 } from './attendance/calculation.js';
 export type {
   CorrectableEvent,

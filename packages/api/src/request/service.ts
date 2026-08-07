@@ -10,9 +10,14 @@ import type {
 import type { StagedRequest, StagedRequestProblem } from '@staffweave/domain';
 import {
   applyStagedRequestEvent,
+  closingPeriodOf,
   hasPermission,
+  instantFromLocal,
+  resolveEffectiveEvents,
   validateLeaveConsumption,
 } from '@staffweave/domain';
+import type { DayRepositories } from '../attendance/day.js';
+import { recalculateWorkDay } from '../attendance/day.js';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import type { LeaveRepository } from '../leave/repository.js';
@@ -22,7 +27,7 @@ import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.
 import type { NotificationOutbox } from '../shared/notification-outbox.js';
 import type { RequestRepository } from './repository.js';
 
-export interface RequestRepositories {
+export interface RequestRepositories extends DayRepositories {
   requests: RequestRepository;
   leave: LeaveRepository;
   audit: AuditRepository;
@@ -73,6 +78,18 @@ export interface RequestService {
   ): Promise<EmployeeRequestRecord>;
   cancel(context: AuthenticatedContext, requestId: string): Promise<EmployeeRequestRecord>;
 }
+
+/**
+ * 承認しきったときに日次の勤怠へ効く区分。
+ *
+ * 休暇はここに入れない。休暇は台帳へ消化として反映し、
+ * 日次の計算は勤務予定の日種別から出す。
+ */
+const REFLECTED_CATEGORIES: readonly RequestTypeRecord['category'][] = [
+  'overtime',
+  'holiday_work',
+  'attendance_correction',
+];
 
 /** 進められない理由を、利用者に伝わる言葉へ直す。 */
 const PROBLEM_MESSAGES: Record<StagedRequestProblem, string> = {
@@ -217,6 +234,154 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
         throw new ApiError('conflict', 'この申請はすでに台帳へ反映されています');
       }
       throw error;
+    }
+  };
+
+  /**
+   * 承認しきった申請を、日次の勤怠へ反映する。
+   *
+   * 反映するのは 3 つの区分だけ。休暇は台帳の側で扱う。
+   *
+   * 締め済みの期間に当たる日があれば、承認そのものを断る。
+   * 黙って承認すると、承認したのに計算が動かない日ができ、
+   * 「承認済み」と「給与へ渡した値」が食い違ったまま残る。
+   *
+   * 断るのは締め済みだけで、日次の申請が承認済みの日は断らない。
+   * 承認済みの日を直すためにこの申請があり、これも承認を通っている。
+   * ここで断ると、確定した日を直す手段が締め解除しか無くなる。
+   * 画面から直に修正する経路（`requireEditableDay`）は、これまでどおり断る。
+   */
+  const applyToAttendance = async (
+    repositories: RequestRepositories,
+    workspaceId: string,
+    request: EmployeeRequestRecord,
+    type: RequestTypeRecord,
+    actorUserId: string,
+  ): Promise<string[]> => {
+    const dates = await repositories.requests.listAffectedDates(workspaceId, request.id);
+    if (dates.length === 0) return [];
+
+    const timeZone = await repositories.attendance.findTimeZoneForEmployee(
+      workspaceId,
+      request.employeeId,
+    );
+    if (timeZone === null) throw notFound('従業員');
+
+    for (const businessDate of dates) {
+      const closing = await repositories.approval.findClosing(
+        workspaceId,
+        request.employeeId,
+        closingPeriodOf(businessDate),
+      );
+      if (closing?.state === 'closed') {
+        throw new ApiError(
+          'conflict',
+          `${businessDate} は締め済みの期間です。締めを解除してから承認してください`,
+        );
+      }
+    }
+
+    if (type.category === 'attendance_correction') {
+      await rewritePunches(repositories, workspaceId, request, timeZone, actorUserId);
+    }
+
+    for (const businessDate of dates) {
+      await recalculateWorkDay(
+        repositories,
+        workspaceId,
+        request.employeeId,
+        businessDate,
+        timeZone,
+      );
+    }
+    return dates;
+  };
+
+  /**
+   * 承認しきった打刻修正の申請を、実際の打刻として積む。
+   *
+   * 元の打刻は書き換えない。効いている出勤・退勤を取り消す記録を積み、
+   * そのうえで申請した時刻を追加する。あとから「誰がいつ何を直したか」を辿れる。
+   *
+   * 休憩の打刻は触らない。申請が持つのは出退勤の時間帯だけで、
+   * 休憩まで消すと、申請に書いていない記録が承認によって消える。
+   */
+  const rewritePunches = async (
+    repositories: RequestRepositories,
+    workspaceId: string,
+    request: EmployeeRequestRecord,
+    timeZone: string,
+    actorUserId: string,
+  ): Promise<void> => {
+    if (request.startMinutes === null || request.endMinutes === null) return;
+    if (request.endsOn !== null && request.endsOn !== request.businessDate) {
+      throw new ApiError(
+        'conflict',
+        '打刻修正の申請は 1 日ぶんだけを対象にできます。期間の申請は反映できません',
+      );
+    }
+
+    const { attendance } = repositories;
+    if (!(await attendance.lockEmployee(workspaceId, request.employeeId))) {
+      throw notFound('従業員');
+    }
+
+    const businessDate = request.businessDate;
+    const reason = (request.reason ?? '').trim() || '承認された打刻修正の申請による';
+
+    const history = await attendance.listEventsForDay(
+      workspaceId,
+      request.employeeId,
+      businessDate,
+    );
+    const byId = new Map(history.map((record) => [record.id, record]));
+    const effective = resolveEffectiveEvents(
+      history.map((record) => ({
+        id: record.id,
+        eventType: record.eventType,
+        occurredAt: new Date(record.occurredAt),
+        correctionAction: record.correctionAction,
+        correctsEventId: record.correctsEventId,
+        recordedAt: new Date(record.recordedAt),
+      })),
+    );
+
+    let index = 0;
+    for (const event of effective) {
+      if (event.eventType !== 'clock_in' && event.eventType !== 'clock_out') continue;
+      const target = byId.get(event.id);
+      if (target === undefined) continue;
+      await attendance.insertEvent(workspaceId, {
+        employeeId: request.employeeId,
+        eventType: target.eventType,
+        occurredAt: new Date(target.occurredAt),
+        businessDate,
+        source: 'correction',
+        // 同じ申請から二度積まないよう、鍵は申請の識別子から決める。
+        requestId: `employee-request:${request.id}:void:${index}`,
+        recordedByUserId: actorUserId,
+        correctsEventId: target.id,
+        correctionAction: 'void',
+        correctionReason: reason,
+      });
+      index += 1;
+    }
+
+    for (const [eventType, minutes, suffix] of [
+      ['clock_in', request.startMinutes, 'in'],
+      ['clock_out', request.endMinutes, 'out'],
+    ] as const) {
+      await attendance.insertEvent(workspaceId, {
+        employeeId: request.employeeId,
+        eventType,
+        occurredAt: instantFromLocal(businessDate, minutes, timeZone),
+        businessDate,
+        source: 'correction',
+        requestId: `employee-request:${request.id}:${suffix}`,
+        recordedByUserId: actorUserId,
+        correctionAction: 'add',
+        correctionReason: reason,
+      });
     }
   };
 
@@ -388,10 +553,22 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
         });
         if (!saved) throw notFound('申請');
 
-        // 承認しきった休暇の申請だけを台帳へ反映する。途中の段では動かさない。
+        // 承認しきった申請だけを反映する。途中の段では動かさない。
         const type = await requests.findRequestType(context.workspace.id, saved.requestTypeId);
-        if (saved.state === 'approved' && type?.category === 'leave') {
-          await consumeLeave(repositories, context.workspace.id, saved, context.user.id);
+        let affectedDates: string[] = [];
+        if (saved.state === 'approved' && type !== null) {
+          if (type.category === 'leave') {
+            await consumeLeave(repositories, context.workspace.id, saved, context.user.id);
+          }
+          if (REFLECTED_CATEGORIES.includes(type.category)) {
+            affectedDates = await applyToAttendance(
+              repositories,
+              context.workspace.id,
+              saved,
+              type,
+              context.user.id,
+            );
+          }
         }
 
         await audit.record(context.workspace.id, {
@@ -411,6 +588,8 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
             toState: saved.state,
             onBehalfOfUserId: input.onBehalfOfUserId ?? null,
             comment: input.comment ?? null,
+            // どの日の計算をやり直したか。承認と計算の対応をあとから辿れるようにする。
+            recalculatedDates: affectedDates,
           },
         });
 

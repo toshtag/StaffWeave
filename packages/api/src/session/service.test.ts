@@ -8,6 +8,7 @@ import { createCalculationRepository } from '../attendance/calculation-repositor
 import { createAttendanceRepository } from '../attendance/repository.js';
 import type { AuditEntry, AuditRepository } from '../audit/repository.js';
 import { createDeviceRepository } from '../device/repository.js';
+import { createRequestRepository } from '../request/repository.js';
 import { createScheduleRepository } from '../schedule/repository.js';
 import { ApiError } from '../shared/errors.js';
 import {
@@ -161,6 +162,7 @@ function serviceWith(state: State = {}): {
     schedule: createScheduleRepository(unusedDatabase),
     calculations: createCalculationRepository(unusedDatabase),
     approval: createApprovalRepository(unusedDatabase),
+    requests: createRequestRepository(unusedDatabase),
     devices: {
       ...createDeviceRepository(unusedDatabase),
       findForSignature: async () => ({

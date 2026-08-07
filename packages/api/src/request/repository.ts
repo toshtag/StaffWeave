@@ -6,6 +6,7 @@ import type {
   UpdateRequestTypeRequest,
 } from '@staffweave/contracts';
 import type { Queryable } from '@staffweave/db';
+import type { ApprovedAdjustments } from '@staffweave/domain';
 
 /**
  * 申請種別と申請の読み書き。
@@ -40,6 +41,26 @@ export interface RequestRepository {
     input: RequestContentChange,
   ): Promise<void>;
   addApproval(workspaceId: string, input: NewRequestApproval): Promise<RequestApprovalRecord>;
+
+  /**
+   * その業務日に効いている、承認しきった申請の内容。
+   *
+   * 見るのは `approved` の申請だけ。提出しただけ・差し戻し・取消は含めない。
+   * 途中の段の申請まで見ると、承認する前に計算が変わってしまう。
+   *
+   * 期間の申請（`ends_on` を持つもの）は、期間に含まれる日すべてに効く。
+   */
+  findApprovedAdjustments(
+    workspaceId: string,
+    employeeId: string,
+    businessDate: string,
+  ): Promise<ApprovedAdjustments>;
+
+  /**
+   * 承認しきった申請が効いている業務日を、期間の中から拾う。
+   * 決裁のあとに、どの日を計算し直すかを決めるために使う。
+   */
+  listAffectedDates(workspaceId: string, requestId: string): Promise<string[]>;
 }
 
 export interface ListRequestsQuery {
@@ -432,6 +453,51 @@ export function createRequestRepository(db: Queryable): RequestRepository {
       const row = rows[0];
       if (!row) throw new Error('決裁を記録できませんでした');
       return toApproval(row);
+    },
+
+    async findApprovedAdjustments(workspaceId, employeeId, businessDate) {
+      // 種別は申請へ写していないため、ここで結合して読む。
+      // 写すと、種別の分類を直したときに過去の申請だけが古い分類のまま残る。
+      const rows = await db.query<{
+        category: RequestTypeRecord['category'];
+        overtime_limit_minutes: number | null;
+      }>(
+        `SELECT t.category, r.overtime_limit_minutes
+           FROM employee_requests r
+           JOIN request_types t
+             ON t.id = r.request_type_id AND t.workspace_id = r.workspace_id
+          WHERE r.workspace_id = $1
+            AND r.employee_id = $2
+            AND r.state = 'approved'
+            AND r.business_date <= $3
+            AND COALESCE(r.ends_on, r.business_date) >= $3`,
+        [workspaceId, employeeId, businessDate],
+      );
+
+      let overtimeLimitMinutes: number | null = null;
+      let holidayWorkApproved = false;
+      for (const row of rows) {
+        if (row.category === 'overtime' && row.overtime_limit_minutes !== null) {
+          // 複数あればいちばん遅い時刻を採る。狭いほうを採ると、
+          // あとから足した承認が前の承認を取り消したことになる。
+          overtimeLimitMinutes = Math.max(overtimeLimitMinutes ?? 0, row.overtime_limit_minutes);
+        }
+        if (row.category === 'holiday_work') holidayWorkApproved = true;
+      }
+      return { overtimeLimitMinutes, holidayWorkApproved };
+    },
+
+    async listAffectedDates(workspaceId, requestId) {
+      const rows = await db.query<{ business_date: string }>(
+        `SELECT to_char(day, 'YYYY-MM-DD') AS business_date
+           FROM employee_requests r,
+                generate_series(r.business_date, COALESCE(r.ends_on, r.business_date), '1 day')
+                  AS day
+          WHERE r.workspace_id = $1 AND r.id = $2
+          ORDER BY day`,
+        [workspaceId, requestId],
+      );
+      return rows.map((row) => row.business_date);
     },
   };
 }

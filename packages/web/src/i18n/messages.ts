@@ -126,6 +126,10 @@ export interface Messages {
   breakTime: string;
   scheduledTime: string;
   outsideScheduleTime: string;
+  recognizedOvertimeTime: string;
+  unapprovedOvertimeTime: string;
+  approvedHolidayTime: string;
+  unapprovedHolidayTime: string;
   nightTime: string;
   nonWorkingDayTime: string;
   calculationPending: string;
@@ -350,6 +354,8 @@ export interface AdminMessages {
   outsideMinutes: string;
   nightMinutes: string;
   legalOvertimeMinutes: string;
+  recognizedOvertimeMinutes: string;
+  unapprovedOvertimeMinutes: string;
   leaveMinutes: string;
   closingState: string;
   closingStateLabel: Record<'open' | 'closed', string>;
@@ -494,6 +500,10 @@ const ja: Messages = {
   breakTime: '休憩',
   scheduledTime: '所定労働',
   outsideScheduleTime: '所定外',
+  recognizedOvertimeTime: '認定時間外',
+  unapprovedOvertimeTime: '未承認の所定外',
+  approvedHolidayTime: '承認済みの休日労働',
+  unapprovedHolidayTime: '未承認の休日労働',
   nightTime: '深夜帯',
   nonWorkingDayTime: '休日労働',
   calculationPending: '打刻がないため集計はまだありません',
@@ -759,6 +769,8 @@ const ja: Messages = {
     outsideMinutes: '所定外（分）',
     nightMinutes: '深夜（分）',
     legalOvertimeMinutes: '法定時間外（分）',
+    recognizedOvertimeMinutes: '認定時間外（分）',
+    unapprovedOvertimeMinutes: '未承認の所定外（分）',
     leaveMinutes: '休暇（分）',
     closingState: '締め',
     closingStateLabel: { open: '未締め', closed: '締め済み' },
@@ -911,6 +923,10 @@ const en: Messages = {
   breakTime: 'Break',
   scheduledTime: 'Scheduled',
   outsideScheduleTime: 'Outside schedule',
+  recognizedOvertimeTime: 'Recognized overtime',
+  unapprovedOvertimeTime: 'Overtime without approval',
+  approvedHolidayTime: 'Approved holiday work',
+  unapprovedHolidayTime: 'Holiday work without approval',
   nightTime: 'Night hours',
   nonWorkingDayTime: 'Non-working day',
   calculationPending: 'No punches yet, so there is nothing to total',
@@ -1180,6 +1196,8 @@ const en: Messages = {
     outsideMinutes: 'Outside schedule (minutes)',
     nightMinutes: 'Night (minutes)',
     legalOvertimeMinutes: 'Legal overtime (minutes)',
+    recognizedOvertimeMinutes: 'Recognized overtime (minutes)',
+    unapprovedOvertimeMinutes: 'Overtime without approval (minutes)',
     leaveMinutes: 'Leave (minutes)',
     closingState: 'Closing',
     closingStateLabel: { open: 'Open', closed: 'Closed' },

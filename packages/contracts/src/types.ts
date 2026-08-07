@@ -373,6 +373,17 @@ export interface AttendanceCalculationRecord {
   afterScheduleMinutes: number | null;
   /** 給与向けのみなし労働。設定が無ければ null。 */
   deemedMinutes: number | null;
+  /**
+   * 認定した所定外。承認しきった残業の上限時刻までに収まる、所定終業より後の実労働。
+   * 所定の時間帯が決まっていない日は null。
+   */
+  recognizedOvertimeMinutes: number | null;
+  /** 認定の外に出た所定外。上限を超えた分と、承認の無い所定外。 */
+  unapprovedOvertimeMinutes: number | null;
+  /** 承認のある休日労働。 */
+  approvedHolidayMinutes: number | null;
+  /** 承認の無い休日労働。 */
+  unapprovedHolidayMinutes: number | null;
   basis: CalculationBasis;
 }
 
@@ -1184,6 +1195,11 @@ export interface MonthlyTotals {
   lateMinutes: number | null;
   earlyLeaveMinutes: number | null;
   deemedMinutes: number | null;
+  /** 承認しきった申請から来る、認定した分と認定の外に出た分。 */
+  recognizedOvertimeMinutes: number | null;
+  unapprovedOvertimeMinutes: number | null;
+  approvedHolidayMinutes: number | null;
+  unapprovedHolidayMinutes: number | null;
   workedDays: number;
   leaveDays: number;
   countedDays: number;

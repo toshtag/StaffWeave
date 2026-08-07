@@ -181,6 +181,10 @@ export function createExportService(db: Queryable): ExportService {
         leave_minutes: number;
         absence_minutes: number;
         working_days: number;
+        recognized_overtime_minutes: number | null;
+        unapproved_overtime_minutes: number | null;
+        approved_holiday_minutes: number | null;
+        unapproved_holiday_minutes: number | null;
         closing_state: string | null;
         snapshot_sequence: number | null;
         closed_at: Date | null;
@@ -207,6 +211,31 @@ export function createExportService(db: Queryable): ExportService {
                 coalesce(snapshot.worked_days,
                          count(*) FILTER (WHERE latest.worked_minutes > 0)::int, 0)
                   AS working_days,
+                -- 認定した分と、認定の外に出た分。
+                -- 1 日でも未設定の日があれば、その月の合計は出さない。
+                -- 0 にすると「認定した残業が 0 分だった」と読めてしまう。
+                coalesce(
+                  snapshot.recognized_overtime_minutes,
+                  CASE WHEN count(*) FILTER (
+                         WHERE latest.business_date IS NOT NULL
+                           AND latest.recognized_overtime_minutes IS NULL) > 0
+                       THEN NULL
+                       ELSE coalesce(sum(latest.recognized_overtime_minutes)::int, 0) END
+                ) AS recognized_overtime_minutes,
+                coalesce(
+                  snapshot.unapproved_overtime_minutes,
+                  CASE WHEN count(*) FILTER (
+                         WHERE latest.business_date IS NOT NULL
+                           AND latest.unapproved_overtime_minutes IS NULL) > 0
+                       THEN NULL
+                       ELSE coalesce(sum(latest.unapproved_overtime_minutes)::int, 0) END
+                ) AS unapproved_overtime_minutes,
+                coalesce(snapshot.approved_holiday_minutes,
+                         sum(latest.approved_holiday_minutes)::int, 0)
+                  AS approved_holiday_minutes,
+                coalesce(snapshot.unapproved_holiday_minutes,
+                         sum(latest.unapproved_holiday_minutes)::int, 0)
+                  AS unapproved_holiday_minutes,
                 max(closings.state) AS closing_state,
                 snapshot.sequence AS snapshot_sequence,
                 snapshot.closed_at
@@ -219,7 +248,11 @@ export function createExportService(db: Queryable): ExportService {
                     calculations.night_minutes,
                     calculations.non_working_day_minutes,
                     calculations.leave_minutes,
-                    calculations.absence_minutes
+                    calculations.absence_minutes,
+                    calculations.recognized_overtime_minutes,
+                    calculations.unapproved_overtime_minutes,
+                    calculations.approved_holiday_minutes,
+                    calculations.unapproved_holiday_minutes
                FROM attendance_calculations AS calculations
               WHERE calculations.workspace_id = employees.workspace_id
                 AND calculations.employee_id = employees.id
@@ -235,7 +268,11 @@ export function createExportService(db: Queryable): ExportService {
              SELECT snapshots.sequence, snapshots.closed_at, snapshots.worked_minutes,
                     snapshots.outside_schedule_minutes, snapshots.night_minutes,
                     snapshots.non_working_day_minutes, snapshots.leave_minutes,
-                    snapshots.absence_minutes, snapshots.worked_days
+                    snapshots.absence_minutes, snapshots.worked_days,
+                    snapshots.recognized_overtime_minutes,
+                    snapshots.unapproved_overtime_minutes,
+                    snapshots.approved_holiday_minutes,
+                    snapshots.unapproved_holiday_minutes
                FROM monthly_closing_snapshots AS snapshots
               WHERE snapshots.workspace_id = employees.workspace_id
                 AND snapshots.employee_id = employees.id
@@ -251,7 +288,11 @@ export function createExportService(db: Queryable): ExportService {
                    snapshot.sequence, snapshot.closed_at, snapshot.worked_minutes,
                    snapshot.outside_schedule_minutes, snapshot.night_minutes,
                    snapshot.non_working_day_minutes, snapshot.leave_minutes,
-                   snapshot.absence_minutes, snapshot.worked_days
+                   snapshot.absence_minutes, snapshot.worked_days,
+                   snapshot.recognized_overtime_minutes,
+                   snapshot.unapproved_overtime_minutes,
+                   snapshot.approved_holiday_minutes,
+                   snapshot.unapproved_holiday_minutes
           ORDER BY employees.employee_number`,
         [workspaceId, period, ...visible.parameters],
       );
@@ -272,6 +313,10 @@ export function createExportService(db: Queryable): ExportService {
           // 既にある列の並びは変えない。取り込む側の設定を壊さないよう、後ろへ足す。
           'snapshot_sequence',
           'closed_at',
+          'recognized_overtime_minutes',
+          'unapproved_overtime_minutes',
+          'approved_holiday_minutes',
+          'unapproved_holiday_minutes',
         ],
         rows.map((row) => [
           period,
@@ -287,6 +332,11 @@ export function createExportService(db: Queryable): ExportService {
           row.closing_state ?? 'open',
           row.snapshot_sequence ?? '',
           row.closed_at === null ? '' : row.closed_at.toISOString(),
+          // 未設定は空欄にする。0 と書くと、計算した結果 0 分だったと読めてしまう。
+          row.recognized_overtime_minutes ?? '',
+          row.unapproved_overtime_minutes ?? '',
+          row.approved_holiday_minutes ?? '',
+          row.unapproved_holiday_minutes ?? '',
         ]),
       );
     },

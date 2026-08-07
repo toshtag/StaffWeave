@@ -25,6 +25,10 @@ function day(overrides: Partial<DailyTotals> & { businessDate: string }): DailyT
     lateMinutes: 0,
     earlyLeaveMinutes: 0,
     deemedMinutes: 0,
+    recognizedOvertimeMinutes: 0,
+    unapprovedOvertimeMinutes: 0,
+    approvedHolidayMinutes: 0,
+    unapprovedHolidayMinutes: 0,
     ...overrides,
   };
 }
