@@ -26,3 +26,4 @@ backups/
 
 # SBOM は commit ごとに作り直す。生成物を追跡しない。
 artifacts/
+.package-agent-work

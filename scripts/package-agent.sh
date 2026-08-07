@@ -35,7 +35,11 @@ AJV_FORMATS_VERSION="3.0.1"
 rm -rf "$OUTPUT"
 mkdir -p "$BUNDLE"
 
-WORK=$(mktemp -d)
+# 作業場はリポジトリの中へ置く。外（mktemp）へ置くと、Windows の Git Bash では
+# tsc へ渡す道と、そのあと読む道の書き方が食い違い、出来上がったものを見失う。
+WORK="$ROOT/.package-agent-work"
+rm -rf "$WORK"
+mkdir -p "$WORK"
 
 echo 'TypeScript をコンパイルします'
 
@@ -61,7 +65,7 @@ cat > "$CONFIG" <<JSON
     "noEmit": false,
     "declaration": false,
     "sourceMap": false,
-    "outDir": "$WORK/out",
+    "outDir": "./.package-agent-work/out",
     "rootDir": "./packages",
     "paths": {
       "@staffweave/contracts": ["./packages/contracts/src/index.ts"],
