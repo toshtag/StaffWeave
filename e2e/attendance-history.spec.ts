@@ -33,13 +33,14 @@ test.describe('過去の勤怠', () => {
     await page.getByRole('button', { name: '出勤' }).click();
     await expect(page.locator('.work-state')).toContainText('勤務中');
 
-    // 打刻はこの画面の外で起きる。読み直してから見る。
-    await history(page).getByRole('button', { name: '読み直す' }).click();
-
-    // 当日は「その月」に含まれるため、一覧へ出る。
+    // 打刻はこの画面の外で起き、保存へ届くのは表示が変わるより後になり得る。
+    // 届くまで読み直す。届かなければ、ここで落ちる。
     const today = new Date().toISOString().slice(0, 10);
     const row = history(page).locator('.history-list > li', { hasText: today });
-    await expect(row).toBeVisible();
+    await expect(async () => {
+      await history(page).getByRole('button', { name: '読み直す' }).click();
+      await expect(row).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 30000 });
 
     await row.getByRole('button', { name: today }).click();
     await expect(history(page).locator('.history-detail')).toContainText(today);
