@@ -148,6 +148,60 @@ jobs:
           $state = (Get-ScheduledTask -TaskName 'StaffWeaveAgent').State
           if ($state -eq 'Running') { throw '止まりませんでした（強制終了に頼らせない）' }
 
+      # 読み取りを待っている状態からでも止まること。据え置きの端末は、カードが
+      # 置かれていない時間のほうが長い。その待ちを打ち切れないと、止めろと
+      # 言われてもプロセスが終わらない。
+      - name: カード待ちからでも止まることを確かめる
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          $node = (Get-Command node).Source
+          $store = "$PWD/station-store.json"
+
+          # 装置は無いので、カードが来ないまま待ち続ける受け渡しを渡す。
+          @'
+          export function createPcscTransport() {
+            return {
+              name: 'never',
+              waitForCard: (signal) => new Promise((_resolve, reject) => {
+                signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+              }),
+              transmit: async () => new Uint8Array([0x90, 0x00]),
+              waitForRemoval: async () => {},
+              reconnect: async () => {},
+              close: async () => {},
+            };
+          }
+          '@ | Out-File -Encoding utf8 never-transport.mjs
+
+          # 端末として登録されていないと station は動かない。資格情報を置く。
+          @"
+          {
+            "baseUrl": "https://staffweave.invalid",
+            "deviceId": "00000000-0000-4000-8000-000000000000",
+            "workspaceSlug": "default",
+            "privateKeyPem": "",
+            "publicKeyPem": "",
+            "nextSequence": 1,
+            "cardFingerprintKey": "0123456789abcdef"
+          }
+          "@ | Out-File -Encoding ascii $store
+
+          $proc = Start-Process -FilePath $node -PassThru -NoNewWindow `
+            -ArgumentList "`"$root/agent/cli.js`"", 'station', '--store', "`"$store`"", `
+              '--pcsc', "`"$PWD/never-transport.mjs`""
+          Start-Sleep -Seconds 8
+          if ($proc.HasExited) { throw "常駐が上がりませんでした（exit=$($proc.ExitCode)）" }
+
+          $started = Get-Date
+          & $node "$root/agent/cli.js" stop --store $store
+          if (-not $proc.WaitForExit(20000)) {
+            $proc.Kill()
+            throw 'カードを待っている間に止められませんでした'
+          }
+          $elapsed = ((Get-Date) - $started).TotalSeconds
+          Write-Host "止まるまで $elapsed 秒"
+
       - name: 常駐を外す
         shell: pwsh
         run: |

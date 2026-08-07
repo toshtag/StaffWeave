@@ -335,13 +335,18 @@ function residency(logger: ReturnType<typeof createAgentLogger>): {
   running: () => boolean;
   sleep: (ms: number) => Promise<void>;
   dispose: () => void;
+  stopping: AbortSignal;
 } {
   let running = true;
   let wake: (() => void) | null = null;
+  // 待っている処理へ「戻ってこい」と伝えるための合図。真偽値を見に行く形では、
+  // 待ちの途中にいる処理へ届かない。
+  const stopper = new AbortController();
   const stop = (): void => {
     if (!running) return;
     running = false;
     logger.info('agent.stopping');
+    stopper.abort();
     wake?.();
   };
   process.on('SIGINT', stop);
@@ -357,6 +362,7 @@ function residency(logger: ReturnType<typeof createAgentLogger>): {
   watch.unref();
 
   return {
+    stopping: stopper.signal,
     dispose: () => {
       clearInterval(watch);
       process.off('SIGINT', stop);
@@ -430,7 +436,7 @@ async function runStation(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
   const key = requireCardKey(credentials);
   const logger = createAgentLogger();
-  const { running, sleep, dispose } = residency(logger);
+  const { running, sleep, dispose, stopping } = residency(logger);
   const spool = createFileSpool(spoolPath());
 
   const transport = await loadPcscTransport(option('pcsc') ?? BUNDLED_PCSC_MODULE);

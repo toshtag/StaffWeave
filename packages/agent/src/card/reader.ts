@@ -11,9 +11,22 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  */
 
 export interface CardReader {
-  /** カードが置かれるまで待ち、読み取った識別子を返す。 */
-  read(): Promise<string>;
+  /**
+   * カードが置かれるまで待ち、読み取った識別子を返す。
+   *
+   * 打ち切りを受け取れる。据え置きの端末は、カードが置かれていない時間のほうが
+   * 長い。その待ちを打ち切れないと、止めろと言われてもプロセスが終わらない。
+   */
+  read(signal?: AbortSignal): Promise<string>;
   readonly name: string;
+}
+
+/** 打ち切られたことを表す。呼ぶ側は、これを失敗として扱わない。 */
+export class CardReadAborted extends Error {
+  constructor() {
+    super('読み取りを打ち切りました');
+    this.name = 'CardReadAborted';
+  }
 }
 
 /**
@@ -46,7 +59,8 @@ export function createScriptedCardReader(cardIds: readonly string[]): CardReader
   let index = 0;
   return {
     name: 'scripted',
-    async read() {
+    async read(signal) {
+      if (signal?.aborted === true) throw new CardReadAborted();
       const value = cardIds[index];
       if (value === undefined) {
         throw new Error('読み取れるカードがありません');

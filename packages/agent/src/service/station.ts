@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CardReader } from '../card/reader.js';
+import { CardReadAborted, type CardReader } from '../card/reader.js';
 import type { AgentLogger } from './redact.js';
 import type { Spool } from './spool.js';
 
@@ -28,6 +28,13 @@ export interface CardStationOptions {
   allocateSequence: () => Promise<number>;
   running: () => boolean;
   now: () => Date;
+  /**
+   * 読み取りの待ちを打ち切る合図。
+   *
+   * 据え置きの端末は、カードが置かれていない時間のほうが長い。その待ちを
+   * 打ち切れないと、止めろと言われてもプロセスが終わらない。
+   */
+  signal?: AbortSignal;
   /** 冪等キー。検査から差し替えるために開ける。 */
   newRequestId?: () => string;
 }
@@ -41,8 +48,11 @@ export interface CardStationOptions {
 export async function readCardIntoSpool(options: CardStationOptions): Promise<boolean> {
   let rawCardId: string;
   try {
-    rawCardId = await options.reader.read();
+    rawCardId = await options.reader.read(options.signal);
   } catch (error) {
+    // 打ち切りは失敗ではない。記録へ残すと、止めるたびに読み取りの失敗が
+    // 積まれ、本当の失敗が埋もれる。
+    if (error instanceof CardReadAborted) return false;
     options.logger.error('agent.card_read_failed', {
       reason: error instanceof Error ? error.message : String(error),
     });
@@ -68,10 +78,16 @@ export async function readCardIntoSpool(options: CardStationOptions): Promise<bo
   return true;
 }
 
-/** カードを読み続け、送信待ちへ積み続ける。 */
+/**
+ * カードを読み続け、送信待ちへ積み続ける。
+ *
+ * 打ち切りの合図も、続けるかどうかの判断に入れる。合図だけを見て抜けない作りに
+ * すると、打ち切られたのに `running()` が真を返している間、読み取りが即座に
+ * 打ち切られては呼び直される状態になる。何もしないまま計算資源を使い切る。
+ */
 export async function runCardStation(options: CardStationOptions): Promise<void> {
   options.logger.info('agent.reader_started', { reader: options.reader.name });
-  while (options.running()) {
+  while (options.running() && options.signal?.aborted !== true) {
     await readCardIntoSpool(options);
   }
   options.logger.info('agent.reader_stopped');

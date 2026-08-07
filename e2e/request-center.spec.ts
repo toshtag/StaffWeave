@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { businessDaysAgo } from './setup/business-date.js';
 import {
   E2E_ADMIN_CONSOLE_ADMIN,
   E2E_REQUEST_EMPLOYEE,
@@ -25,13 +26,7 @@ const TYPE_CODE = `REQ${RUN}`;
  * 自分の申請の一覧は直近 3 か月を見る。固定の日付を書くと、時が経つにつれて
  * 範囲の外へ出て、出したはずの申請が並ばなくなる。
  */
-function daysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString().slice(0, 10);
-}
-
-const BUSINESS_DATE = daysAgo(3);
+const BUSINESS_DATE = businessDaysAgo(3);
 
 function card(page: Page) {
   return page.locator('.admin-content section.card');
@@ -114,7 +109,7 @@ test.describe('申請と段階承認', () => {
   test('差し戻したあとに出し直せる', async ({ page }) => {
     test.slow();
     const code = `RET${RUN}`;
-    const date = daysAgo(4);
+    const date = businessDaysAgo(4);
 
     await signIn(page, E2E_ADMIN_CONSOLE_ADMIN.email, E2E_ADMIN_CONSOLE_ADMIN.password);
     await page.goto('/#/admin/request/request-types');
@@ -157,7 +152,7 @@ test.describe('申請と段階承認', () => {
   test('決裁を待っている申請は取り下げられる', async ({ page }) => {
     test.slow();
     const code = `CAN${RUN}`;
-    const date = daysAgo(5);
+    const date = businessDaysAgo(5);
 
     await signIn(page, E2E_ADMIN_CONSOLE_ADMIN.email, E2E_ADMIN_CONSOLE_ADMIN.password);
     await page.goto('/#/admin/request/request-types');
