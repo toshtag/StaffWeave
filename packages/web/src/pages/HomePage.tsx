@@ -15,6 +15,7 @@ import { useSession } from '../session/SessionProvider.tsx';
 import { ActiveSessions } from './ActiveSessions.tsx';
 import { AnomalyPanel } from './AnomalyPanel.tsx';
 import { ApiKeys } from './ApiKeys.tsx';
+import { AttendanceHistory } from './AttendanceHistory.tsx';
 import { ChangePassword } from './ChangePassword.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
 import { NotificationPanel } from './NotificationPanel.tsx';
@@ -149,6 +150,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         {session.employee !== null && <DiscrepancyPanel businessDate={businessToday(session)} />}
 
         <NotificationPanel />
+
+        <AttendanceHistory session={session} />
 
         <RequestCenter session={session} />
 
