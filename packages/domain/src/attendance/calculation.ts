@@ -131,6 +131,21 @@ export const NO_APPROVED_ADJUSTMENTS: ApprovedAdjustments = {
   holidayWorkApproved: false,
 };
 
+/**
+ * その日に効いている労働形態の割当。
+ *
+ * 労働形態は従業員ごと・有効日つきで決まる。勤務区分が「その日の働き方」を
+ * 表すのに対し、こちらは「その人に適用している制度」を表す。
+ *
+ * 日次の計算が見るのは裁量労働のみなし時間だけ。フレックスと変形の清算期間は
+ * 日をまたぐ枠なので、期間の集計側（`summarizeDays`）が扱う。
+ */
+export interface LaborSystemSettings {
+  systemType: 'normal' | 'flex' | 'discretionary' | 'variable';
+  /** 裁量労働のみなし労働分数。制度が要求しない場合は null。 */
+  deemedMinutes: number | null;
+}
+
 export interface CalculationInput {
   businessDate: BusinessDate;
   timeZone: string;
@@ -138,6 +153,8 @@ export interface CalculationInput {
   schedule: WorkSchedule | null;
   rules: CalculationRules;
   category?: WorkCategorySettings | null;
+  /** その日に効いている労働形態の割当。渡さない場合は「割当が無い」として扱う。 */
+  laborSystem?: LaborSystemSettings | null;
   /** 承認しきった申請。渡さない場合は「承認が無い」として扱う。 */
   approvals?: ApprovedAdjustments | null;
 }
@@ -508,7 +525,19 @@ export function calculateWorkDay(input: CalculationInput): CalculationResult {
     ).length;
   }
 
-  const deemedMinutes = category?.deemedMinutes ?? null;
+  // みなし労働分数は 2 か所に置ける。正本を 1 つに決めておかないと、
+  // どちらが結果に出たのかを値から言えなくなる。
+  //
+  // 裁量労働の割当が効いている日は、労働形態の側を正本にする。
+  // 裁量のみなしは、その人との取り決めで決まる値であり、
+  // 日ごとに差し替わる勤務区分より後から動かない。
+  // 割当が無い日、または裁量以外の制度の日は、勤務区分の値を使う。
+  //
+  // 詳しくは docs/product/work-category-precedence.md にある。
+  const deemedMinutes =
+    input.laborSystem?.systemType === 'discretionary'
+      ? input.laborSystem.deemedMinutes
+      : (category?.deemedMinutes ?? null);
 
   // 承認しきった申請だけを見る。提出しただけ・差し戻し・取消は渡ってこない。
   const approvals = input.approvals ?? NO_APPROVED_ADJUSTMENTS;
@@ -712,6 +741,18 @@ export function fingerprintSource(input: CalculationInput): string {
           input.category.deemedMinutes === null ? 'none' : String(input.category.deemedMinutes),
         ].join('|');
 
+  // 労働形態も指紋へ入れる。裁量のみなし時間は制度の側から来るため、
+  // 入れないと割当を差し替えても前の版の結果が残る。
+  const laborSystem =
+    input.laborSystem === null || input.laborSystem === undefined
+      ? 'none'
+      : [
+          input.laborSystem.systemType,
+          input.laborSystem.deemedMinutes === null
+            ? 'none'
+            : String(input.laborSystem.deemedMinutes),
+        ].join('|');
+
   // 承認の内容も指紋へ入れる。入れないと、承認しても「入力は変わっていない」と
   // 判断され、認定を反映しないまま前の版が残る。
   const approvals = input.approvals ?? NO_APPROVED_ADJUSTMENTS;
@@ -726,6 +767,7 @@ export function fingerprintSource(input: CalculationInput): string {
     schedule,
     rules,
     category,
+    laborSystem,
     approved,
     events.join(','),
   ].join('\n');

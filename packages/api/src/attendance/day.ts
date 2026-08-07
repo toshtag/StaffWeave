@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type {
   AttendanceEventRecord,
+  LaborSystemAssignmentRecord,
   WorkCategoryRecord,
   WorkDay,
   WorkScheduleRecord,
@@ -10,6 +11,7 @@ import type {
   CalculationInput,
   CalculationRules,
   CorrectableEvent,
+  LaborSystemSettings,
   WorkCategorySettings,
   WorkSchedule,
 } from '@staffweave/domain';
@@ -25,6 +27,7 @@ import {
 } from '@staffweave/domain';
 import type { ApprovalRepository } from '../approval/repository.js';
 import type { RequestRepository } from '../request/repository.js';
+import type { LaborSystemRepository } from '../schedule/labor-system-repository.js';
 import type { ScheduleRepository } from '../schedule/repository.js';
 import type { WorkCategoryRepository } from '../schedule/work-category-repository.js';
 import type { CalculationRepository } from './calculation-repository.js';
@@ -44,6 +47,13 @@ export interface DayRepositories {
    * ここを外すと、設定した値が計算へ届かないまま結果だけが出る。
    */
   categories: WorkCategoryRepository;
+  /**
+   * その日に効いている労働形態の割当を読むために要る。
+   *
+   * 裁量労働のみなし時間は制度の側にある。ここを外すと、割当を作っても
+   * 日次の計算へ届かず、みなしの無い日として保存される。
+   */
+  laborSystems: LaborSystemRepository;
 }
 
 function toCorrectable(record: AttendanceEventRecord): CorrectableEvent {
@@ -98,6 +108,14 @@ function toDomainCategory(category: WorkCategoryRecord | null): WorkCategorySett
   };
 }
 
+/** 労働形態の割当から、計算が使う値だけを取り出す。 */
+function toDomainLaborSystem(
+  assignment: LaborSystemAssignmentRecord | null,
+): LaborSystemSettings | null {
+  if (assignment === null) return null;
+  return { systemType: assignment.systemType, deemedMinutes: assignment.deemedMinutes };
+}
+
 function fingerprintOf(input: CalculationInput): string {
   return createHash('sha256').update(fingerprintSource(input), 'utf8').digest('hex');
 }
@@ -136,6 +154,11 @@ async function buildContext(
           schedule.workCategoryId,
           businessDate,
         );
+  const laborSystem = await repositories.laborSystems.findForDate(
+    workspaceId,
+    employeeId,
+    businessDate,
+  );
   const rules =
     knownRules ?? (await repositories.schedule.findCalculationRules(workspaceId, businessDate));
   const request = await repositories.approval.findRequest(workspaceId, employeeId, businessDate);
@@ -171,6 +194,7 @@ async function buildContext(
       schedule: toDomainSchedule(schedule, businessDate, timeZone),
       rules,
       category: toDomainCategory(category),
+      laborSystem: toDomainLaborSystem(laborSystem),
       approvals,
     },
     day: {

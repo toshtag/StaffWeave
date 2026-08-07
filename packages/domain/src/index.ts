@@ -76,6 +76,7 @@ export type {
   CalculationSegment,
   CalculationStep,
   DayType,
+  LaborSystemSettings,
   RoundingMode,
   WorkCategorySettings,
   WorkSchedule,
