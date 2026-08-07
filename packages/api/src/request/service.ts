@@ -245,6 +245,11 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
    * 締め済みの期間に当たる日があれば、承認そのものを断る。
    * 黙って承認すると、承認したのに計算が動かない日ができ、
    * 「承認済み」と「給与へ渡した値」が食い違ったまま残る。
+   *
+   * 断るのは締め済みだけで、日次の申請が承認済みの日は断らない。
+   * 承認済みの日を直すためにこの申請があり、これも承認を通っている。
+   * ここで断ると、確定した日を直す手段が締め解除しか無くなる。
+   * 画面から直に修正する経路（`requireEditableDay`）は、これまでどおり断る。
    */
   const applyToAttendance = async (
     repositories: RequestRepositories,
