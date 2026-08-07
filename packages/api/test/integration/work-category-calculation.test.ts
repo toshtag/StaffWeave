@@ -399,9 +399,9 @@ describe('月次と給与への引き渡し', () => {
 
     const names = columns(header ?? '');
     const values = columns(row ?? '');
-    const valueOf = (name: string): string => values[names.indexOf(name)] ?? '';
+    const columnValue = (name: string): string => values[names.indexOf(name)] ?? '';
 
-    expect(valueOf('worked_minutes')).toBe(String(ATTENDED_MINUTES - FIXED_BREAK_MINUTES));
-    expect(valueOf('night_minutes')).toBe('60');
+    expect(columnValue('worked_minutes')).toBe(String(ATTENDED_MINUTES - FIXED_BREAK_MINUTES));
+    expect(columnValue('night_minutes')).toBe('60');
   });
 });
