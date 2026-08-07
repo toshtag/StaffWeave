@@ -10,6 +10,7 @@ import {
   type LeaveLedgerEntry,
   summarizeLeaveRegister,
   validateLeaveConsumption,
+  validateLeaveConsumptions,
 } from './ledger.js';
 
 const HOUR = 60;
@@ -346,5 +347,68 @@ describe('休暇管理簿', () => {
 
     expect(row.grantedMinutes).toBe(0);
     expect(row.closingMinutes).toBe(0);
+  });
+});
+
+describe('複数日ぶんの消化', () => {
+  const granted: LeaveLedgerEntry = {
+    id: 'grant-1',
+    entryType: 'grant',
+    minutes: 3 * 480,
+    effectiveOn: '2026-04-01',
+    expiresOn: null,
+    reversesEntryId: null,
+  };
+
+  it('全日ぶんが残数へ収まれば、問題は出ない', () => {
+    const problems = validateLeaveConsumptions({
+      entries: [granted],
+      consumptions: [
+        { minutes: 480, effectiveOn: '2026-04-06' },
+        { minutes: 480, effectiveOn: '2026-04-07' },
+        { minutes: 480, effectiveOn: '2026-04-08' },
+      ],
+      unitMinutes: null,
+    });
+
+    expect(problems).toEqual([]);
+  });
+
+  /**
+   * 1 日ずつ確かめると、最初の 2 日は「足りている」と判断できてしまう。
+   * まとめて確かめないと、途中まで引かれた状態が残る。
+   */
+  it('全日ぶんでは足りなければ、1 件も積めないと判断する', () => {
+    const problems = validateLeaveConsumptions({
+      entries: [granted],
+      consumptions: [
+        { minutes: 480, effectiveOn: '2026-04-06' },
+        { minutes: 480, effectiveOn: '2026-04-07' },
+        { minutes: 480, effectiveOn: '2026-04-08' },
+        { minutes: 480, effectiveOn: '2026-04-09' },
+      ],
+      unitMinutes: null,
+    });
+
+    expect(problems).toContain('insufficient');
+  });
+
+  it('取得の単位に合わない日が 1 つでもあれば断る', () => {
+    const problems = validateLeaveConsumptions({
+      entries: [granted],
+      consumptions: [
+        { minutes: 480, effectiveOn: '2026-04-06' },
+        { minutes: 90, effectiveOn: '2026-04-07' },
+      ],
+      unitMinutes: 60,
+    });
+
+    expect(problems).toContain('not_a_multiple');
+  });
+
+  it('対象の日が無ければ、何も判断しない', () => {
+    expect(
+      validateLeaveConsumptions({ entries: [granted], consumptions: [], unitMinutes: null }),
+    ).toEqual([]);
   });
 });

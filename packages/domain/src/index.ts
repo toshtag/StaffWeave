@@ -312,6 +312,7 @@ export {
   summarizeLeaveRegister,
   UNALLOCATED,
   validateLeaveConsumption,
+  validateLeaveConsumptions,
 } from './leave/ledger.js';
 export type {
   AccessPeriod,

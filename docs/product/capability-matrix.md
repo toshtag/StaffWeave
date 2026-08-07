@@ -111,7 +111,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 決裁の再送で段が進まないこと | implemented | `migration:0030_create_request_types_and_approvals.sql` `test:packages/api/test/integration/employee-request.test.ts` | 何段目・何回目の提出かを添えさせ、同じ組み合わせの二度目は一意制約が断る |
 | 代理承認・不在対応 | partial | `op:decideEmployeeRequest` | 本来の承認者を決裁へ残せる。不在時の自動委任は無い |
 | 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
-| 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった休暇の申請だけを、同じトランザクションで消化する |
+| 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` `migration:0039_allow_multi_day_leave_consumption.sql` | 承認しきった休暇の申請だけを、同じトランザクションで消化する。複数日の申請は対象の日数ぶんを日ごとの記録として原子的に引く。予定が休みの日は引かない |
 | 承認結果の勤怠への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 残業・休日出勤・打刻修正を、承認しきった時点だけ日次へ効かせる。締め済みの期間を含む申請は承認を断る |
 | 利用者への通知 | implemented | `op:listNotifications` `op:markNotificationsRead` `test:packages/api/test/integration/notifications.test.ts` `ui:packages/web/src/pages/NotificationPanel.tsx` | 申請・承認・差し戻し・取消・代理承認を、製品内で届ける。正本は DB に残す |
 
