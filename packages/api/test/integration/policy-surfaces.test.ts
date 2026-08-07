@@ -195,6 +195,41 @@ describe('禁止語の検査が見る経路', () => {
   });
 
   /**
+   * 渡し忘れを通さない。
+   *
+   * 設定の欠落は誰も見ない。通してしまうと、検査が外れたことに気付く機会が
+   * 無いまま、外れたままになる。
+   */
+  it('CI で検査する語が渡されていなければ落ちる', async () => {
+    const result = await policy({
+      CI: 'true',
+      POLICY_FORBIDDEN_PATTERN: '',
+      POLICY_HEAD_REF: 'feat/ordinary-branch',
+      PR_TITLE: 'ふつうの題',
+      PR_BODY: 'ふつうの本文',
+      ...(await range()),
+    });
+
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain('POLICY_FORBIDDEN_PATTERN');
+    // 渡されていない値そのものは無いが、語をログへ出さない形は保つ。
+    expect(result.output).not.toContain('grep');
+  });
+
+  it('手元では、検査する語が渡されていなくても止めない', async () => {
+    const result = await policy({
+      CI: '',
+      POLICY_FORBIDDEN_PATTERN: '',
+      POLICY_HEAD_REF: 'feat/ordinary-branch',
+      PR_TITLE: 'ふつうの題',
+      PR_BODY: 'ふつうの本文',
+      ...(await range()),
+    });
+
+    expect(result.code).toBe(0);
+  });
+
+  /**
    * CI で branch や commit を渡せなかった場合は、見た経路だけで
    * 「無い」と言わない。渡されていないことを、通った理由にしない。
    */
