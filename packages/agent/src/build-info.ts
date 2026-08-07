@@ -18,10 +18,25 @@ export interface BuildInfo {
   version: string;
   /** 元にした commit。取れない場所で組んだときは空。 */
   sourceSha: string;
+  /**
+   * 対応する Node の主版。
+   *
+   * 読み取り装置の部品は組み立てが要り、Node の版ごとの ABI に合わせて作られる。
+   * 別の版で動かすと、読み込みの時点で落ちる。落ちてから理由を探すより、
+   * 先に言ったほうがよい。
+   */
+  nodeMajor: string;
+  /** 同梱している読み取り装置の部品。入っていなければ空。 */
+  reader: string;
 }
 
 /** リポジトリから直接動かしているときの値。配布物ではない、と分かる形にする。 */
-export const UNPACKAGED: BuildInfo = { version: '（配布物ではありません）', sourceSha: '' };
+export const UNPACKAGED: BuildInfo = {
+  version: '（配布物ではありません）',
+  sourceSha: '',
+  nodeMajor: '',
+  reader: '',
+};
 
 export async function loadBuildInfo(
   directory: string = dirname(fileURLToPath(import.meta.url)),
@@ -34,6 +49,8 @@ export async function loadBuildInfo(
     return {
       version: record.version,
       sourceSha: typeof record.sourceSha === 'string' ? record.sourceSha : '',
+      nodeMajor: typeof record.nodeMajor === 'string' ? record.nodeMajor : '',
+      reader: typeof record.reader === 'string' ? record.reader : '',
     };
   } catch {
     // 無いこと自体は失敗ではない。リポジトリから動かしているときは置かれていない。
