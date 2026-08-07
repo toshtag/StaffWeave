@@ -17,6 +17,7 @@ import { AnomalyPanel } from './AnomalyPanel.tsx';
 import { ApiKeys } from './ApiKeys.tsx';
 import { ChangePassword } from './ChangePassword.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
+import { NotificationPanel } from './NotificationPanel.tsx';
 import { PendingApprovals } from './PendingApprovals.tsx';
 import { TodayAttendance } from './TodayAttendance.tsx';
 
@@ -145,6 +146,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         <TodayAttendance session={session} />
 
         {session.employee !== null && <DiscrepancyPanel businessDate={businessToday(session)} />}
+
+        <NotificationPanel />
 
         <PendingApprovals session={session} />
 

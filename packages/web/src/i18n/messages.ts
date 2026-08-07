@@ -125,6 +125,9 @@ export interface Messages {
   workedTime: string;
   breakTime: string;
   scheduledTime: string;
+  notifications: string;
+  noNotifications: string;
+  markAllRead: string;
   outsideScheduleTime: string;
   recognizedOvertimeTime: string;
   unapprovedOvertimeTime: string;
@@ -536,6 +539,9 @@ const ja: Messages = {
   workedTime: '実労働',
   breakTime: '休憩',
   scheduledTime: '所定労働',
+  notifications: '通知',
+  noNotifications: '新しい通知はありません。',
+  markAllRead: 'すべて既読にする',
   outsideScheduleTime: '所定外',
   recognizedOvertimeTime: '認定時間外',
   unapprovedOvertimeTime: '未承認の所定外',
@@ -1001,6 +1007,9 @@ const en: Messages = {
   workedTime: 'Worked',
   breakTime: 'Break',
   scheduledTime: 'Scheduled',
+  notifications: 'Notifications',
+  noNotifications: 'No new notifications.',
+  markAllRead: 'Mark all as read',
   outsideScheduleTime: 'Outside schedule',
   recognizedOvertimeTime: 'Recognized overtime',
   unapprovedOvertimeTime: 'Overtime without approval',
