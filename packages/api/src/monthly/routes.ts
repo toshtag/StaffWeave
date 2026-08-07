@@ -1,5 +1,6 @@
 import type { RecalculateAttendanceRequest } from '@staffweave/contracts';
 import {
+  listAttendanceDaysQuerySchema,
   listMonthlySummariesQuerySchema,
   listPeriodSummariesQuerySchema,
   operations,
@@ -22,6 +23,15 @@ export interface MonthlyRouteDependencies {
 export function createMonthlyRoutes(deps: MonthlyRouteDependencies): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { service, periods } = deps;
+
+  app.get(operations.listAttendanceDays.path, async (c) => {
+    const auth = currentAuth(c);
+    const query = readQuery<{ employeeId?: string; period: string }>(
+      c,
+      listAttendanceDaysQuerySchema,
+    );
+    return c.json({ days: await service.listDays(auth, query) }, 200);
+  });
 
   app.get(operations.listMonthlySummaries.path, async (c) => {
     const auth = currentAuth(c);

@@ -1,4 +1,13 @@
-import { CLOSING_FINDING_KINDS, PERIOD_KINDS } from '@staffweave/domain';
+import {
+  CLOSING_FINDING_KINDS,
+  DAILY_REQUEST_STATES,
+  MONTHLY_CLOSING_STATES,
+  PERIOD_KINDS,
+} from '@staffweave/domain';
+
+/** 1 日の状態。ドメインの型と同じ並びを持つ。 */
+const WORK_DAY_STATES = ['not_started', 'working', 'on_break', 'finished'] as const;
+
 import { arraySchema, objectSchema } from '../json-schema.js';
 import { businessDateSchema, timestampSchema, uuidSchema } from './common.js';
 import { LABOR_SYSTEM_TYPES } from './labor-system.js';
@@ -280,4 +289,45 @@ export const overtimeWarningListSchema = objectSchema({
     averageMonths: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
   },
   required: ['warnings', 'monthlyLimitMinutes', 'averageLimitMinutes', 'averageMonths'],
+});
+
+export const attendanceDaySummarySchema = objectSchema({
+  description: '月の日ごとの勤怠。一覧のための軽い形',
+  properties: {
+    businessDate: businessDateSchema,
+    state: { type: 'string', enum: [...WORK_DAY_STATES] },
+    firstClockInAt: { oneOf: [timestampSchema, { type: 'null' }] },
+    lastClockOutAt: { oneOf: [timestampSchema, { type: 'null' }] },
+    workedMinutes: nullableMinutes,
+    attendedMinutes: nullableMinutes,
+    requestState: {
+      oneOf: [{ type: 'string', enum: [...DAILY_REQUEST_STATES] }, { type: 'null' }],
+    },
+    closingState: {
+      oneOf: [{ type: 'string', enum: [...MONTHLY_CLOSING_STATES] }, { type: 'null' }],
+    },
+    editable: { type: 'boolean' },
+  },
+  required: [
+    'businessDate',
+    'state',
+    'firstClockInAt',
+    'lastClockOutAt',
+    'workedMinutes',
+    'attendedMinutes',
+    'requestState',
+    'closingState',
+    'editable',
+  ],
+});
+
+export const attendanceDayListSchema = objectSchema({
+  properties: { days: arraySchema(attendanceDaySummarySchema) },
+  required: ['days'],
+});
+
+export const listAttendanceDaysQuerySchema = objectSchema({
+  description: '月の日ごとの勤怠を読む。対象月と、必要なら対象者を渡す',
+  properties: { employeeId: uuidSchema, period: businessDateSchema },
+  required: ['period'],
 });

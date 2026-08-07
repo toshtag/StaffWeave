@@ -1,4 +1,5 @@
 import type {
+  AttendanceDaySummary,
   AttendanceEventRecord,
   ClosingReadiness,
   MonthlySummaryRecord,
@@ -8,10 +9,12 @@ import type {
 import type { ClosingDayState, MonthlySummary } from '@staffweave/domain';
 import {
   addDaysToBusinessDate,
+  dailyRequestAllowsEditing,
   findClosingBlockers,
   hasBlockingFindings,
   hasPermission,
   isBusinessDate,
+  monthlyClosingAllowsEditing,
   resolveEffectiveEvents,
   summarizeMonth,
   summarizeWorkDay,
@@ -21,7 +24,7 @@ import { recalculateWorkDay } from '../attendance/day.js';
 import type { AuditRepository } from '../audit/repository.js';
 import type { AuthenticatedContext } from '../identity/service.js';
 import type { EmployeeVisibilityGuard } from '../shared/employee-visibility.js';
-import { ApiError, forbidden, invalidRequest } from '../shared/errors.js';
+import { ApiError, forbidden, invalidRequest, notFound } from '../shared/errors.js';
 import type { MonthlyRepository } from './repository.js';
 
 /**
@@ -64,6 +67,11 @@ export interface MonthlyService {
     context: AuthenticatedContext,
     input: RecalculateAttendanceRequest,
   ): Promise<RecalculateAttendanceResponse>;
+  /** 対象月の日ごとの勤怠。一覧のための軽い形で返す。 */
+  listDays(
+    context: AuthenticatedContext,
+    query: { employeeId?: string; period: string },
+  ): Promise<AttendanceDaySummary[]>;
 }
 
 /** 対象月の最初と最後の日。閲覧範囲の判断に使う。 */
@@ -189,6 +197,48 @@ export function createMonthlyService(deps: MonthlyServiceDependencies): MonthlyS
       );
     },
 
+    async listDays(context, query) {
+      const period = requirePeriod(query.period);
+      // 対象者は 1 人に絞る。日ごとの一覧は「誰の」1 か月かが決まらないと
+      // 意味を持たない。指定が無ければ自分の分を返す。
+      const employeeId = query.employeeId ?? context.employee?.id;
+      if (employeeId === undefined) throw notFound('従業員');
+      await deps.visibility.requireVisibleEmployee(context, employeeId, monthRange(period));
+
+      const [events, requests, totals, closing] = await Promise.all([
+        deps.repository.listMonthEvents(context.workspace.id, employeeId, period),
+        deps.repository.listMonthRequestStates(context.workspace.id, employeeId, period),
+        deps.repository.listDailyTotals(context.workspace.id, employeeId, period),
+        deps.repository.findClosingState(context.workspace.id, employeeId, period),
+      ]);
+
+      const byDate = new Map(totals.totals.map((day) => [day.businessDate, day]));
+      // 打刻のある日と、計算のある日の両方を並べる。片方だけだと、
+      // 予定はあるが打刻の無い日が一覧から消える。
+      const dates = [...new Set([...events.keys(), ...byDate.keys()])].sort();
+
+      return dates.map((businessDate) => {
+        const { summary } = summaryOfDay(businessDate, events.get(businessDate) ?? []);
+        const requestState = requests.get(businessDate) ?? null;
+        const totalsOfDay = byDate.get(businessDate) ?? null;
+        return {
+          businessDate,
+          state: summary.state,
+          firstClockInAt: summary.firstClockInAt?.toISOString() ?? null,
+          lastClockOutAt: summary.lastClockOutAt?.toISOString() ?? null,
+          workedMinutes: totalsOfDay?.workedMinutes ?? null,
+          attendedMinutes: totalsOfDay?.attendedMinutes ?? null,
+          requestState,
+          closingState: closing,
+          // 締めと申請の状態から決める。画面と API で別の答えを出さないよう、
+          // 判断はドメインの関数へ任せる。
+          editable:
+            (requestState === null || dailyRequestAllowsEditing(requestState)) &&
+            (closing === null || monthlyClosingAllowsEditing(closing)),
+        };
+      });
+    },
+
     async recalculate(context, input) {
       if (!hasPermission(context.roles, 'employee.manage')) throw forbidden();
       if (!isBusinessDate(input.from) || !isBusinessDate(input.to)) {
@@ -282,11 +332,8 @@ export function createMonthlyService(deps: MonthlyServiceDependencies): MonthlyS
   };
 }
 
-/** 打刻から、締める前に見たい状態を作る。有効な記録の判断はドメインへ任せる。 */
-function stateOfDay(
-  businessDate: string,
-  events: readonly AttendanceEventRecord[],
-): { open: boolean; hasPunch: boolean; flagged: boolean } {
+/** 有効な打刻から、その日のまとめを作る。有効かどうかの判断はドメインへ任せる。 */
+function summaryOfDay(businessDate: string, events: readonly AttendanceEventRecord[]) {
   const effective = resolveEffectiveEvents(
     events.map((event) => ({
       id: event.id,
@@ -297,10 +344,21 @@ function stateOfDay(
       recordedAt: new Date(event.recordedAt),
     })),
   );
-  const summary = summarizeWorkDay(
-    businessDate,
-    effective.map((event) => ({ eventType: event.eventType, occurredAt: event.occurredAt })),
-  );
+  return {
+    effective,
+    summary: summarizeWorkDay(
+      businessDate,
+      effective.map((event) => ({ eventType: event.eventType, occurredAt: event.occurredAt })),
+    ),
+  };
+}
+
+/** 打刻から、締める前に見たい状態を作る。 */
+function stateOfDay(
+  businessDate: string,
+  events: readonly AttendanceEventRecord[],
+): { open: boolean; hasPunch: boolean; flagged: boolean } {
+  const { effective, summary } = summaryOfDay(businessDate, events);
 
   return {
     open: summary.state === 'working' || summary.state === 'on_break',

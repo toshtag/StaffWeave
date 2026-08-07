@@ -187,6 +187,26 @@ export interface Messages {
   /** 設定の画面。項目が多いため、他と混ぜず 1 つのまとまりとして持つ。 */
   admin: AdminMessages;
   requests: RequestMessages;
+  history: HistoryMessages;
+}
+
+/** 過去の日次勤怠の画面の文言。 */
+export interface HistoryMessages {
+  title: string;
+  hint: string;
+  previousMonth: string;
+  nextMonth: string;
+  reload: string;
+  noDays: string;
+  editable: string;
+  locked: string;
+  editableLabel: string;
+  workedMinutesLabel: string;
+  punches: string;
+  noPunches: string;
+  close: string;
+  minutes: (value: number) => string;
+  detail: (businessDate: string) => string;
 }
 
 /** 従業員の申請センターの文言。 */
@@ -726,6 +746,23 @@ const ja: Messages = {
   downloadCsv: 'CSV で取り出す',
   severityWarning: '要確認',
   severityInfo: '参考',
+  history: {
+    title: '過去の勤怠',
+    hint: '月を選び、日を選ぶと、その日の記録を見られます。',
+    previousMonth: '前の月',
+    nextMonth: '次の月',
+    reload: '読み直す',
+    noDays: 'この月には記録がありません。',
+    editable: '直せます',
+    locked: '締め済み・申請中',
+    editableLabel: '編集',
+    workedMinutesLabel: '実労働',
+    punches: 'その日の打刻',
+    noPunches: '打刻はありません。',
+    close: '閉じる',
+    minutes: (value: number) => `${value} 分`,
+    detail: (businessDate: string) => `${businessDate} の記録`,
+  },
   requests: {
     title: '申請',
     hint: '申請の種別を選ぶと、その種別が求める入力だけが出ます。',
@@ -1340,6 +1377,23 @@ const en: Messages = {
   downloadCsv: 'Download as CSV',
   severityWarning: 'Needs review',
   severityInfo: 'For reference',
+  history: {
+    title: 'Past attendance',
+    hint: 'Pick a month, then a day, to see what was recorded.',
+    previousMonth: 'Previous month',
+    nextMonth: 'Next month',
+    reload: 'Reload',
+    noDays: 'Nothing recorded in this month.',
+    editable: 'Editable',
+    locked: 'Closed or awaiting a decision',
+    editableLabel: 'Editable',
+    workedMinutesLabel: 'Worked',
+    punches: 'Punches',
+    noPunches: 'No punches.',
+    close: 'Close',
+    minutes: (value: number) => `${value} min`,
+    detail: (businessDate: string) => `${businessDate}`,
+  },
   requests: {
     title: 'Requests',
     hint: 'Pick a type and only the inputs that type requires appear.',
