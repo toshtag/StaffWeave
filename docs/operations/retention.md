@@ -49,30 +49,49 @@
 
 ## 消すとき
 
-消す前に、必ずバックアップを取ってください。
+消す前に、必ずバックアップを取ってください。この command は控えを取りません。
 
 ```bash
 pnpm backup
 ```
 
-消す例（送信の履歴を 90 日で切る）:
+何をどれだけ消すかを、先に出します。既定では消しません。
 
-```sql
-DELETE FROM webhook_deliveries WHERE attempted_at < now() - interval '90 days';
+```bash
+pnpm retention -- --webhook-deliveries 90 --attendance-locations 400
 ```
 
-打刻した場所を 400 日で切る例:
+出た件数を確かめてから、`--apply` を付けて実行します。
 
-```sql
-DELETE FROM attendance_event_locations WHERE captured_at < now() - interval '400 days';
+```bash
+pnpm retention -- --apply --webhook-deliveries 90 --attendance-locations 400
 ```
+
+消せる対象は次のとおりです。ここに無い表は消せません。表の名前を引数から
+自由に受け取ると、打刻や計算のような消してはいけない表まで対象にできてしまいます。
+
+| 引数 | 対象 | 期間を測る列 |
+| --- | --- | --- |
+| `--webhook-deliveries` | 送信の履歴 | `attempted_at` |
+| `--attendance-locations` | 打刻した場所 | `captured_at` |
+| `--login-attempts` | ログイン失敗の記録 | `updated_at` |
+
+保持する日数は渡した値だけを使います。製品は既定値を持ちません。
+渡さなかった対象は消しません。
+
+消した件数は、消すのと同じトランザクションで監査へ残ります。
+分けると、消した記録だけが残らない状態を作ります。
+
+同じ引数で二度実行しても、二度目は 0 件になります。境界より前の記録が
+すでに無いためで、やり直しても壊れません。
 
 位置情報は打刻とは別の表に持ちます。消しても打刻は残ります。
 同じ行に持つと、位置情報を消すために打刻の行へ触れることになり、
 追記のみという取り決めと衝突します。
 
-消した記録も監査へ残してください。残さないと、
-「無い」のか「消した」のかを、あとから区別できません。
+`webhook_outbox` の諦めた通知は、この command では消しません。
+消すと「届かなかったこと」自体が分からなくなります。
+手で送り直すか、確かめてから個別に消してください。
 
 ## 退職者の扱い
 
