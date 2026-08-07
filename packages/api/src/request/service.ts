@@ -14,7 +14,7 @@ import {
   hasPermission,
   instantFromLocal,
   resolveEffectiveEvents,
-  validateLeaveConsumption,
+  validateLeaveConsumptions,
 } from '@staffweave/domain';
 import type { DayRepositories } from '../attendance/day.js';
 import { recalculateWorkDay } from '../attendance/day.js';
@@ -118,6 +118,14 @@ function periodOf(record: EmployeeRequestRecord): { from: string; to: string } {
   return { from: record.businessDate, to: record.endsOn ?? record.businessDate };
 }
 
+/**
+ * 休暇として引かない日の種別。
+ *
+ * 予定が「働かない日」と言っている日は、休暇を取るまでもなく休みになる。
+ * ここを引くと、申請した本人が使っていない残数まで減る。
+ */
+const NON_WORKING_DAY_TYPES = new Set(['non_working_day', 'legal_holiday', 'public_holiday']);
+
 export function createRequestService(deps: RequestServiceDependencies): RequestService {
   const requireTypeManager = (context: AuthenticatedContext): void => {
     if (!hasPermission(context.roles, 'request.manage')) throw forbidden();
@@ -170,9 +178,44 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
   };
 
   /**
+   * 休暇を消化する日を決める。
+   *
+   * 申請は `endsOn` で期間を表せる。その全ての日から、勤務予定が
+   * 「働かない日」と言っている日を除く。休みの日を休暇として引くと、
+   * 申請した本人が使っていない残数まで減る。
+   *
+   * 予定が置かれていない日は除かない。予定が無いことは「休みである」
+   * ことを意味しない。決まっていない日を勝手に休みへ寄せると、
+   * 引くべき残数が引かれないまま承認が通る。
+   */
+  const leaveDatesOf = async (
+    repositories: RequestRepositories,
+    workspaceId: string,
+    request: EmployeeRequestRecord,
+  ): Promise<string[]> => {
+    const dates = await repositories.requests.listAffectedDates(workspaceId, request.id);
+    const schedules = await repositories.schedule.listWorkSchedules(
+      workspaceId,
+      request.employeeId,
+      dates[0] ?? request.businessDate,
+      dates.at(-1) ?? request.businessDate,
+    );
+    const nonWorking = new Set(
+      schedules
+        .filter((schedule) => NON_WORKING_DAY_TYPES.has(schedule.dayType))
+        .map((schedule) => schedule.businessDate),
+    );
+    return dates.filter((date) => !nonWorking.has(date));
+  };
+
+  /**
    * 承認しきった休暇の申請を、台帳へ反映する。
    *
-   * 同じ申請から二度消化しないことは DB の一意制約で担保する。
+   * 対象の日数ぶんをまとめて確かめ、まとめて積む。1 日ずつ確かめて
+   * 1 日ずつ積むと、途中で足りなくなったときに前の日ぶんだけが引かれた
+   * 状態が残る。申請は 1 つなのに反映は途中まで、という状態を作らない。
+   *
+   * 同じ申請の同じ日から二度消化しないことは DB の一意制約で担保する。
    * ここで先に読んで判断しても、同時に届いた承認は擦り抜ける。
    */
   const consumeLeave = async (
@@ -186,10 +229,19 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
     const leaveType = await repositories.leave.findLeaveType(workspaceId, request.leaveTypeId);
     if (!leaveType) throw notFound('休暇種別');
 
+    const timed = request.startMinutes !== null && request.endMinutes !== null;
+
+    // 時間帯を指定した申請は 1 日ぶんだけにする。
+    // 「9:00–12:00 を 3 日ぶん」は、日ごとに同じ時間帯を取るという意味にも、
+    // 期間の始まりと終わりの時刻という意味にも読める。決めずに受け取らない。
+    if (timed && request.endsOn !== null && request.endsOn !== request.businessDate) {
+      throw new ApiError('conflict', '時間帯を指定した休暇の申請は 1 日ぶんだけを対象にできます');
+    }
+
     // 時間帯の指定があればその長さ、なければ 1 日ぶんを引く。
     // 1 日ぶんの分数は休暇種別の設定から取る。決まっていなければ引く量を決められない。
     const minutes =
-      request.startMinutes !== null && request.endMinutes !== null
+      timed && request.startMinutes !== null && request.endMinutes !== null
         ? request.endMinutes - request.startMinutes
         : leaveType.dayMinutes;
     if (minutes === null) {
@@ -199,6 +251,9 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
       );
     }
 
+    const dates = await leaveDatesOf(repositories, workspaceId, request);
+    if (dates.length === 0) return;
+
     // 残数を読んでから積むまでの間に、別の申請の承認が割り込めないようにする。
     // 割り込まれると、どちらの承認も「足りている」と判断して合計が負になる。
     await repositories.leave.lockLedgerOf(workspaceId, request.employeeId);
@@ -207,10 +262,10 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
       employeeId: request.employeeId,
       leaveTypeId: request.leaveTypeId,
     });
-    const problems = validateLeaveConsumption({
+    const consumptions = dates.map((effectiveOn) => ({ minutes, effectiveOn }));
+    const problems = validateLeaveConsumptions({
       entries,
-      minutes,
-      effectiveOn: request.businessDate,
+      consumptions,
       unitMinutes: leaveType.unitMinutes,
     });
     if (problems.includes('insufficient')) {
@@ -224,15 +279,17 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
     }
 
     try {
-      await repositories.leave.addEntry(workspaceId, {
-        employeeId: request.employeeId,
-        leaveTypeId: request.leaveTypeId,
-        entryType: 'consume',
-        minutes: -minutes,
-        effectiveOn: request.businessDate,
-        requestId: request.id,
-        createdByUserId: actorUserId,
-      });
+      for (const consumption of consumptions) {
+        await repositories.leave.addEntry(workspaceId, {
+          employeeId: request.employeeId,
+          leaveTypeId: request.leaveTypeId,
+          entryType: 'consume',
+          minutes: -consumption.minutes,
+          effectiveOn: consumption.effectiveOn,
+          requestId: request.id,
+          createdByUserId: actorUserId,
+        });
+      }
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new ApiError('conflict', 'この申請はすでに台帳へ反映されています');

@@ -437,6 +437,141 @@ describe('休暇の申請と台帳', () => {
     expect(await availableMinutes(instance)).toBe(9 * DAY);
   });
 
+  /**
+   * 申請の契約は endsOn を許し、複数日を表せる。台帳の側が 1 日ぶんしか
+   * 引かないと、残数だけが合わなくなり、どの日を消化したのかも残らない。
+   */
+  it('複数日の申請は、対象の日数ぶんを消化する', async () => {
+    const instance = app();
+    await grant(instance, 10 * DAY);
+    const type = await leaveType(instance);
+    // 2026-04-10 から 04-12 の 3 日。
+    const request = await submit(instance, type, {
+      leaveTypeId: fixture.paidLeaveId,
+      endsOn: '2026-04-12',
+    });
+
+    await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 });
+    await decide(instance, request.id, { decision: 'approved', step: 2, submission: 1 });
+
+    expect(await availableMinutes(instance)).toBe(7 * DAY);
+
+    // 日ごとに記録が残る。どの日を消化したのかを、あとから辿れる。
+    const response = await instance.request(
+      `/api/leave-ledger?employeeId=${fixture.employeeId}`,
+      authorized(fixture.adminCookie),
+    );
+    const { entries } = (await response.json()) as {
+      entries: { entryType: string; effectiveOn: string; requestId: string | null }[];
+    };
+    const consumed = entries
+      .filter((entry) => entry.entryType === 'consume' && entry.requestId === request.id)
+      .map((entry) => entry.effectiveOn)
+      .sort();
+    expect(consumed).toEqual(['2026-04-10', '2026-04-11', '2026-04-12']);
+  });
+
+  it('勤務予定が働かない日と言っている日は、消化しない', async () => {
+    const instance = app();
+    await grant(instance, 10 * DAY);
+    // 真ん中の 1 日を休日にする。
+    const schedule = await instance.request(
+      '/api/work-schedules',
+      authorized(fixture.adminCookie, {
+        method: 'PUT',
+        body: {
+          employeeId: fixture.employeeId,
+          businessDate: '2026-04-11',
+          dayType: 'non_working_day',
+          breakMinutes: 0,
+        },
+      }),
+    );
+    expect(schedule.status).toBe(200);
+
+    const type = await leaveType(instance);
+    const request = await submit(instance, type, {
+      leaveTypeId: fixture.paidLeaveId,
+      endsOn: '2026-04-12',
+    });
+    await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 });
+    await decide(instance, request.id, { decision: 'approved', step: 2, submission: 1 });
+
+    // 3 日の申請でも、休日を除いた 2 日ぶんだけを引く。
+    expect(await availableMinutes(instance)).toBe(8 * DAY);
+  });
+
+  it('全日ぶんに足りなければ、1 件も反映しない', async () => {
+    const instance = app();
+    await grant(instance, 2 * DAY);
+    const type = await leaveType(instance);
+    const request = await submit(instance, type, {
+      leaveTypeId: fixture.paidLeaveId,
+      endsOn: '2026-04-12',
+    });
+
+    await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 });
+    const last = await decide(instance, request.id, {
+      decision: 'approved',
+      step: 2,
+      submission: 1,
+    });
+
+    expect(last.status).toBe(409);
+    // 途中まで引かれた状態を残さない。
+    expect(await availableMinutes(instance)).toBe(2 * DAY);
+  });
+
+  it('時間帯を指定した申請は、複数日を対象にできない', async () => {
+    const instance = app();
+    await grant(instance, 10 * DAY);
+    const type = await createType(instance, {
+      code: 'LEAVE_HOURLY',
+      name: '時間単位の年次有給',
+      category: 'leave',
+      requiresLeaveType: true,
+      requiresTimeRange: true,
+      approvalSteps: 1,
+    });
+    const request = await submit(instance, type, {
+      leaveTypeId: fixture.paidLeaveId,
+      endsOn: '2026-04-12',
+      startMinutes: 9 * 60,
+      endMinutes: 12 * 60,
+    });
+
+    const response = await decide(instance, request.id, {
+      decision: 'approved',
+      step: 1,
+      submission: 1,
+    });
+
+    expect(response.status).toBe(409);
+    expect(await availableMinutes(instance)).toBe(10 * DAY);
+  });
+
+  it('時間帯を指定した 1 日の申請は、その長さだけを引く', async () => {
+    const instance = app();
+    await grant(instance, 10 * DAY);
+    const type = await createType(instance, {
+      code: 'LEAVE_HOURLY',
+      name: '時間単位の年次有給',
+      category: 'leave',
+      requiresLeaveType: true,
+      requiresTimeRange: true,
+      approvalSteps: 1,
+    });
+    const request = await submit(instance, type, {
+      leaveTypeId: fixture.paidLeaveId,
+      startMinutes: 9 * 60,
+      endMinutes: 12 * 60,
+    });
+
+    await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 });
+
+    expect(await availableMinutes(instance)).toBe(10 * DAY - 3 * 60);
+  });
+
   it('休暇種別の入力を求める申請では、選ばないと出せない', async () => {
     const instance = app();
     const type = await leaveType(instance);

@@ -200,6 +200,58 @@ export function validateLeaveConsumption(input: {
   return problems;
 }
 
+/**
+ * 複数日ぶんの消化を、まとめて確かめる。
+ *
+ * 1 日ずつ確かめて 1 日ずつ積むと、途中で足りなくなったときに
+ * 前の日ぶんだけが引かれた状態が残る。申請は 1 つなのに、
+ * 反映は途中まで、という状態を作らない。
+ *
+ * ここでは全日ぶんを同時に積んだ状態を作り、そのうえで残数が
+ * 負にならないかを見る。1 日でも負になれば、1 件も積まない。
+ */
+export function validateLeaveConsumptions(input: {
+  entries: readonly LeaveLedgerEntry[];
+  consumptions: readonly { minutes: number; effectiveOn: string }[];
+  unitMinutes: number | null;
+}): LeaveConsumeProblem[] {
+  const problems: LeaveConsumeProblem[] = [];
+  if (input.consumptions.length === 0) return problems;
+
+  const proposed = input.consumptions.map<LeaveLedgerEntry>((consumption, index) => ({
+    // まだ識別子が無い。並びの末尾へ来る値を、日ごとに分けて置く。
+    id: `${PROPOSED}-${index}`,
+    entryType: 'consume',
+    minutes: -consumption.minutes,
+    effectiveOn: consumption.effectiveOn,
+    expiresOn: null,
+    reversesEntryId: null,
+  }));
+  const withProposed = [...input.entries, ...proposed];
+
+  const earliest = input.consumptions.reduce(
+    (selected, consumption) =>
+      consumption.effectiveOn < selected ? consumption.effectiveOn : selected,
+    input.consumptions[0]?.effectiveOn as string,
+  );
+
+  // 確かめる時点は、台帳に現れる日付だけでよい。
+  // 残数が動くのは記録のある日だけで、その間では変わらない。
+  const dates = new Set(withProposed.map((entry) => entry.effectiveOn));
+  const negative = [...dates]
+    .filter((date) => date >= earliest)
+    .some((date) => buildLeaveBalance(withProposed, date).availableMinutes < 0);
+  if (negative) problems.push('insufficient');
+
+  if (
+    input.unitMinutes !== null &&
+    input.consumptions.some((consumption) => consumption.minutes % (input.unitMinutes ?? 1) !== 0)
+  ) {
+    problems.push('not_a_multiple');
+  }
+  return problems;
+}
+
 /** まだ積んでいない消化を表す識別子。並びの末尾へ来るよう、他より大きい値にする。 */
 const PROPOSED = '~proposed';
 
