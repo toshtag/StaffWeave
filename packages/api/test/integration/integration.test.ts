@@ -190,6 +190,13 @@ describe('CSV 取り込み', () => {
     fixture = await setUp();
   });
 
+  async function employeeCount(): Promise<number> {
+    const rows = await testDatabase().query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM employees',
+    );
+    return Number(rows[0]?.count ?? '0');
+  }
+
   it('従業員を取り込める', async () => {
     const csv = [
       '"organization_code","employee_number","display_name"',
@@ -209,7 +216,14 @@ describe('CSV 取り込み', () => {
     expect(body.problems).toEqual([]);
   });
 
-  it('取り込めなかった行を位置つきで返す', async () => {
+  /**
+   * 1 行でも取り込めなければ 1 件も作らない。
+   *
+   * 途中まで入った状態を残すと、何が入って何が入らなかったのかを
+   * 人が数え直すことになる。
+   */
+  it('取り込めない行があれば、1 件も作らずに位置つきで返す', async () => {
+    const before = await employeeCount();
     const csv = [
       '"organization_code","employee_number","display_name"',
       '"MISSING","E020","組織なし"',
@@ -221,11 +235,60 @@ describe('CSV 取り込み', () => {
       headers: { cookie: fixture.adminCookie, 'content-type': 'text/csv' },
       body: csv,
     });
-    const body = (await response.json()) as ImportResult;
+    const body = (await response.json()) as {
+      error: { details?: { field: string; message: string }[] };
+    };
 
-    expect(body.created).toBe(1);
-    expect(body.problems[0]?.line).toBe(2);
-    expect(body.problems[0]?.message).toContain('MISSING');
+    expect(response.status).toBe(400);
+    expect(body.error.details?.[0]?.field).toBe('line:2');
+    expect(body.error.details?.[0]?.message).toContain('MISSING');
+    // 正しい行も入らない。
+    expect(await employeeCount()).toBe(before);
+  });
+
+  it('同じ従業員番号が並んでいれば、どちらも作らない', async () => {
+    const before = await employeeCount();
+    const csv = [
+      '"organization_code","employee_number","display_name"',
+      '"HQ","E030","重複 一郎"',
+      '"HQ","E030","重複 二郎"',
+    ].join('\n');
+
+    const response = await app().request('/api/imports/employees', {
+      method: 'POST',
+      headers: { cookie: fixture.adminCookie, 'content-type': 'text/csv' },
+      body: csv,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await employeeCount()).toBe(before);
+  });
+
+  it('すでにある従業員番号は、そこで止めて 1 件も作らない', async () => {
+    const csv = [
+      '"organization_code","employee_number","display_name"',
+      '"HQ","E040","既存 一郎"',
+    ].join('\n');
+    const first = await app().request('/api/imports/employees', {
+      method: 'POST',
+      headers: { cookie: fixture.adminCookie, 'content-type': 'text/csv' },
+      body: csv,
+    });
+    expect(first.status).toBe(200);
+
+    const before = await employeeCount();
+    const again = await app().request('/api/imports/employees', {
+      method: 'POST',
+      headers: { cookie: fixture.adminCookie, 'content-type': 'text/csv' },
+      body: [
+        '"organization_code","employee_number","display_name"',
+        '"HQ","E040","既存 一郎"',
+        '"HQ","E041","新規 二郎"',
+      ].join('\n'),
+    });
+
+    expect(again.status).toBe(400);
+    expect(await employeeCount()).toBe(before);
   });
 
   it('見出しが足りなければ 400 を返す', async () => {

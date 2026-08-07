@@ -82,54 +82,7 @@ export function createIntegrationRoutes(deps: IntegrationRouteDependencies): Hon
   app.post(honoPath(operations.importEmployeesCsv), async (c) => {
     const auth = requirePermission(c, 'employee.manage');
     const text = await c.req.text();
-    const parsed = parseCsv(text);
-
-    const required = ['organization_code', 'employee_number', 'display_name'];
-    const missing = required.filter((column) => !parsed.header.includes(column));
-    if (missing.length > 0) {
-      throw invalidRequest([
-        { field: 'header', message: `見出しに ${missing.join(', ')} が必要です` },
-      ]);
-    }
-
-    const organizations = await deps.organization.listOrganizations(auth.workspace.id);
-    const byCode = new Map(
-      organizations.map((organization) => [organization.code, organization.id]),
-    );
-
-    let created = 0;
-    const problems = parsed.problems.map((problem) => ({
-      line: problem.line,
-      message: problem.message,
-    }));
-
-    for (const [index, row] of parsed.rows.entries()) {
-      const organizationId = byCode.get((row.organization_code ?? '').toUpperCase());
-      if (organizationId === undefined) {
-        problems.push({
-          line: index + 2,
-          message: `組織コード ${row.organization_code ?? ''} が見つかりません`,
-        });
-        continue;
-      }
-
-      try {
-        await deps.organization.createEmployee(auth.workspace.id, {
-          organizationId,
-          employeeNumber: row.employee_number ?? '',
-          displayName: row.display_name ?? '',
-          ...(row.hired_on ? { hiredOn: row.hired_on } : {}),
-        });
-        created += 1;
-      } catch (error) {
-        problems.push({
-          line: index + 2,
-          message: error instanceof Error ? error.message : '登録できませんでした',
-        });
-      }
-    }
-
-    return c.json({ created, problems }, 200);
+    return c.json(await deps.organization.importEmployeesCsv(auth.workspace.id, text), 200);
   });
 
   app.get(operations.listApiKeys.path, async (c) => {

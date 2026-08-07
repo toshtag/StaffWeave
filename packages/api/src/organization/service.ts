@@ -5,6 +5,7 @@ import type {
   CreateSiteRequest,
   Department,
   Employee,
+  ImportResult,
   Organization,
   Site,
   UpdateOrganizationRequest,
@@ -12,9 +13,11 @@ import type {
 import type { Role } from '@staffweave/domain';
 import {
   DEFAULT_LOCALE,
+  isBusinessDate,
   isValidEmail,
   normalizeCode,
   normalizeEmail,
+  parseCsv,
   validateCode,
   validatePassword,
 } from '@staffweave/domain';
@@ -46,7 +49,19 @@ export interface OrganizationService {
   createDepartment(workspaceId: string, input: CreateDepartmentRequest): Promise<Department>;
   listEmployees(context: AuthenticatedContext): Promise<Employee[]>;
   createEmployee(workspaceId: string, input: CreateEmployeeRequest): Promise<Employee>;
+  /**
+   * 従業員を CSV でまとめて登録する。
+   *
+   * 全行を先に確かめ、そのうえで 1 つのトランザクションで作る。
+   * 1 行でも取り込めなければ 1 件も作らない。
+   */
+  importEmployeesCsv(workspaceId: string, text: string): Promise<ImportResult>;
 }
+
+/** 一度に取り込める行数。1 回の要求で数万行を受けると、応答が返らなくなる。 */
+export const MAXIMUM_EMPLOYEE_IMPORT_ROWS = 2_000;
+
+const EMPLOYEE_IMPORT_COLUMNS = ['organization_code', 'employee_number', 'display_name'] as const;
 
 function requireValidCode(field: string, code: string): string {
   const problems = validateCode(code);
@@ -137,6 +152,130 @@ export function createOrganizationService(
     async listEmployees(context) {
       const employees = await repository.listEmployees(context.workspace.id);
       return deps.visibility.filterVisible(context, employees, (employee) => employee.id);
+    },
+
+    async importEmployeesCsv(workspaceId, text) {
+      const parsed = parseCsv(text);
+
+      const missing = EMPLOYEE_IMPORT_COLUMNS.filter((column) => !parsed.header.includes(column));
+      if (missing.length > 0) {
+        throw invalidRequest([
+          { field: 'header', message: `見出しに ${missing.join(', ')} が必要です` },
+        ]);
+      }
+      if (parsed.rows.length > MAXIMUM_EMPLOYEE_IMPORT_ROWS) {
+        throw invalidRequest([
+          {
+            field: 'rows',
+            message: `一度に取り込めるのは ${MAXIMUM_EMPLOYEE_IMPORT_ROWS} 行までです`,
+          },
+        ]);
+      }
+
+      // 形の壊れた行は、この時点ですでに問題として挙がっている。
+      const problems = parsed.problems.map((problem) => ({
+        line: problem.line,
+        message: problem.message,
+      }));
+
+      const organizations = await repository.listOrganizations(workspaceId);
+      const byCode = new Map(
+        organizations.map((organization) => [organization.code, organization.id]),
+      );
+      const existing = new Set(
+        (await repository.listAllEmployeeNumbers(workspaceId)).map((number) => number),
+      );
+
+      interface Planned {
+        organizationId: string;
+        employeeNumber: string;
+        displayName: string;
+        hiredOn: string | null;
+      }
+      const planned: Planned[] = [];
+      const seen = new Set<string>();
+
+      for (const [index, row] of parsed.rows.entries()) {
+        const line = index + 2;
+        const organizationId = byCode.get((row.organization_code ?? '').toUpperCase());
+        if (organizationId === undefined) {
+          problems.push({
+            line,
+            message: `組織コード ${row.organization_code ?? ''} が見つかりません`,
+          });
+          continue;
+        }
+
+        const rawNumber = row.employee_number ?? '';
+        if (validateCode(rawNumber).length > 0) {
+          problems.push({
+            line,
+            message: '従業員番号は英数字と - _ のみ、32 文字以内で書いてください',
+          });
+          continue;
+        }
+        const employeeNumber = normalizeCode(rawNumber);
+
+        if ((row.display_name ?? '').trim().length === 0) {
+          problems.push({ line, message: '表示名を書いてください' });
+          continue;
+        }
+        // 同じ番号を DB へ届く前に見つける。制約に任せると、違反した時点で
+        // トランザクションが中断し、どの行が原因かを 1 件しか返せない。
+        if (existing.has(employeeNumber)) {
+          problems.push({ line, message: `従業員番号 ${employeeNumber} はすでにあります` });
+          continue;
+        }
+        if (seen.has(employeeNumber)) {
+          problems.push({
+            line,
+            message: `従業員番号 ${employeeNumber} がこの取込の中で重複しています`,
+          });
+          continue;
+        }
+        seen.add(employeeNumber);
+
+        const hiredOn = row.hired_on && row.hired_on.length > 0 ? row.hired_on : null;
+        if (hiredOn !== null && !isBusinessDate(hiredOn)) {
+          problems.push({ line, message: '入社日の形式が正しくありません' });
+          continue;
+        }
+
+        planned.push({
+          organizationId,
+          employeeNumber,
+          displayName: row.display_name ?? '',
+          hiredOn,
+        });
+      }
+
+      if (problems.length > 0) {
+        // 1 行でも取り込めなければ 1 件も作らない。途中まで入った状態を残すと、
+        // 何が入って何が入らなかったのかを人が数え直すことになる。
+        throw invalidRequest(
+          problems.map((problem) => ({
+            field: `line:${problem.line}`,
+            message: problem.message,
+          })),
+        );
+      }
+
+      // ここから先は 1 つのトランザクションで作る。DB の制約で落ちた場合も
+      // 全て巻き戻り、件数は動かない。
+      return deps.transaction(async (repositoryInTransaction) => {
+        for (const row of planned) {
+          await repositoryInTransaction.createEmployee(workspaceId, {
+            organizationId: row.organizationId,
+            userId: null,
+            employeeNumber: row.employeeNumber,
+            displayName: row.displayName,
+            primarySiteId: null,
+            primaryDepartmentId: null,
+            hiredOn: row.hiredOn,
+          });
+        }
+        return { created: planned.length, problems: [] };
+      });
     },
 
     async createEmployee(workspaceId, input) {

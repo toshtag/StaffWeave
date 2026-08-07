@@ -40,6 +40,14 @@ export interface OrganizationRepository {
   ): Promise<Department>;
 
   listEmployees(workspaceId: string): Promise<Employee[]>;
+  /**
+   * ワークスペースの全ての従業員番号。
+   *
+   * CSV の取込で、重複を DB へ届く前に見つけるために読む。制約に任せると、
+   * 違反した時点でトランザクションが中断し、原因の行を 1 件しか返せない。
+   */
+  listAllEmployeeNumbers(workspaceId: string): Promise<string[]>;
+
   createEmployee(
     workspaceId: string,
     input: {
@@ -232,6 +240,14 @@ export function createOrganizationRepository(db: Queryable): OrganizationReposit
         [workspaceId],
       );
       return rows.map(toEmployee);
+    },
+
+    async listAllEmployeeNumbers(workspaceId) {
+      const rows = await db.query<{ employee_number: string }>(
+        'SELECT employee_number FROM employees WHERE workspace_id = $1',
+        [workspaceId],
+      );
+      return rows.map((row) => row.employee_number);
     },
 
     async createEmployee(workspaceId, input) {
