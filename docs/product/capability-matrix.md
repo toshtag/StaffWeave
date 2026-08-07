@@ -107,9 +107,9 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 自己承認の禁止 | implemented | `test:packages/domain/src/identity/roles.test.ts` | 承認者と対象者が同じなら断る |
 | 申請区分（休暇・残業・休日出勤・打刻修正など） | implemented | `op:createRequestType` `op:listRequestTypes` `op:submitEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 組織が定義する。従業員と日付ごとに 1 件という制限は無い |
 | 区分ごとの入力項目と必須の設定 | partial | `op:createRequestType` `op:updateRequestType` | 理由・休暇種別・時間帯・残業の上限時刻の要否を区分ごとに決められる。添付は未実装 |
-| 1〜4 段階の承認と申請時点の経路の固定 | implemented | `op:decideEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` `test:packages/api/test/integration/employee-request.test.ts` | 段数は提出時に写す。あとで定義を変えても進行中の申請の経路は変わらない |
+| 1〜4 段階の承認と申請時点の経路の固定 | implemented | `op:decideEmployeeRequest` `op:replaceApprovalRoute` `test:packages/domain/src/approval/approval-route.test.ts` `test:packages/api/test/integration/employee-request.test.ts` `migration:0041_create_approval_routes.sql` | 段ごとに承認者または承認方針を決め、提出した時点の経路を写す。現在の段の対象外の利用者による決裁は断る |
 | 決裁の再送で段が進まないこと | implemented | `migration:0030_create_request_types_and_approvals.sql` `test:packages/api/test/integration/employee-request.test.ts` | 何段目・何回目の提出かを添えさせ、同じ組み合わせの二度目は一意制約が断る |
-| 代理承認・不在対応 | partial | `op:decideEmployeeRequest` | 本来の承認者を決裁へ残せる。不在時の自動委任は無い |
+| 代理承認・不在対応 | partial | `op:createApprovalDelegation` `op:decideEmployeeRequest` `test:packages/domain/src/approval/approval-route.test.ts` `test:packages/api/test/integration/employee-request.test.ts` | 委任のある相手だけが代理で決裁でき、本来の承認者が監査へ残る。不在時の自動委任は無い |
 | 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
 | 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` `migration:0039_allow_multi_day_leave_consumption.sql` | 承認しきった休暇の申請だけを、同じトランザクションで消化する。複数日の申請は対象の日数ぶんを日ごとの記録として原子的に引く。予定が休みの日は引かない |
 | 承認結果の勤怠への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 残業・休日出勤・打刻修正を、承認しきった時点だけ日次へ効かせる。締め済みの期間を含む申請は承認を断る |
@@ -160,7 +160,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 組織・拠点・部門・従業員の設定画面 | implemented | `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` `ui:packages/web/src/admin/sections/SiteSettings.tsx` `ui:packages/web/src/admin/sections/DepartmentSettings.tsx` `ui:packages/web/src/admin/sections/EmployeeSettings.tsx` | 一覧・作成・写して作る・CSV |
 | 勤務区分・計算規則・労働形態の設定画面 | implemented | `ui:packages/web/src/admin/sections/WorkCategorySettings.tsx` `ui:packages/web/src/admin/sections/CalculationRuleSettings.tsx` `ui:packages/web/src/admin/sections/LaborSystemSettings.tsx` | 未設定の閾値は 0 ではなく未設定として出す |
 | 休暇種別・台帳の設定画面 | implemented | `ui:packages/web/src/admin/sections/LeaveTypeSettings.tsx` `ui:packages/web/src/admin/sections/LeaveLedgerSettings.tsx` | 残数は台帳から組み立てた値として出す。付与と取消ができる |
-| 申請種別と承認経路の設定画面 | implemented | `ui:packages/web/src/admin/sections/RequestTypeSettings.tsx` `test:e2e/admin-console.spec.ts` | 段数を直しても提出済みの申請は動かない |
+| 申請種別と承認経路の設定画面 | implemented | `ui:packages/web/src/admin/sections/RequestTypeSettings.tsx` `test:e2e/admin-console.spec.ts` | 段ごとの承認者を画面から決められる。段数を直しても提出済みの申請は動かない |
 | 一覧・写して作る・CSV を同じ形にする | implemented | `ui:packages/web/src/admin/SettingsSection.tsx` `test:packages/web/src/admin/resource.test.ts` | CSV の列は画面の表と同じ定義から作る |
 | 権限と組織の範囲で設定画面の表示を変える | implemented | `ui:packages/web/src/admin/AdminConsole.tsx` `test:e2e/admin-console.spec.ts` | 見られない設定は節ごと出さない。入口も出さない |
 | 設定の一括取り込み（CSV での投入） | implemented | `op:importEmployeesCsv` `op:importWorkCategoriesCsv` `op:importRequestTypesCsv` `op:importLeaveGrantsCsv` `test:packages/api/test/integration/settings-import.test.ts` | 従業員・勤務区分・申請種別・休暇の付与。1 行でも読めなければ 1 行も取り込まない |

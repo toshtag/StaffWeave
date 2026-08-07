@@ -129,6 +129,46 @@ async function decide(
   );
 }
 
+async function userIdOf(email: string): Promise<string> {
+  const rows = await testDatabase().query<{ id: string }>('SELECT id FROM users WHERE email = $1', [
+    email,
+  ]);
+  const row = rows[0];
+  if (!row) throw new Error(`利用者が見つかりません: ${email}`);
+  return row.id;
+}
+
+/** 段ごとの承認者を置き換える。 */
+async function setRoute(
+  instance: TestApp,
+  requestTypeId: string,
+  steps: { step: number; approverUserId: string | null; approverPolicy: string }[],
+): Promise<void> {
+  const response = await instance.request(
+    `/api/request-types/${requestTypeId}/approval-route`,
+    authorized(fixture.adminCookie, { method: 'PUT', body: { steps } }),
+  );
+  if (response.status !== 200) {
+    throw new Error(`承認経路を置けませんでした: ${response.status} ${await response.text()}`);
+  }
+}
+
+async function delegate(
+  instance: TestApp,
+  input: { fromUserId: string; toUserId: string },
+): Promise<void> {
+  const response = await instance.request(
+    '/api/approval-delegations',
+    authorized(fixture.adminCookie, {
+      method: 'POST',
+      body: { ...input, effectiveFrom: '2026-01-01' },
+    }),
+  );
+  if (response.status !== 201) {
+    throw new Error(`委任を作れませんでした: ${response.status} ${await response.text()}`);
+  }
+}
+
 describe('段階承認', () => {
   it('段を順に進めて承認しきる', async () => {
     const instance = app();
@@ -199,29 +239,153 @@ describe('段階承認', () => {
     expect(skipped.status).toBe(409);
   });
 
-  it('代理の承認では、本来の承認者も記録に残る', async () => {
+  /**
+   * 代理は、任された記録があるときだけ通る。
+   *
+   * 記録が無いまま「本来の承認者」を書けると、監査は決裁する側の申告を
+   * そのまま信じることになる。
+   */
+  it('委任があれば代理で承認でき、本来の承認者が記録に残る', async () => {
     const instance = app();
     const type = await createType(instance, {});
-    const request = await submit(instance, type);
-    const users = await testDatabase().query<{ id: string }>(
-      'SELECT id FROM users WHERE email = $1',
-      ['manager@example.com'],
-    );
-    const manager = users[0];
-    if (!manager) throw new Error('承認者が見つかりません');
+    const manager = await userIdOf('manager@example.com');
+    const admin = await userIdOf('admin@example.com');
 
+    await setRoute(instance, type.id, [
+      { step: 1, approverUserId: manager, approverPolicy: 'user' },
+    ]);
+    await delegate(instance, { fromUserId: manager, toUserId: admin });
+
+    const request = await submit(instance, type);
     const response = await decide(instance, request.id, {
       decision: 'approved',
       step: 1,
       submission: 1,
-      onBehalfOfUserId: manager.id,
+      onBehalfOfUserId: manager,
     });
 
     expect(response.status).toBe(200);
     const decided = (await response.json()) as EmployeeRequestRecord;
     expect(decided.approvals).toEqual([
-      expect.objectContaining({ step: 1, submission: 1, onBehalfOfUserId: manager.id }),
+      expect.objectContaining({ step: 1, submission: 1, onBehalfOfUserId: manager }),
     ]);
+  });
+
+  it('委任が無ければ、代理を名乗っても通せない', async () => {
+    const instance = app();
+    const type = await createType(instance, {});
+    const manager = await userIdOf('manager@example.com');
+
+    await setRoute(instance, type.id, [
+      { step: 1, approverUserId: manager, approverPolicy: 'user' },
+    ]);
+    const request = await submit(instance, type);
+
+    const response = await decide(instance, request.id, {
+      decision: 'approved',
+      step: 1,
+      submission: 1,
+      onBehalfOfUserId: manager,
+    });
+
+    expect(response.status).toBe(403);
+  });
+});
+
+describe('段ごとの承認者', () => {
+  /**
+   * 承認の権限を持っているだけでは通せない。
+   * ここを緩めると、段を分けた意味が無くなる。
+   */
+  it('その段の承認者でない利用者は、権限があっても通せない', async () => {
+    const instance = app();
+    const type = await createType(instance, {});
+    const manager = await userIdOf('manager@example.com');
+
+    await setRoute(instance, type.id, [
+      { step: 1, approverUserId: manager, approverPolicy: 'user' },
+    ]);
+    const request = await submit(instance, type);
+
+    // 管理者は attendance.approve を持つが、この段の承認者ではない。
+    const response = await decide(instance, request.id, {
+      decision: 'approved',
+      step: 1,
+      submission: 1,
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('段ごとに承認者を分けると、段ごとに通せる相手が変わる', async () => {
+    const instance = app();
+    const type = await createType(instance, { approvalSteps: 2 });
+    const manager = await userIdOf('manager@example.com');
+    const admin = await userIdOf('admin@example.com');
+
+    await setRoute(instance, type.id, [
+      { step: 1, approverUserId: manager, approverPolicy: 'user' },
+      { step: 2, approverUserId: admin, approverPolicy: 'user' },
+    ]);
+    const request = await submit(instance, type);
+
+    // 1 段目は管理者では通せない。
+    expect(
+      (await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 })).status,
+    ).toBe(403);
+
+    const first = await instance.request(
+      `/api/employee-requests/${request.id}/decisions`,
+      authorized(fixture.managerCookie, {
+        method: 'POST',
+        body: { decision: 'approved', step: 1, submission: 1 },
+      }),
+    );
+    expect(first.status).toBe(200);
+
+    // 2 段目は逆になる。
+    const second = await instance.request(
+      `/api/employee-requests/${request.id}/decisions`,
+      authorized(fixture.managerCookie, {
+        method: 'POST',
+        body: { decision: 'approved', step: 2, submission: 1 },
+      }),
+    );
+    expect(second.status).toBe(403);
+
+    expect(
+      (await decide(instance, request.id, { decision: 'approved', step: 2, submission: 1 })).status,
+    ).toBe(200);
+  });
+
+  it('提出のあとに経路を変えても、その申請の経路は変わらない', async () => {
+    const instance = app();
+    const type = await createType(instance, {});
+    const manager = await userIdOf('manager@example.com');
+    const admin = await userIdOf('admin@example.com');
+
+    await setRoute(instance, type.id, [{ step: 1, approverUserId: admin, approverPolicy: 'user' }]);
+    const request = await submit(instance, type);
+
+    // 提出のあとで承認者を入れ替える。
+    await setRoute(instance, type.id, [
+      { step: 1, approverUserId: manager, approverPolicy: 'user' },
+    ]);
+
+    // 出した時点の経路で通る。
+    expect(
+      (await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 })).status,
+    ).toBe(200);
+  });
+
+  it('置いていない申請種別では、これまでどおり承認の権限で通せる', async () => {
+    const instance = app();
+    const type = await createType(instance, {});
+    const request = await submit(instance, type);
+
+    expect(
+      (await decide(instance, request.id, { decision: 'approved', step: 1, submission: 1 })).status,
+    ).toBe(200);
   });
 });
 
