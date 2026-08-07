@@ -126,6 +126,18 @@ export const calculationRuleVersionSchema = objectSchema({
     weeklyLegalMinutes: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
     weekStartsOn: { type: 'integer', description: '週の開始曜日。0 が日曜' },
     monthStartsOn: { type: 'integer', description: '月の集計の開始日' },
+    monthlyOvertimeLimitMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '1 か月の法定時間外の上限。未設定なら警告を出さない',
+    },
+    averageOvertimeLimitMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '複数月の平均の上限。未設定なら警告を出さない',
+    },
+    averageOvertimeMonths: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '平均を取る月数',
+    },
     createdAt: timestampSchema,
   },
   required: [
@@ -140,6 +152,9 @@ export const calculationRuleVersionSchema = objectSchema({
     'weeklyLegalMinutes',
     'weekStartsOn',
     'monthStartsOn',
+    'monthlyOvertimeLimitMinutes',
+    'averageOvertimeLimitMinutes',
+    'averageOvertimeMonths',
     'createdAt',
   ],
 });
@@ -162,6 +177,9 @@ export const createCalculationRuleVersionRequestSchema = objectSchema({
     weeklyLegalMinutes: { type: 'integer', minimum: 1, maximum: 10080 },
     weekStartsOn: { type: 'integer', minimum: 0, maximum: 6 },
     monthStartsOn: { type: 'integer', minimum: 1, maximum: 28 },
+    monthlyOvertimeLimitMinutes: { type: 'integer', minimum: 1, maximum: 100000 },
+    averageOvertimeLimitMinutes: { type: 'integer', minimum: 1, maximum: 100000 },
+    averageOvertimeMonths: { type: 'integer', minimum: 2, maximum: 12 },
   },
   required: [
     'effectiveFrom',

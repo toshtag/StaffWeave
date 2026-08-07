@@ -33,6 +33,9 @@ export function CalculationRuleSettings({ permissions }: SectionProps): React.JS
   const [dailyLegal, setDailyLegal] = useState('');
   const [weeklyLegal, setWeeklyLegal] = useState('');
   const [weekStartsOn, setWeekStartsOn] = useState('0');
+  const [monthlyOvertimeLimit, setMonthlyOvertimeLimit] = useState('');
+  const [averageOvertimeLimit, setAverageOvertimeLimit] = useState('');
+  const [averageOvertimeMonths, setAverageOvertimeMonths] = useState('');
   const [monthStartsOn, setMonthStartsOn] = useState('1');
 
   const unset = labels.unconfigured;
@@ -96,6 +99,9 @@ export function CalculationRuleSettings({ permissions }: SectionProps): React.JS
       submit={async () => {
         const daily = numberOr(dailyLegal);
         const weekly = numberOr(weeklyLegal);
+        const monthlyLimit = numberOr(monthlyOvertimeLimit);
+        const averageLimit = numberOr(averageOvertimeLimit);
+        const averageMonths = numberOr(averageOvertimeMonths);
         await api.createCalculationRuleVersion({
           effectiveFrom,
           dayStartMinutes: Number(dayStart),
@@ -108,6 +114,14 @@ export function CalculationRuleSettings({ permissions }: SectionProps): React.JS
           // 空欄は「未設定」として送らない。0 として送ると、決めていない値が決まってしまう。
           ...(daily === undefined ? {} : { dailyLegalMinutes: daily }),
           ...(weekly === undefined ? {} : { weeklyLegalMinutes: weekly }),
+          ...(monthlyLimit === undefined ? {} : { monthlyOvertimeLimitMinutes: monthlyLimit }),
+          // 平均の上限は月数とそろって初めて意味が決まる。片方だけは送らない。
+          ...(averageLimit === undefined || averageMonths === undefined
+            ? {}
+            : {
+                averageOvertimeLimitMinutes: averageLimit,
+                averageOvertimeMonths: averageMonths,
+              }),
         });
         setEffectiveFrom('');
       }}
@@ -187,6 +201,34 @@ export function CalculationRuleSettings({ permissions }: SectionProps): React.JS
             onChange={setWeeklyLegal}
             min={1}
             max={10080}
+          />
+          <TextField
+            id="rule-monthly-overtime-limit"
+            label={labels.monthlyOvertimeLimitMinutes}
+            type="number"
+            value={monthlyOvertimeLimit}
+            onChange={setMonthlyOvertimeLimit}
+            min={1}
+            max={100000}
+            hint={labels.legalThresholdHint}
+          />
+          <TextField
+            id="rule-average-overtime-limit"
+            label={labels.averageOvertimeLimitMinutes}
+            type="number"
+            value={averageOvertimeLimit}
+            onChange={setAverageOvertimeLimit}
+            min={1}
+            max={100000}
+          />
+          <TextField
+            id="rule-average-overtime-months"
+            label={labels.averageOvertimeMonths}
+            type="number"
+            value={averageOvertimeMonths}
+            onChange={setAverageOvertimeMonths}
+            min={2}
+            max={12}
           />
           <TextField
             id="rule-week-starts-on"

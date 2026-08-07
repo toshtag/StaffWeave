@@ -373,6 +373,16 @@ export interface AdminMessages {
   importCsvHint: string;
   imported: (count: number) => string;
   sectionMonthlySummaries: string;
+  sectionOvertimeWarnings: string;
+  overtimeWarningsHint: string;
+  noOvertimeWarnings: string;
+  overtimeLimitUnset: string;
+  exceededMonthlyBy: string;
+  averageOvertimeMinutes: string;
+  exceededAverageBy: string;
+  monthlyOvertimeLimitMinutes: string;
+  averageOvertimeLimitMinutes: string;
+  averageOvertimeMonths: string;
   sectionPeriodSummaries: string;
   periodSummariesHint: string;
   noPeriodSummaries: string;
@@ -832,6 +842,18 @@ const ja: Messages = {
       '取り出した CSV と同じ列で書きます。1 行でも読めなければ、1 行も取り込みません。',
     imported: (count: number) => `${count} 件を取り込みました。`,
     sectionMonthlySummaries: '月次の集計',
+    sectionOvertimeWarnings: '長時間労働の警告',
+    overtimeWarningsHint:
+      '計算規則の版が持つ上限を超えた従業員を出します。上限を置かないかぎり、警告は出しません。',
+    noOvertimeWarnings: 'この月に上限を超えた従業員はいません。',
+    overtimeLimitUnset:
+      '上限が設定されていないため、警告を出していません。計算規則の版で上限を決めてください。',
+    exceededMonthlyBy: '月の超過（分）',
+    averageOvertimeMinutes: '複数月の平均（分）',
+    exceededAverageBy: '平均の超過（分）',
+    monthlyOvertimeLimitMinutes: '1 か月の上限（分）',
+    averageOvertimeLimitMinutes: '複数月平均の上限（分）',
+    averageOvertimeMonths: '平均を取る月数',
     sectionPeriodSummaries: '期間の集計',
     periodSummariesHint:
       '週・清算期間・変形労働の対象期間の合計です。区切りは計算規則の版と労働形態の割当が決めます。' +
@@ -1308,6 +1330,18 @@ const en: Messages = {
       'Use the same columns as the exported CSV. If a single row cannot be read, nothing is imported.',
     imported: (count: number) => `Imported ${count} rows.`,
     sectionMonthlySummaries: 'Monthly totals',
+    sectionOvertimeWarnings: 'Long working hours',
+    overtimeWarningsHint:
+      'Employees over the limits held by the calculation rule version. Without a limit, no warning is produced.',
+    noOvertimeWarnings: 'Nobody exceeded the limits this month.',
+    overtimeLimitUnset:
+      'No limit is set, so nothing was checked. Set the limits on the calculation rule version.',
+    exceededMonthlyBy: 'Over the monthly limit (minutes)',
+    averageOvertimeMinutes: 'Multi-month average (minutes)',
+    exceededAverageBy: 'Over the average limit (minutes)',
+    monthlyOvertimeLimitMinutes: 'Monthly limit (minutes)',
+    averageOvertimeLimitMinutes: 'Multi-month average limit (minutes)',
+    averageOvertimeMonths: 'Months to average',
     sectionPeriodSummaries: 'Period totals',
     periodSummariesHint:
       'Totals for weeks, flex settlement periods and variable working-hour periods. ' +
