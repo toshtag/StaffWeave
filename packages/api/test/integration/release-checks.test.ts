@@ -100,6 +100,9 @@ describe('配る前のゲート', () => {
 
     expect(code).not.toBe(0);
     expect(message).toContain('runtime.yml');
+    // 何をすれば通せるかを添える。走っていないことと、失敗したことは
+    // どちらも 0 件として見えるため、次の手を示さないと止まる。
+    expect(message).toContain('手動実行');
   });
 
   /**
