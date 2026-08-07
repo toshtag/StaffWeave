@@ -165,6 +165,30 @@ describe('打刻端末の配布物', () => {
     expect(script).toContain('pcsclite');
   });
 
+  /**
+   * 配布物が、自分の版と元の commit を持つこと。
+   *
+   * これまで zip の中の版は `0.0.0` に固定されていた。外側の名前だけが
+   * `staffweave-agent-0.1.0.zip` で、中身は何の版か言えない状態だった。
+   */
+  it('配布物が、版と元の commit を持つ', async () => {
+    const root = JSON.parse(await readFile(join(REPOSITORY_ROOT, 'package.json'), 'utf8')) as {
+      version: string;
+    };
+    const inner = JSON.parse(await readFile(join(bundle, 'package.json'), 'utf8')) as {
+      version: string;
+    };
+    expect(inner.version).toBe(root.version);
+
+    const build = JSON.parse(await readFile(join(bundle, 'agent/build-info.json'), 'utf8')) as {
+      version: string;
+      sourceSha: string;
+    };
+    expect(build.version).toBe(root.version);
+    // 秘密は入れない。診断は保守の人が現場で実行し、画面と端末の履歴に残る。
+    expect(Object.keys(build).sort()).toEqual(['sourceSha', 'version']);
+  });
+
   it('実行ファイルは作らない', async () => {
     const files = await filesUnder(bundle);
 
