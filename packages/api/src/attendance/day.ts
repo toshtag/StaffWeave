@@ -1,10 +1,16 @@
 import { createHash } from 'node:crypto';
-import type { AttendanceEventRecord, WorkDay, WorkScheduleRecord } from '@staffweave/contracts';
+import type {
+  AttendanceEventRecord,
+  WorkCategoryRecord,
+  WorkDay,
+  WorkScheduleRecord,
+} from '@staffweave/contracts';
 import type {
   BusinessDate,
   CalculationInput,
   CalculationRules,
   CorrectableEvent,
+  WorkCategorySettings,
   WorkSchedule,
 } from '@staffweave/domain';
 import {
@@ -20,6 +26,7 @@ import {
 import type { ApprovalRepository } from '../approval/repository.js';
 import type { RequestRepository } from '../request/repository.js';
 import type { ScheduleRepository } from '../schedule/repository.js';
+import type { WorkCategoryRepository } from '../schedule/work-category-repository.js';
 import type { CalculationRepository } from './calculation-repository.js';
 import type { AttendanceRepository } from './repository.js';
 
@@ -30,6 +37,13 @@ export interface DayRepositories {
   approval: ApprovalRepository;
   /** 承認しきった申請を、計算の入力として読むために要る。 */
   requests: RequestRepository;
+  /**
+   * 勤務予定が指す勤務区分を、対象日に効いている版として読むために要る。
+   *
+   * 固定休憩・自動休憩・深夜帯の上書き・中抜けの扱いは勤務区分にしか無い。
+   * ここを外すと、設定した値が計算へ届かないまま結果だけが出る。
+   */
+  categories: WorkCategoryRepository;
 }
 
 function toCorrectable(record: AttendanceEventRecord): CorrectableEvent {
@@ -64,6 +78,26 @@ function toDomainSchedule(
   };
 }
 
+/**
+ * 勤務区分の版から、計算が使う値だけを取り出す。
+ *
+ * 所定時刻・日種別・表示のための値はここへ入れない。それらは勤務予定側で
+ * 解決済みで、両方から渡すと同じ意味の値が 2 つになる。
+ * 優先順位は docs/product/work-category-precedence.md にある。
+ */
+function toDomainCategory(category: WorkCategoryRecord | null): WorkCategorySettings | null {
+  if (category === null) return null;
+  return {
+    code: category.code,
+    fixedBreaks: category.fixedBreaks,
+    autoBreaks: category.autoBreaks,
+    nightStartMinutes: category.nightStartMinutes,
+    nightEndMinutes: category.nightEndMinutes,
+    gapTreatment: category.gapTreatment,
+    deemedMinutes: category.deemedMinutes,
+  };
+}
+
 function fingerprintOf(input: CalculationInput): string {
   return createHash('sha256').update(fingerprintSource(input), 'utf8').digest('hex');
 }
@@ -92,6 +126,16 @@ async function buildContext(
     employeeId,
     businessDate,
   );
+  // 勤務予定が勤務区分を指していれば、対象日に効いている版を読む。
+  // 指していなければ、これまでどおり勤務予定の所定時刻と休憩分数だけで計算する。
+  const category =
+    schedule?.workCategoryId == null
+      ? null
+      : await repositories.categories.findWorkCategoryForDate(
+          workspaceId,
+          schedule.workCategoryId,
+          businessDate,
+        );
   const rules =
     knownRules ?? (await repositories.schedule.findCalculationRules(workspaceId, businessDate));
   const request = await repositories.approval.findRequest(workspaceId, employeeId, businessDate);
@@ -126,6 +170,7 @@ async function buildContext(
       events,
       schedule: toDomainSchedule(schedule, businessDate, timeZone),
       rules,
+      category: toDomainCategory(category),
       approvals,
     },
     day: {

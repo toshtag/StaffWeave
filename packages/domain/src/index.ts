@@ -77,6 +77,7 @@ export type {
   CalculationStep,
   DayType,
   RoundingMode,
+  WorkCategorySettings,
   WorkSchedule,
 } from './attendance/calculation.js';
 export {

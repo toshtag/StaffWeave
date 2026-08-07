@@ -182,16 +182,17 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     now,
   });
 
+  const workCategoryRepository = createWorkCategoryRepository(deps.db);
+  const laborSystemRepository = createLaborSystemRepository(deps.db);
+
   const dayRepositories = {
     attendance: createAttendanceRepository(deps.db),
     schedule: createScheduleRepository(deps.db),
     calculations: createCalculationRepository(deps.db),
     approval: createApprovalRepository(deps.db),
     requests: createRequestRepository(deps.db),
+    categories: workCategoryRepository,
   };
-
-  const workCategoryRepository = createWorkCategoryRepository(deps.db);
-  const laborSystemRepository = createLaborSystemRepository(deps.db);
 
   const withTransaction = <T>(
     fn: (repositories: {
@@ -199,6 +200,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
       schedule: ReturnType<typeof createScheduleRepository>;
       calculations: ReturnType<typeof createCalculationRepository>;
       approval: ReturnType<typeof createApprovalRepository>;
+      categories: ReturnType<typeof createWorkCategoryRepository>;
       monthly: ReturnType<typeof createMonthlyRepository>;
       leave: ReturnType<typeof createLeaveRepository>;
       requests: ReturnType<typeof createRequestRepository>;
@@ -216,6 +218,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
         schedule: createScheduleRepository(tx),
         calculations: createCalculationRepository(tx),
         approval: createApprovalRepository(tx),
+        categories: createWorkCategoryRepository(tx),
         monthly: createMonthlyRepository(tx),
         leave: createLeaveRepository(tx),
         requests: createRequestRepository(tx),
