@@ -1,6 +1,6 @@
 {
   "name": "staffweave",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "セルフホスト可能な勤怠管理基盤",
@@ -32,6 +32,8 @@
     "check:balance": "node scripts/check-test-balance.mjs",
     "check:audit": "./scripts/check-audit.sh",
     "release:manifest": "./scripts/release-manifest.sh",
+    "release:assets": "./scripts/release-assets.sh",
+    "release:verify": "node scripts/verify-release-assets.mjs",
     "verify:release-candidate": "./scripts/verify-release-candidate.sh",
     "verify:upgrade": "./scripts/verify-upgrade.sh",
     "verify:restore": "./scripts/verify-restore.sh",

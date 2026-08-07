@@ -212,7 +212,8 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | Row-Level Security | planned | - | アプリ側の認可が正本。採否を決める（P25） |
 | データの保持の取り決め | implemented | `docs:operations/retention.md` | 何をいつまで持つか、消してはいけないもの、退職者の扱いを決めた |
 | 保持期間を過ぎたデータの自動削除 | planned | - | v0.1 の範囲外。手で消す |
-| 配布物の署名と出所の証明 | planned | - | 受け取った側が改ざんを確かめられない（P26） |
+| 配布物の checksum と出所の対応 | implemented | `script:scripts/release-assets.sh` `script:scripts/verify-release-assets.mjs` `test:test/release-assets.test.ts` | 版・commit・checksum・構成一覧の対応を、配る前に突き合わせる |
+| 配布物の署名 | planned | - | 署名には所有者の鍵が要る。鍵を持たない者の署名は「誰が配ったか」を示せない |
 | 負荷試験・障害注入 | partial | `test:packages/api/test/integration/load-and-faults.test.ts` | 同時の打刻、1 か月ぶんの集計、監査の失敗、DB 断を再現できる形で確かめる。実運用の規模での負荷試験はしていない |
 | 給与計算そのもの | non-goal | - | 計算した勤務時間を出すところまでを範囲とし、賃金の計算は連携先に委ねる |
 | 労働法令への適合の保証 | non-goal | - | 実装した計算の範囲は示すが、規程に合っているかは導入する側で確かめる |
