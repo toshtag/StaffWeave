@@ -8,9 +8,9 @@
  *   pnpm agent punch --employee E001 --type clock_in
  *   pnpm agent replay        直前に送ったイベントをそのまま再送する
  *   pnpm agent status        保存されている資格情報を表示する
- *   pnpm agent card-register --token-file <path> --card-stdin
+ *   pnpm agent card-register --token-file <path> [--reader | --card-stdin]
  *   pnpm agent card-punch --card-stdin
- *   pnpm agent card-watch --pcsc <モジュール>   実機の読み取り装置から打刻し続ける
+ *   pnpm agent station [--pcsc <モジュール>]     読み取りと送信を 1 つの常駐で行う
  *   pnpm agent session-observe --employee E001 --type sign_in [--at <ISO日時>]
  *   pnpm agent queue --employee E001 --type clock_in   送信待ちへ積むだけ
  *   pnpm agent serve                                   常駐して送信待ちを送り続ける
@@ -29,7 +29,7 @@ import { requireSecureBaseUrl } from '@staffweave/contracts';
 import type { AttendanceEventType } from '@staffweave/domain';
 import { isAttendanceEventType, isSessionObservationType } from '@staffweave/domain';
 import { createPcscCardReader } from './card/pcsc.js';
-import { loadPcscTransport } from './card/pcsc-module.js';
+import { BUNDLED_PCSC_MODULE, loadPcscTransport } from './card/pcsc-module.js';
 import { cardFingerprint } from './card/reader.js';
 import {
   AgentRequestError,
@@ -43,8 +43,10 @@ import type { DeviceCredentials } from './credentials.js';
 import { generateKeyPair, loadCredentials, saveCredentials } from './credentials.js';
 import { requireSecret } from './secret-input.js';
 import { createAgentLogger } from './service/redact.js';
-import { runAgent } from './service/runner.js';
-import { createFileSpool } from './service/spool.js';
+import { runAgent, type SendOutcome } from './service/runner.js';
+import { createSender } from './service/sender.js';
+import { createFileSpool, type SpooledPunch } from './service/spool.js';
+import { runCardStation } from './service/station.js';
 
 const DEFAULT_STORE = '.staffweave-agent.json';
 
@@ -176,11 +178,27 @@ function requireCardKey(credentials: StoredCredentials): string {
   return credentials.cardFingerprintKey;
 }
 
+/**
+ * カードを登録する。
+ *
+ * `--reader` を付けると、読み取り装置へカードを置いて登録できる。付けなければ
+ * 識別子を手で入れる。手入力しか無いと、登録の時だけカードの番号を人が読み取り、
+ * 紙やメモへ書き写すことになる。写した番号は端末の外に残る。
+ */
 async function runCardRegister(): Promise<void> {
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
   const token = await secret('token', '登録トークン（入力は表示されません）: ');
-  // 実機の読み取り装置の代わりに、指定された識別子を読み取ったものとして扱う。
-  const rawCardId = await secret('card', 'カード識別子（入力は表示されません）: ');
+
+  let rawCardId: string;
+  if (process.argv.includes('--reader')) {
+    const transport = await loadPcscTransport(option('pcsc') ?? BUNDLED_PCSC_MODULE);
+    const reader = createPcscCardReader(transport);
+    console.log(`カードを置いてください: ${reader.name}`);
+    rawCardId = await reader.read();
+    await transport.close();
+  } else {
+    rawCardId = await secret('card', 'カード識別子（入力は表示されません）: ');
+  }
 
   const credential = await registerCard(credentials, {
     registrationToken: token,
@@ -216,66 +234,6 @@ async function runCardPunch(): Promise<void> {
 
   console.log(`${status === 201 ? '受理' : '再送として受理'}: ${body.employeeDisplayName}`);
   console.log(`記録した打刻: ${body.eventType}（${body.businessDate}）`);
-}
-
-/**
- * 実機の読み取り装置から、打刻し続ける。
- *
- * 装置との受け渡しは外の部品が持つ（`--pcsc`）。指定が無ければ動かさない。
- * 検証用のアダプターへ黙って落とすと、実機のつもりで動かしている端末が
- * 何も読まないまま静かに立っていることになる。
- *
- * 未登録・失効したカードは、サーバーが断る。断られたことを端末へ出し、
- * 読み取りへ戻る。止めると、次の人が打刻できない。
- */
-async function runCardWatch(): Promise<void> {
-  const credentials = (await loadCredentials(storePath())) as StoredCredentials;
-  const specifier = option('pcsc');
-  if (specifier === undefined) {
-    throw new Error(
-      '--pcsc に装置との受け渡しを渡してください（docs/operations/device-agent-service.md）',
-    );
-  }
-
-  const transport = await loadPcscTransport(specifier);
-  const reader = createPcscCardReader(transport, {
-    log: (entry) => console.log(JSON.stringify({ level: 'info', ...entry })),
-  });
-  console.log(`読み取りを始めます: ${reader.name}`);
-
-  let sequence = credentials.nextSequence;
-  for (;;) {
-    const rawCardId = await reader.read();
-    const now = new Date();
-    try {
-      const { status, body } = await sendCardEvent(
-        { ...credentials, nextSequence: sequence },
-        {
-          sequence,
-          requestId: randomUUID(),
-          cardFingerprint: cardFingerprint(requireCardKey(credentials), rawCardId),
-          occurredAt: now.toISOString(),
-          deviceTime: now.toISOString(),
-        },
-      );
-      sequence += 1;
-      await saveCredentials(storePath(), { ...credentials, nextSequence: sequence });
-      console.log(
-        `${status === 201 ? '受理' : '再送として受理'}: ` +
-          `${body.employeeDisplayName} / ${body.eventType}（${body.businessDate}）`,
-      );
-    } catch (error) {
-      // 断られたカードで連番は進めない。進めると、次の打刻が連番の飛びとして拒まれる。
-      // 生の識別子は出さない。端末の画面に残る。
-      console.error(
-        error instanceof AgentRequestError
-          ? `受け付けられませんでした（HTTP ${error.status}）: ${error.message}`
-          : error instanceof Error
-            ? error.message
-            : String(error),
-      );
-    }
-  }
 }
 
 async function runSessionObserve(): Promise<void> {
@@ -325,7 +283,9 @@ async function runQueue(): Promise<void> {
   }
   const now = new Date();
   await createFileSpool(spoolPath()).add({
+    kind: 'employee',
     requestId: randomUUID(),
+    sequence: await allocateSequence(),
     employeeNumber,
     eventType,
     occurredAt: option('at') ?? now.toISOString(),
@@ -334,12 +294,35 @@ async function runQueue(): Promise<void> {
   console.log('送信待ちへ積みました。');
 }
 
-/** 常駐して送信待ちを送り続ける。停止の合図を受けたら、今の 1 件を送り終えてから止まる。 */
-async function runServe(): Promise<void> {
-  const spool = createFileSpool(spoolPath());
-  const logger = createAgentLogger();
+/**
+ * 連番を 1 つ取り、次の値を先に保存する。
+ *
+ * 保存してから使うのは、途中で落ちたときに同じ連番を二度使わないため。
+ * 連番が飛ぶのはサーバーが受け取るが、戻ると断られる。
+ */
+async function allocateSequence(): Promise<number> {
+  const credentials = (await loadCredentials(storePath())) as StoredCredentials;
+  const sequence = credentials.nextSequence;
+  await saveCredentials(storePath(), { ...credentials, nextSequence: sequence + 1 });
+  return sequence;
+}
+
+/** 送信待ちの 1 件を送る処理。従業員番号の打刻とカードの打刻の両方を通す。 */
+function sender(): (punch: SpooledPunch) => Promise<SendOutcome> {
+  return createSender({
+    credentials: () => loadCredentials(storePath()),
+    sendEvent,
+    sendCardEvent,
+    now: () => new Date(),
+  });
+}
+
+/** 停止の合図で止まる常駐の足回り。待っている間に来た合図でも、次の周回まで待たせない。 */
+function residency(logger: ReturnType<typeof createAgentLogger>): {
+  running: () => boolean;
+  sleep: (ms: number) => Promise<void>;
+} {
   let running = true;
-  /** 待っている間に停止の合図が来たら、待ちを打ち切る。次の周回まで待たせない。 */
   let wake: (() => void) | null = null;
   const stop = (): void => {
     running = false;
@@ -349,11 +332,7 @@ async function runServe(): Promise<void> {
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
-  logger.info('agent.started', { store: storePath(), spool: spoolPath() });
-
-  await runAgent({
-    spool,
-    logger,
+  return {
     running: () => running,
     // 待ちは unref しない。unref すると、待っている間に他へ用が無いプロセスが終了し、
     // 常駐しているつもりの端末が最初の待ちで落ちる。
@@ -369,35 +348,65 @@ async function runServe(): Promise<void> {
           resolve();
         };
       }),
-    send: async (punch) => {
-      // 連番は送るたびに進める。飛ばすとサーバー側の検査に掛かる。
-      const credentials = (await loadCredentials(storePath())) as StoredCredentials;
-      try {
-        await sendEvent(credentials, {
-          sequence: credentials.nextSequence,
-          requestId: punch.requestId,
-          employeeNumber: punch.employeeNumber,
-          eventType: punch.eventType as AttendanceEventType,
-          occurredAt: punch.occurredAt,
-          deviceTime: new Date().toISOString(),
-        });
-        await saveCredentials(storePath(), {
-          ...credentials,
-          nextSequence: credentials.nextSequence + 1,
-        });
-        return { kind: 'accepted' };
-      } catch (error) {
-        if (error instanceof AgentRequestError) {
-          // 相手が「その要求は受け取れない」と言っているものは、送り直しても同じ答えになる。
-          return error.status >= 500 || error.status === 429 || error.status === 408
-            ? { kind: 'retry', reason: `HTTP ${error.status}` }
-            : { kind: 'rejected', reason: `HTTP ${error.status}` };
-        }
-        return { kind: 'retry', reason: '接続できません' };
-      }
-    },
+  };
+}
+
+/** 常駐して送信待ちを送り続ける。停止の合図を受けたら、今の 1 件を送り終えてから止まる。 */
+async function runServe(): Promise<void> {
+  const logger = createAgentLogger();
+  const { running, sleep } = residency(logger);
+
+  logger.info('agent.started', { store: storePath(), spool: spoolPath() });
+  await runAgent({
+    spool: createFileSpool(spoolPath()),
+    logger,
+    running,
+    sleep,
+    send: sender(),
+  });
+  logger.info('agent.stopped');
+}
+
+/**
+ * 読み取りと送信を、1 つの常駐で行う。
+ *
+ * サービスとして登録するのはこれ 1 つ。読み取りと送信を別のプロセスに分けると、
+ * 登録した側だけが動き、もう一方は誰も起動しない状態になる。
+ *
+ * `--pcsc` を省くと、配布物へ同梱している受け渡しを読む。装置の部品が端末に
+ * 入っていなければ、その場で何をすればよいかを言って止まる。黙って読み取り
+ * なしで立ち続けると、打刻できない端末が動いているように見える。
+ */
+async function runStation(): Promise<void> {
+  const credentials = (await loadCredentials(storePath())) as StoredCredentials;
+  const key = requireCardKey(credentials);
+  const logger = createAgentLogger();
+  const { running, sleep } = residency(logger);
+  const spool = createFileSpool(spoolPath());
+
+  const transport = await loadPcscTransport(option('pcsc') ?? BUNDLED_PCSC_MODULE);
+  const reader = createPcscCardReader(transport, {
+    log: (entry) => logger.info(`agent.${entry.event}`, entry.detail ?? {}),
   });
 
+  logger.info('agent.started', { store: storePath(), spool: spoolPath(), reader: reader.name });
+
+  // 読み取りと送信を並べて動かす。読み取りが待っている間も送信は進む。
+  // 順番に動かすと、カードが置かれるまで送信待ちが出ていかない。
+  await Promise.all([
+    runCardStation({
+      reader,
+      spool,
+      logger,
+      fingerprint: (rawCardId) => cardFingerprint(key, rawCardId),
+      allocateSequence,
+      running,
+      now: () => new Date(),
+    }),
+    runAgent({ spool, logger, running, sleep, send: sender() }),
+  ]);
+
+  await transport.close();
   logger.info('agent.stopped');
 }
 
@@ -419,9 +428,23 @@ async function runDiagnose(): Promise<void> {
   console.log(`端末: ${credentials?.deviceId ?? '（未登録）'}`);
   console.log(`次の連番: ${credentials?.nextSequence ?? '（未登録）'}`);
   console.log(`送信待ち: ${pending.length} 件`);
+  // 種別ごとに分けて出す。カードの打刻だけが溜まっているなら、原因は装置ではなく
+  // カードの登録の側にある。まとめて数えると、その切り分けができない。
+  console.log(`  うちカード: ${pending.filter((punch) => punch.kind === 'card').length} 件`);
   console.log(`読めない送信待ち: ${unreadable.length} 件`);
   if (pending[0] !== undefined) {
     console.log(`いちばん古い送信待ち: ${pending[0].occurredAt}`);
+  }
+
+  // 装置は開けるかどうかだけを見る。開けたらすぐ閉じる。
+  // 生の識別子・指紋・鍵は出さない。診断は保守の人が実行し、画面にも残る。
+  const specifier = option('pcsc') ?? BUNDLED_PCSC_MODULE;
+  try {
+    const transport = await loadPcscTransport(specifier);
+    console.log(`読み取り装置: ${transport.name}`);
+    await transport.close();
+  } catch (error) {
+    console.log(`読み取り装置: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -446,8 +469,6 @@ async function main(): Promise<void> {
       return runCardRegister();
     case 'card-punch':
       return runCardPunch();
-    case 'card-watch':
-      return runCardWatch();
     case 'session-observe':
       return runSessionObserve();
     case 'status':
@@ -456,12 +477,14 @@ async function main(): Promise<void> {
       return runQueue();
     case 'serve':
       return runServe();
+    case 'station':
+      return runStation();
     case 'diagnose':
       return runDiagnose();
     default:
       throw new Error(
-        'enroll / punch / replay / card-register / card-punch / card-watch / ' +
-          'session-observe / status / queue / serve / diagnose のいずれかを指定してください',
+        'enroll / punch / replay / card-register / card-punch / session-observe / ' +
+          'status / queue / serve / station / diagnose のいずれかを指定してください',
       );
   }
 }

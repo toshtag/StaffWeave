@@ -9,9 +9,11 @@ import { createAgentLogger } from './redact.js';
 import { flushSpool, runAgent, type SendOutcome } from './runner.js';
 import type { Spool, SpooledPunch } from './spool.js';
 
-function punch(requestId: string): SpooledPunch {
+function punch(requestId: string, sequence = 1): SpooledPunch {
   return {
+    kind: 'employee',
     requestId,
+    sequence,
     employeeNumber: 'E001',
     eventType: 'clock_in',
     occurredAt: '2026-04-01T00:00:00.000Z',

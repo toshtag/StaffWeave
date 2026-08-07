@@ -17,17 +17,48 @@ import { join } from 'node:path';
  *
  * 順番は、ファイル名の先頭に置いた連番で決める。
  * 打刻は起きた順に送る。順番が入れ替わると、サーバー側の連番の検査に掛かる。
+ *
+ * 端末の連番（`sequence`）は、積むときに決めてここへ書く。送るときに決めると、
+ * 「サーバーは受理したが応答を失った」場合に困る。応答が無いので端末は連番を
+ * 進められず、次の打刻が同じ連番で出ていく。サーバーから見れば戻った連番で、
+ * 断られる。積むときに決めておけば、再送は同じ連番と同じ冪等キーで出るため
+ * 重複として扱われ、次の打刻は必ず 1 つ先の連番になる。
  */
 
-export interface SpooledPunch {
+/** 積んだ打刻に共通する部分。 */
+interface SpooledPunchBase {
   /** 冪等キー。再送しても同じ打刻として扱われる。 */
   requestId: string;
-  employeeNumber: string;
-  eventType: string;
+  /** 端末の連番。積むときに決め、再送しても変えない。 */
+  sequence: number;
   occurredAt: string;
   /** 端末が受け取った時刻。順番を決めるために持つ。 */
   queuedAt: string;
 }
+
+/** 従業員番号で出す打刻。画面や `queue` から積む。 */
+export interface SpooledEmployeePunch extends SpooledPunchBase {
+  kind: 'employee';
+  employeeNumber: string;
+  eventType: string;
+}
+
+/**
+ * カードで出す打刻。
+ *
+ * 生の識別子は持たない。端末の中で指紋へ変換したものだけを置く。
+ * 送信待ちはディスクに残るため、生の識別子を書くと、拾った人が
+ * 物理カードと結び付けられる。
+ *
+ * `eventType` は決めずに出せる。どちらの打刻になるかはサーバーが決める。
+ */
+export interface SpooledCardPunch extends SpooledPunchBase {
+  kind: 'card';
+  cardFingerprint: string;
+  eventType?: string;
+}
+
+export type SpooledPunch = SpooledEmployeePunch | SpooledCardPunch;
 
 export interface Spool {
   /** 送信待ちへ積む。 */
@@ -51,12 +82,23 @@ const OWNER_ONLY_DIRECTORY = 0o700;
 function isSpooledPunch(value: unknown): value is SpooledPunch {
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;
-  return (
+  const common =
     typeof record.requestId === 'string' &&
-    typeof record.employeeNumber === 'string' &&
-    typeof record.eventType === 'string' &&
+    typeof record.sequence === 'number' &&
     typeof record.occurredAt === 'string' &&
-    typeof record.queuedAt === 'string'
+    typeof record.queuedAt === 'string';
+  if (!common) return false;
+
+  if (record.kind === 'card') {
+    return (
+      typeof record.cardFingerprint === 'string' &&
+      (record.eventType === undefined || typeof record.eventType === 'string')
+    );
+  }
+  return (
+    record.kind === 'employee' &&
+    typeof record.employeeNumber === 'string' &&
+    typeof record.eventType === 'string'
   );
 }
 

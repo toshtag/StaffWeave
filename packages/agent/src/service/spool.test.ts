@@ -5,7 +5,7 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createFileSpool, type SpooledPunch } from './spool.js';
+import { createFileSpool, type SpooledEmployeePunch, type SpooledPunch } from './spool.js';
 
 let directory: string;
 
@@ -17,8 +17,12 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-function punch(overrides: Partial<SpooledPunch> & { requestId: string }): SpooledPunch {
+function punch(
+  overrides: Partial<SpooledEmployeePunch> & { requestId: string },
+): SpooledEmployeePunch {
   return {
+    kind: 'employee',
+    sequence: 1,
     employeeNumber: 'E001',
     eventType: 'clock_in',
     occurredAt: '2026-04-01T00:00:00.000Z',

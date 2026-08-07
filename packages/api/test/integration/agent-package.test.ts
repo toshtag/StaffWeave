@@ -114,6 +114,57 @@ describe('打刻端末の配布物', () => {
     expect(script).not.toMatch(/Remove-Item|del\s/);
   });
 
+  /**
+   * 登録したサービス 1 つで、読み取りから送信まで完結すること。
+   *
+   * これまで登録していたのは送信だけで、カードの読み取りはサービスに入って
+   * いなかった。実機で #194 と #195 を別々に通しても、「配った端末が物理カードを
+   * 読み、回線断でも失わず、復旧後に送る」という経路は証明できない。
+   */
+  it('サービスは、読み取りと送信を 1 つのプロセスで起動する', async () => {
+    const script = await readFile(join(bundle, 'install-service.ps1'), 'utf8');
+
+    expect(script).toContain("'station'");
+    // 読み取り装置を付けない端末のために、送信だけの道も残す。
+    expect(script).toContain("'serve'");
+    expect(script).toMatch(/binPath[\s\S]*\$mode/);
+  });
+
+  /**
+   * 配布物だけで、対応する読み取りの受け渡しを読み込めること。
+   *
+   * これまでは `createPcscTransport` を利用者が書く前提だった。据え置き端末を
+   * 置く人に TypeScript を書かせるのは、配布物だけで動くとは言えない。
+   */
+  it('対応する読み取りの受け渡しを同梱する', async () => {
+    const files = await filesUnder(bundle);
+    expect(files).toContain('agent/card/pcsc-winscard.js');
+
+    // 配布物だけの場所から読み込めること。取り寄せていない部品を指したまま
+    // 配ると、端末の前で初めて動かないと分かる。
+    const loaded = (await import(join(bundle, 'agent/card/pcsc-winscard.js'))) as {
+      createPcscTransport?: unknown;
+      READER_MISSING_MESSAGE?: unknown;
+    };
+    expect(typeof loaded.createPcscTransport).toBe('function');
+
+    // 装置の部品が入っていない端末では、何をすればよいかを言って止まる。
+    await expect(
+      (loaded.createPcscTransport as (load: () => Promise<unknown>) => Promise<unknown>)(() =>
+        Promise.reject(new Error('not installed')),
+      ),
+    ).rejects.toThrow('install-reader.ps1');
+  });
+
+  it('読み取り装置の部品を入れる手順を同梱する', async () => {
+    const files = await filesUnder(bundle);
+    expect(files).toContain('install-reader.ps1');
+
+    const script = await readFile(join(bundle, 'install-reader.ps1'), 'utf8');
+    // 利用者が書くのはコードではなく、この 1 行の実行だけ。
+    expect(script).toContain('pcsclite');
+  });
+
   it('実行ファイルは作らない', async () => {
     const files = await filesUnder(bundle);
 

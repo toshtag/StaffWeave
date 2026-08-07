@@ -124,11 +124,16 @@ cat > "$BUNDLE/install-service.ps1" <<'PS1'
 #
 # 管理者として実行すること。登録の前に、この端末で enroll を済ませておく。
 # 資格情報のファイルは、サービスを動かす利用者だけが読める場所へ置く。
+#
+# 既定では、読み取り装置と送信を 1 つのサービスで動かす（station）。
+# 分けると、登録した側だけが動き、もう一方は誰も起動しない。
+# 読み取り装置を付けない端末では -NoReader を付ける。
 param(
   [Parameter(Mandatory = $true)][string] $NodePath,
   [Parameter(Mandatory = $true)][string] $AgentRoot,
   [string] $ServiceName = 'StaffWeaveAgent',
-  [string] $Store = 'C:\ProgramData\StaffWeave\agent.json'
+  [string] $Store = 'C:\ProgramData\StaffWeave\agent.json',
+  [switch] $NoReader
 )
 
 $ErrorActionPreference = 'Stop'
@@ -140,15 +145,44 @@ if (-not (Test-Path $AgentRoot)) { throw "配布物が見つかりません: $Ag
 $cli = Join-Path $AgentRoot 'agent/cli.js'
 if (-not (Test-Path $cli)) { throw "配布物が壊れています。agent/cli.js がありません: $cli" }
 
-$binaryPath = "`"$NodePath`" `"$cli`" serve --store `"$Store`""
+# 読み取りと送信を 1 つのプロセスで持つ。station は同梱の受け渡しを既定で読む。
+$mode = if ($NoReader) { 'serve' } else { 'station' }
+$binaryPath = "`"$NodePath`" `"$cli`" $mode --store `"$Store`""
 
 sc.exe create $ServiceName binPath= $binaryPath start= auto | Out-Null
 # 落ちたら間を空けて上げ直す。上げ続けると、直らない不具合で電源を使い切る。
 sc.exe failure $ServiceName reset= 86400 actions= restart/30000/restart/60000/restart/300000 | Out-Null
-sc.exe description $ServiceName "StaffWeave 打刻端末の送信待ちを送り続けます" | Out-Null
+sc.exe description $ServiceName "StaffWeave 打刻端末のカード読み取りと送信を行います" | Out-Null
 
-Write-Host "登録しました: $ServiceName"
+Write-Host "登録しました: $ServiceName（$mode）"
 Write-Host "開始するには: sc.exe start $ServiceName"
+PS1
+
+cat > "$BUNDLE/install-reader.ps1" <<'PS1'
+# 読み取り装置の部品を、この端末へ入れる。
+#
+# 装置のドライバを叩く部分は OS ごとに組み立てが要る。組み立て済みのものを
+# Linux で作って Windows へ配ることはできないため、端末の側で取り寄せる。
+# 取り寄せるのはこの 1 つだけで、利用者がコードを書く必要はない。
+#
+# 管理者として実行すること。組み立てには Windows のビルドツールが要る。
+param([string] $AgentRoot = $PSScriptRoot)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path (Join-Path $AgentRoot 'package.json'))) {
+  throw "配布物が見つかりません: $AgentRoot"
+}
+
+Push-Location $AgentRoot
+try {
+  npm install --omit=dev --no-audit --no-fund pcsclite@1.0.1
+} finally {
+  Pop-Location
+}
+
+Write-Host "読み取り装置の部品を入れました。"
+Write-Host "確かめるには: node agent/cli.js diagnose"
 PS1
 
 cat > "$BUNDLE/uninstall-service.ps1" <<'PS1'

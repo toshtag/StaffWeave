@@ -36,7 +36,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 本人による打刻（出勤・退勤・休憩） | implemented | `op:recordAttendanceEvent` `op:getTodayAttendance` `test:packages/domain/src/attendance/events.test.ts` `test:packages/api/test/integration/attendance.test.ts` `test:e2e/golden-path.spec.ts` | 追記のみ・冪等受理・監査記録つき |
 | スマートフォンからの打刻 | implemented | `ui:packages/web/src/pages/TodayAttendance.tsx` `test:packages/web/src/offline/punch-queue.test.ts` | オフライン待機と自動再送を含む |
 | 署名付き端末イベントの受理 | implemented | `op:recordDeviceEvent` `test:packages/domain/src/device/protocol.test.ts` `test:packages/api/test/integration/device.test.ts` | 署名・連番・時計差を検証して受け取る。送る側はシミュレーター |
-| 実運用できる共有打刻端末 | partial | `test:packages/agent/src/service/runner.test.ts` `docs:operations/device-agent-service.md` | 常駐・送信待ち・PC/SC の読み取りは動く。**実機での常駐は未確認** |
+| 実運用できる共有打刻端末 | partial | `test:packages/api/test/integration/card-station.test.ts` `test:packages/api/test/integration/agent-package.test.ts` `docs:operations/device-agent-service.md` | 読み取りと送信を 1 つの常駐（`station`）で持ち、回線断をまたいで冪等に送る。**実機での常駐は未確認** |
 | カードイベントの受理と指紋の登録 | implemented | `op:recordCardEvent` `op:registerCard` `test:packages/api/test/integration/card.test.ts` | 生の識別子は送らず保存もしない |
 | 実カードリーダーからの読み取り | partial | `test:packages/agent/src/card/pcsc.test.ts` `docs:operations/device-agent-service.md` | PC/SC の経路（APDU・状態語・連続タップ・開き直し）はある。装置を叩く部品は端末側で用意する。**実機の読み取り装置では未確認** |
 | PC セッション観測の受理と差異の提示 | implemented | `op:recordSessionObservations` `op:getDiscrepancyReport` `test:packages/domain/src/attendance/session-observations.test.ts` `test:packages/api/test/integration/session-observations.test.ts` | 勤務時間は自動確定しない |
@@ -145,11 +145,11 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 端末の登録・失効と受領記録 | partial | `op:registerDevice` `op:enrollDevice` `op:revokeDevice` `op:listDeviceReceipts` `test:packages/api/test/integration/device.test.ts` | 登録トークンに有効期限がある。**API のみで、登録・失効の画面が無い** |
 | 端末シミュレーターによる打刻の確認 | implemented | `test:packages/agent/src/client.test.ts` `test:packages/api/test/integration/agent-package.test.ts` | 実機なしで取り決めを確かめられる |
 | IC カードの登録・失効 | partial | `op:createCardRegistration` `op:revokeCardCredential` `op:listCardCredentials` `test:packages/api/test/integration/card.test.ts` | 指紋だけを保存する。**API のみで、登録・失効の画面が無い** |
-| 端末の常駐と送信待ちの保管 | implemented | `test:packages/agent/src/service/spool.test.ts` `test:packages/agent/src/service/runner.test.ts` `test:packages/api/test/integration/agent-package.test.ts` | 1 件 1 ファイルで書き、落ちても消えない。送る順番は崩さない |
+| 端末の常駐と送信待ちの保管 | implemented | `test:packages/api/test/integration/card-station.test.ts` `test:packages/api/test/integration/agent-package.test.ts` | 1 件 1 ファイルで書き、落ちても消えない。連番は積むときに決めるため、応答を失っても次の打刻が壊れない |
 | 端末のログの秘匿 | partial | `test:packages/agent/src/service/redact.test.ts` | 秘匿の規則は固定しているが、**常駐した端末のログを実機で確かめていない** |
 | 端末の診断 | partial | `test:packages/agent/src/service/spool.test.ts` | 送信待ちの状態を読める。**実機での確認は済んでいない** |
 | Windows のサービスとしての登録・削除 | partial | `test:packages/api/test/integration/agent-package.test.ts` `docs:operations/device-agent-service.md` | 手順と配布物を作る仕組みはある。**実機での起動と再起動は未確認** |
-| 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/pcsc.test.ts` `test:packages/agent/src/card/pcsc-module.test.ts` `docs:operations/device-agent-service.md` | PC/SC を 1 つの対応先として実装した。`pnpm agent card-watch` で常駐する。**実機の読み取り装置では未確認** |
+| 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/pcsc.test.ts` `test:packages/api/test/integration/card-station.test.ts` `docs:operations/device-agent-service.md` | PC/SC を 1 つの対応先として実装し、受け渡しを配布物へ同梱した。`pnpm agent station` が読み取りと送信を 1 つの常駐で行う。**実機の読み取り装置では未確認** |
 | 端末の自動更新 | planned | - | 署名と配布の方式が決まってから（P26） |
 | 打刻時の位置情報 | implemented | `op:listAttendanceLocations` `docs:operations/retention.md` `test:packages/api/test/integration/attendance-location.test.ts` `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` | 保持期間は 400 日（訂正できる範囲と同じ）。打刻とは別の表に持ち、消しても打刻は残る |
 
