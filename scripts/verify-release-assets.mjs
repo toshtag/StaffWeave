@@ -4,18 +4,27 @@
  *
  *   node scripts/verify-release-assets.mjs
  *
- * 見るのは 4 つ。
+ * 見るのは 5 つ。
  *
  *   checksum の一覧と、実際のファイルが一致すること
  *   端末の配布物の名前が、package.json の版と一致すること
+ *   その配布物を展開した中の版も、同じであること
  *   構成一覧に書いてある commit が、いま見ている commit と一致すること
  *   tag を渡された場合、tag が v<版> であること
  *
+ * 外側の名前だけを見ていると、中身が別の版のまま配れる。利用者へ直接渡るのは
+ * 中身のほうなので、そこが版を持たないと、あとから何を配ったかを辿れない。
+ *
  * 「ファイルがある」だけでは、古い成果物を配るのを止められない。
  */
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
 
 const OUTPUT_DIR = process.env.RELEASE_OUTPUT_DIR ?? 'artifacts/release';
 const EXPECTED_SOURCE_SHA = process.env.RELEASE_EXPECTED_SOURCE_SHA;
@@ -78,6 +87,31 @@ if (agent !== undefined) {
     agent.name === `staffweave-agent-${version}.zip`,
     `端末の配布物の名前が版と一致しています（${agent.name}）`,
   );
+
+  // 展開して、中の版も見る。外側の名前は組み直すときに付け替えられる。
+  const work = await mkdtemp(join(tmpdir(), 'staffweave-release-'));
+  try {
+    await run('unzip', ['-q', join(OUTPUT_DIR, agent.name), '-d', work]);
+    const inner = JSON.parse(
+      await readFile(join(work, 'staffweave-agent/package.json'), 'utf8'),
+    ).version;
+    check(inner === version, `配布物の中の版が一致しています（${inner}）`);
+
+    const build = JSON.parse(
+      await readFile(join(work, 'staffweave-agent/agent/build-info.json'), 'utf8'),
+    );
+    check(build.version === version, `配布物が持つ版が一致しています（${build.version}）`);
+    if (EXPECTED_SOURCE_SHA !== undefined && EXPECTED_SOURCE_SHA !== '') {
+      check(
+        build.sourceSha === EXPECTED_SOURCE_SHA,
+        '配布物が持つ commit が、いま見ている commit と一致しています',
+      );
+    }
+  } catch (error) {
+    check(false, `端末の配布物を展開して版を読めます（${error.message}）`);
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
 }
 
 console.log('構成一覧');

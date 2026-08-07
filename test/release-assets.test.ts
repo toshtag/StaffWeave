@@ -9,7 +9,7 @@
  */
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -37,12 +37,56 @@ function sbom(sourceSha: string): string {
   });
 }
 
+/**
+ * 端末の配布物を、中身のある zip として作る。
+ *
+ * 中の版まで確かめるようになったため、名前だけのファイルでは足りない。
+ * 中の版を外から変えられるようにして、食い違ったときに落ちることを見る。
+ */
+async function agentZip(options: {
+  name: string;
+  innerVersion: string;
+  buildVersion: string;
+  buildSha: string;
+}): Promise<void> {
+  const work = await mkdtemp(join(tmpdir(), 'staffweave-agent-zip-'));
+  try {
+    const bundle = join(work, 'staffweave-agent');
+    await mkdir(join(bundle, 'agent'), { recursive: true });
+    await writeFile(
+      join(bundle, 'package.json'),
+      JSON.stringify({ name: 'staffweave-agent', version: options.innerVersion }),
+    );
+    await writeFile(
+      join(bundle, 'agent/build-info.json'),
+      JSON.stringify({ version: options.buildVersion, sourceSha: options.buildSha }),
+    );
+    await run('zip', ['-rq', join(output, options.name), 'staffweave-agent'], { cwd: work });
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+}
+
 /** 成果物を並べ、checksum の一覧まで作る。 */
 async function layout(
-  options: { agentName?: string; sourceSha?: string; corrupt?: boolean } = {},
+  options: {
+    agentName?: string;
+    sourceSha?: string;
+    corrupt?: boolean;
+    innerVersion?: string;
+    buildVersion?: string;
+    buildSha?: string;
+  } = {},
 ): Promise<void> {
+  const agentName = options.agentName ?? `staffweave-agent-${version}.zip`;
+  await agentZip({
+    name: agentName,
+    innerVersion: options.innerVersion ?? version,
+    buildVersion: options.buildVersion ?? version,
+    buildSha: options.buildSha ?? options.sourceSha ?? SOURCE_SHA,
+  });
+
   const files: Record<string, string> = {
-    [options.agentName ?? `staffweave-agent-${version}.zip`]: 'agent-bundle',
     'staffweave-workspace.cdx.json': sbom(options.sourceSha ?? SOURCE_SHA),
     'staffweave-container.cdx.json': sbom(options.sourceSha ?? SOURCE_SHA),
   };
@@ -52,6 +96,11 @@ async function layout(
     await writeFile(join(output, name), content);
     lines.push(`${createHash('sha256').update(content).digest('hex')}  ${name}`);
   }
+  lines.push(
+    `${createHash('sha256')
+      .update(await readFile(join(output, agentName)))
+      .digest('hex')}  ${agentName}`,
+  );
   await writeFile(join(output, 'SHA256SUMS.txt'), `${lines.join('\n')}\n`);
 
   if (options.corrupt === true) {
@@ -171,6 +220,40 @@ describe('release ワークフローの取り決め', () => {
   it('配る前に、元との対応を確かめる', () => {
     expect(workflow).toContain('pnpm release:verify');
     expect(workflow).toContain('pnpm sbom:verify');
+  });
+
+  /**
+   * 中の版が食い違ったまま配れないこと。
+   *
+   * これまで見ていたのは外側の zip の名前だけだった。名前は組み直すときに
+   * 付け替えられる。利用者へ直接渡るのは中身のほうなので、そこが別の版のままだと、
+   * 診断・保守・問い合わせで何を配ったのかを辿れない。
+   */
+  it('配布物の中の版が違えば落とす', async () => {
+    await layout({ innerVersion: '0.0.0' });
+
+    const result = await verify();
+
+    expect(result.code).not.toBe(0);
+    expect(result.message).toContain('配布物の中の版');
+  });
+
+  it('配布物が持つ版が違えば落とす', async () => {
+    await layout({ buildVersion: '9.9.9' });
+
+    const result = await verify();
+
+    expect(result.code).not.toBe(0);
+    expect(result.message).toContain('配布物が持つ版');
+  });
+
+  it('配布物が持つ commit が違えば落とす', async () => {
+    await layout({ buildSha: '2222222222222222222222222222222222222222' });
+
+    const result = await verify({ RELEASE_EXPECTED_SOURCE_SHA: SOURCE_SHA });
+
+    expect(result.code).not.toBe(0);
+    expect(result.message).toContain('配布物が持つ commit');
   });
 
   /**

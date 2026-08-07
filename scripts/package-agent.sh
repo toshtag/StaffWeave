@@ -17,6 +17,15 @@ OUTPUT="${1:-artifacts/agent}"
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BUNDLE="$OUTPUT/staffweave-agent"
 
+# 版は root の package.json が正本。ここでは読むだけで、書き換えない。
+# 配布物の中にも同じ版を書く。利用者へ直接渡るのは Agent 本体なので、
+# そこが版を持たないと、診断・保守・問い合わせで「どの版か」を辿れない。
+VERSION=$(cd "$ROOT" && node -p "require('./package.json').version")
+
+# 元にした commit も 1 つだけ持たせる。取れない場所で組むこともあるため、
+# 取れなければ空にする。空の値を書くより、項目ごと置かないほうが読み違えない。
+SOURCE_SHA=$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null || echo '')
+
 # 同梱する他所の部品。版はリポジトリの lockfile と合わせる。
 # ずれると、確かめた組み合わせと配るものが別になる。
 FSMXJS_VERSION="1.5.0"
@@ -80,7 +89,7 @@ cp -R "$WORK/out/agent/src/." "$BUNDLE/agent/"
 cat > "$BUNDLE/package.json" <<JSON
 {
   "name": "staffweave-agent",
-  "version": "0.0.0",
+  "version": "$VERSION",
   "private": true,
   "type": "module",
   "bin": { "staffweave-agent": "./agent/cli.js" },
@@ -89,6 +98,15 @@ cat > "$BUNDLE/package.json" <<JSON
     "ajv-formats": "$AJV_FORMATS_VERSION",
     "fsmxjs": "$FSMXJS_VERSION"
   }
+}
+JSON
+
+# 版と元の commit を、読み取り専用の 1 か所へ置く。package.json を実行時に読むと、
+# 取り寄せの都合で書き換わったものを版として出しかねない。
+cat > "$BUNDLE/agent/build-info.json" <<JSON
+{
+  "version": "$VERSION",
+  "sourceSha": "$SOURCE_SHA"
 }
 JSON
 

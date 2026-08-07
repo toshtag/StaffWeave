@@ -15,6 +15,7 @@
  *   pnpm agent queue --employee E001 --type clock_in   送信待ちへ積むだけ
  *   pnpm agent serve                                   常駐して送信待ちを送り続ける
  *   pnpm agent diagnose                                設定と送信待ちの状態を出す
+ *   pnpm agent --version                               配布物の版と元の commit を出す
  *
  * ループバック以外の接続先には https を指定する。
  * 端末登録トークン・署名付きの打刻・カード指紋を、暗号化なしで送らないため。
@@ -28,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { requireSecureBaseUrl } from '@staffweave/contracts';
 import type { AttendanceEventType } from '@staffweave/domain';
 import { isAttendanceEventType, isSessionObservationType } from '@staffweave/domain';
+import { loadBuildInfo } from './build-info.js';
 import { createPcscCardReader } from './card/pcsc.js';
 import { BUNDLED_PCSC_MODULE, loadPcscTransport } from './card/pcsc-module.js';
 import { cardFingerprint } from './card/reader.js';
@@ -412,6 +414,10 @@ async function runStation(): Promise<void> {
 
 /** 設定と送信待ちの状態を出す。現場で「なぜ送れないのか」を切り分けるために使う。 */
 async function runDiagnose(): Promise<void> {
+  const build = await loadBuildInfo();
+  console.log(`版: ${build.version}`);
+  if (build.sourceSha !== '') console.log(`元の commit: ${build.sourceSha}`);
+
   const spool = createFileSpool(spoolPath());
   const pending = await spool.list();
   const unreadable = await spool.listUnreadable();
@@ -456,9 +462,17 @@ async function runStatus(): Promise<void> {
   console.log(`次の連番: ${credentials.nextSequence}`);
 }
 
+async function runVersion(): Promise<void> {
+  const build = await loadBuildInfo();
+  console.log(build.sourceSha === '' ? build.version : `${build.version} (${build.sourceSha})`);
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2];
   switch (command) {
+    case '--version':
+    case 'version':
+      return runVersion();
     case 'enroll':
       return runEnroll();
     case 'punch':
@@ -484,7 +498,7 @@ async function main(): Promise<void> {
     default:
       throw new Error(
         'enroll / punch / replay / card-register / card-punch / session-observe / ' +
-          'status / queue / serve / station / diagnose のいずれかを指定してください',
+          'status / queue / serve / station / diagnose / --version のいずれかを指定してください',
       );
   }
 }
