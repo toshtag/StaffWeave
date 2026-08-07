@@ -6,7 +6,8 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 
 状態は 4 つだけです。
 
-- `implemented` — いま動く。
+- `implemented` — いま動く。API の存在ではなく、利用者が使う経路から計算と
+  保存まで通る証拠がある。
 - `partial` — 一部だけ動く。いま動く部分と、足りない部分の両方を備考に書く。
 - `planned` — まだ無い。どのフェーズで作るかを備考に書く。
 - `non-goal` — 作らないと決めた。理由を備考に書く。
@@ -43,6 +44,11 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 1 日に複数の勤務区間 | implemented | `test:packages/domain/src/attendance/events.test.ts` `test:packages/domain/src/attendance/calculation.test.ts` | 退勤したあと再出勤できる。区間の間は勤務時間に数えない |
 | カードの 1 回のタップで休憩を始める | planned | - | 勤務中のタップは退勤、退勤済みのタップは再出勤に割り当てている（P24） |
 | 打刻時の位置情報 | implemented | `op:recordAttendanceEvent` `op:listAttendanceLocations` `test:packages/api/test/integration/attendance-location.test.ts` `migration:0037_create_attendance_locations.sql` | 組織ごとの opt-in。既定は取らない。取れなくても打刻は残る。読めるのは本人と閲覧範囲の相手だけ |
+
+> `implemented` は、API の存在ではなく、利用者が使う経路から計算と保存まで
+> 通る証拠があるものだけに付けます。証拠は縦に通す検査（設定 → 打刻 →
+> 保存された計算 → 月次 → 給与の出力）を指します。
+> 画面から到達できない能力は `partial` にし、扱う Issue を備考へ書きます。
 
 ## 勤務予定と勤務区分
 
@@ -119,7 +125,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
-| 月次の締めと締め解除 | implemented | `op:closeMonth` `op:reopenMonth` `test:packages/domain/src/approval/monthly-closing.test.ts` | 承認済みの確認を伴う |
+| 月次の締めと締め解除 | partial | `op:closeMonth` `op:reopenMonth` `test:packages/domain/src/approval/monthly-closing.test.ts` | API と計算は動く。設定の画面から締め・締め解除を実行する導線が無い（#217） |
 | 締める前の確認（未打刻・未申請・未承認） | implemented | `op:listClosingReadiness` `test:packages/domain/src/approval/closing-readiness.test.ts` | 実務が止まるものと参考のものを分ける。締めは止めない |
 | 締めた時点の集計の固定 | implemented | `migration:0031_create_monthly_snapshots.sql` `test:packages/api/test/integration/monthly-reporting.test.ts` | 追記のみ。締め直すと新しい記録を積む |
 | 月次の集計 | implemented | `op:listMonthlySummaries` `test:packages/domain/src/attendance/monthly.test.ts` | 日次から導く。1 日でも閾値が未設定なら、その区分は 0 ではなく未設定 |
@@ -150,7 +156,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 能力 | 状態 | 根拠 | 備考 |
 | --- | --- | --- | --- |
 | ログインと当日の勤怠・打刻・訂正 | implemented | `ui:packages/web/src/pages/SignInPage.tsx` `ui:packages/web/src/pages/TodayAttendance.tsx` | 日本語と英語 |
-| 承認待ちの一覧と承認 | implemented | `ui:packages/web/src/pages/PendingApprovals.tsx` |  |
+| 承認待ちの一覧と承認 | partial | `ui:packages/web/src/pages/PendingApprovals.tsx` | 旧の日次申請の画面だけ。申請種別に基づく段階承認は画面から扱えない（#214） |
 | 差異と異常の表示 | implemented | `ui:packages/web/src/pages/DiscrepancyPanel.tsx` `ui:packages/web/src/pages/AnomalyPanel.tsx` | 根拠つきで出す |
 | 組織の一覧表示 | implemented | `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` | 設定の画面から登録もできる |
 | API キーの管理 | implemented | `ui:packages/web/src/pages/ApiKeys.tsx` | 作成・一覧・失効 |
@@ -178,7 +184,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | API キーとスコープ | implemented | `op:createApiKey` `op:revokeApiKey` `test:packages/domain/src/integration/api-key-usage.test.ts` | 生の鍵は作成時に 1 度だけ返す |
 | Webhook の署名と送信先の制約 | implemented | `op:createWebhookEndpoint` `op:listWebhookDeliveries` `migration:0014_create_webhook_outbox.sql` | 送信待ちは業務処理と同じトランザクションで積む |
 | connector SDK | implemented | `test:packages/connector/src/index.test.ts` | 外部連携を作るための足場 |
-| 給与連携の CSV 出力 | implemented | `op:exportPayrollCsv` `test:packages/api/test/integration/monthly-reporting.test.ts` | 締めた月は締めた時点の値を出す。既にある列の並びは変えず、締めの回数と締めた日時を後ろへ足した |
+| 給与連携の CSV 出力 | partial | `op:exportPayrollCsv` `test:packages/api/test/integration/monthly-reporting.test.ts` | API からは出せる。設定の画面から取り出す導線が無い（#217） |
 | Webhook の自動再送とデッドレター | implemented | `op:listAbandonedDeliveries` `op:requeueAbandonedDelivery` `test:packages/domain/src/integration/retry.test.ts` `test:packages/api/test/integration/webhook-outbox.test.ts` | 間隔を広げながら送り直し、諦めた行は残す。人が手で送り直せる |
 | 送り直す意味のある失敗の見分け | implemented | `test:packages/domain/src/integration/retry.test.ts` | 要求そのものを断られたものは送り直さない |
 
