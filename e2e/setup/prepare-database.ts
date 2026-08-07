@@ -154,6 +154,14 @@ export const E2E_ADMIN_CONSOLE_EMPLOYEE: SeededAccount = {
   displayName: '検証 十四郎',
 };
 
+/** 過去の勤怠の画面を確かめるための従業員。 */
+export const E2E_HISTORY_EMPLOYEE: SeededAccount = {
+  email: 'history@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E018',
+  displayName: '検証 十八郎',
+};
+
 /** 申請の検査で、1 段目を承認する組織の管理者。 */
 export const E2E_REQUEST_MANAGER: SeededAccount = {
   email: 'request-manager@example.test',
@@ -202,6 +210,7 @@ const SEEDED_ACCOUNTS = [
   E2E_ADMIN_CONSOLE_EMPLOYEE,
   E2E_REQUEST_MANAGER,
   E2E_REQUEST_EMPLOYEE,
+  E2E_HISTORY_EMPLOYEE,
   E2E_CROSS_BROWSER_ADMIN,
 ];
 
