@@ -173,6 +173,30 @@ describe('release ワークフローの取り決め', () => {
     expect(workflow).toContain('pnpm sbom:verify');
   });
 
+  /**
+   * 配る形へ組み直したあとでも、構成一覧の検査が通ること。
+   *
+   * 組む手順は 1 ファイルに 1 つの `.sha256` を消し、`SHA256SUMS.txt` へ寄せる。
+   * 検査の側が個別の `.sha256` しか読まないと、配る直前のこの 1 手順だけが
+   * 必ず落ちる。tag を押すまで気付けないため、ここで固定する。
+   */
+  it('checksum を 1 枚へ寄せた形でも、構成一覧の検査が通る', async () => {
+    await layout();
+
+    const result = await run('node', [join(REPOSITORY_ROOT, 'scripts/verify-sbom.mjs')], {
+      env: {
+        ...process.env,
+        SBOM_OUTPUT_DIR: output,
+        SBOM_EXPECTED_SOURCE_SHA: SOURCE_SHA,
+      },
+    }).catch((cause: { stdout?: string; stderr?: string }) => cause);
+
+    expect(`${result.stdout ?? ''}`).toContain('チェックサムが一致する');
+    expect(`${result.stdout ?? ''}`).not.toContain(
+      'NG staffweave-workspace.cdx.json のチェックサム',
+    );
+  });
+
   it('署名はしない', () => {
     // 署名には所有者の鍵が要る。鍵を持たない者の署名は「誰が配ったか」を示せない。
     expect(workflow).not.toContain('cosign');

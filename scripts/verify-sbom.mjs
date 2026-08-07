@@ -169,23 +169,46 @@ function checkContainer(raw, document) {
   );
 }
 
+/**
+ * 並べて配るチェックサムを読む。
+ *
+ * 生成した直後は 1 ファイルに 1 つの `.sha256` が並ぶ。配る形に組み直すときは、
+ * それらを `SHA256SUMS.txt` の 1 枚へ寄せる（`scripts/release-assets.sh`）。
+ * どちらの形でも同じことを確かめられないと、配る直前の検査だけが必ず落ちる。
+ */
+async function recordedChecksumOf(name) {
+  const single = await readFile(join(OUTPUT_DIR, `${name}.sha256`), 'utf8').catch(() => null);
+  if (single !== null) return single.trim();
+
+  const combined = await readFile(join(OUTPUT_DIR, 'SHA256SUMS.txt'), 'utf8').catch(() => null);
+  if (combined === null) return null;
+  return (
+    combined
+      .split('\n')
+      .map((line) => line.trim())
+      // `shasum` は名前の前に `*`（binary）を付けることがある。
+      .find((line) => line.split(/\s+/)[1]?.replace(/^\*/, '') === name) ?? null
+  );
+}
+
 /** 生成直後の中身と、並べて配るチェックサムが一致しているか。 */
 async function checkChecksums() {
   console.log('チェックサム');
   for (const name of [WORKSPACE, CONTAINER]) {
-    const digestFile = await readFile(join(OUTPUT_DIR, `${name}.sha256`), 'utf8').catch(() => null);
+    const digestFile = await recordedChecksumOf(name);
     if (digestFile === null) {
-      check(false, `${name}.sha256 がある`);
+      check(false, `${name} のチェックサムがある`);
       continue;
     }
-    const [recorded, recordedName] = digestFile.trim().split(/\s+/);
+    const [recorded, rawName] = digestFile.split(/\s+/);
+    const recordedName = rawName?.replace(/^\*/, '');
     const raw = await readFile(join(OUTPUT_DIR, name));
     const actual = createHash('sha256').update(raw).digest('hex');
     check(recorded === actual, `${name}: チェックサムが一致する`);
     // 生成した機械の場所を配らない。名前だけを書く。
     check(
       basename(recordedName ?? '') === recordedName && recordedName === name,
-      `${name}.sha256: ファイル名だけを書いている`,
+      `${name}: チェックサムにファイル名だけを書いている`,
     );
   }
 }
