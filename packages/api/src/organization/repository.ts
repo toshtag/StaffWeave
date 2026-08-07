@@ -1,4 +1,10 @@
-import type { Department, Employee, Organization, Site } from '@staffweave/contracts';
+import type {
+  Department,
+  Employee,
+  EmployeeStatus,
+  Organization,
+  Site,
+} from '@staffweave/contracts';
 import type { Queryable } from '@staffweave/db';
 import type { Locale, Role } from '@staffweave/domain';
 
@@ -40,6 +46,36 @@ export interface OrganizationRepository {
   ): Promise<Department>;
 
   listEmployees(workspaceId: string): Promise<Employee[]>;
+  findEmployee(workspaceId: string, employeeId: string): Promise<Employee | null>;
+  updateEmployee(
+    workspaceId: string,
+    employeeId: string,
+    input: {
+      displayName?: string;
+      primarySiteId?: string | null;
+      primaryDepartmentId?: string | null;
+      hiredOn?: string | null;
+    },
+  ): Promise<Employee | null>;
+  /**
+   * 状態を変える。履歴には触れない。
+   *
+   * 退職しても行は消さない。消すと、その人の打刻と計算が参照先を失う。
+   */
+  updateEmployeeStatus(
+    workspaceId: string,
+    employeeId: string,
+    status: EmployeeStatus,
+  ): Promise<Employee | null>;
+
+  /** 退職・休止に伴って、その利用者のセッションを失効させる。 */
+  revokeSessionsOfEmployee(workspaceId: string, employeeId: string, at: Date): Promise<number>;
+  /** 退職に伴って、その従業員の IC カードを失効させる。 */
+  revokeCardsOfEmployee(
+    workspaceId: string,
+    employeeId: string,
+    input: { at: Date; byUserId: string },
+  ): Promise<number>;
   /**
    * ワークスペースの全ての従業員番号。
    *
@@ -240,6 +276,74 @@ export function createOrganizationRepository(db: Queryable): OrganizationReposit
         [workspaceId],
       );
       return rows.map(toEmployee);
+    },
+
+    async findEmployee(workspaceId, employeeId) {
+      const rows = await db.query<EmployeeRow>(
+        `SELECT ${EMPLOYEE_COLUMNS} FROM employees WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, employeeId],
+      );
+      return rows[0] ? toEmployee(rows[0]) : null;
+    },
+
+    async updateEmployee(workspaceId, employeeId, input) {
+      // 与えられた項目だけを書き換える。触れなかった値を既定へ戻さない。
+      const rows = await db.query<EmployeeRow>(
+        `UPDATE employees
+            SET display_name = COALESCE($3, display_name),
+                primary_site_id = CASE WHEN $4::boolean THEN $5 ELSE primary_site_id END,
+                primary_department_id =
+                  CASE WHEN $6::boolean THEN $7 ELSE primary_department_id END,
+                hired_on = CASE WHEN $8::boolean THEN $9::date ELSE hired_on END
+          WHERE workspace_id = $1 AND id = $2
+        RETURNING ${EMPLOYEE_COLUMNS}`,
+        [
+          workspaceId,
+          employeeId,
+          input.displayName ?? null,
+          'primarySiteId' in input,
+          input.primarySiteId ?? null,
+          'primaryDepartmentId' in input,
+          input.primaryDepartmentId ?? null,
+          'hiredOn' in input,
+          input.hiredOn ?? null,
+        ],
+      );
+      return rows[0] ? toEmployee(rows[0]) : null;
+    },
+
+    async updateEmployeeStatus(workspaceId, employeeId, status) {
+      const rows = await db.query<EmployeeRow>(
+        `UPDATE employees SET status = $3
+          WHERE workspace_id = $1 AND id = $2
+        RETURNING ${EMPLOYEE_COLUMNS}`,
+        [workspaceId, employeeId, status],
+      );
+      return rows[0] ? toEmployee(rows[0]) : null;
+    },
+
+    async revokeSessionsOfEmployee(workspaceId, employeeId, at) {
+      const rows = await db.query<{ id: string }>(
+        `UPDATE sessions
+            SET revoked_at = $3
+          WHERE workspace_id = $1
+            AND revoked_at IS NULL
+            AND user_id = (SELECT user_id FROM employees WHERE workspace_id = $1 AND id = $2)
+          RETURNING id`,
+        [workspaceId, employeeId, at],
+      );
+      return rows.length;
+    },
+
+    async revokeCardsOfEmployee(workspaceId, employeeId, input) {
+      const rows = await db.query<{ id: string }>(
+        `UPDATE card_credentials
+            SET state = 'revoked', revoked_at = $3, revoked_by_user_id = $4
+          WHERE workspace_id = $1 AND employee_id = $2 AND state = 'active'
+          RETURNING id`,
+        [workspaceId, employeeId, input.at, input.byUserId],
+      );
+      return rows.length;
     },
 
     async listAllEmployeeNumbers(workspaceId) {

@@ -96,6 +96,9 @@ export const createDepartmentRequestSchema = objectSchema({
   required: ['organizationId', 'code', 'name'],
 });
 
+/** 従業員の状態。作った・止めた・辞めた の 3 つだけ。 */
+export const EMPLOYEE_STATUSES = ['active', 'suspended', 'retired'] as const;
+
 export const employeeSchema = objectSchema({
   properties: {
     id: uuidSchema,
@@ -106,7 +109,7 @@ export const employeeSchema = objectSchema({
     primarySiteId: { oneOf: [uuidSchema, { type: 'null' }] },
     primaryDepartmentId: { oneOf: [uuidSchema, { type: 'null' }] },
     hiredOn: { oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
-    status: { type: 'string', enum: ['active', 'suspended', 'retired'] },
+    status: { type: 'string', enum: [...EMPLOYEE_STATUSES] },
     createdAt: timestampSchema,
   },
   required: [
@@ -152,4 +155,35 @@ export const createEmployeeRequestSchema = objectSchema({
     }),
   },
   required: ['organizationId', 'employeeNumber', 'displayName'],
+});
+
+export const updateEmployeeRequestSchema = objectSchema({
+  description: '従業員の内容を直す。触れなかった項目はそのまま残す',
+  properties: {
+    displayName: nameSchema,
+    primarySiteId: { oneOf: [uuidSchema, { type: 'null' }] },
+    primaryDepartmentId: { oneOf: [uuidSchema, { type: 'null' }] },
+    hiredOn: { oneOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+  },
+  required: [],
+});
+
+export const changeEmployeeStatusRequestSchema = objectSchema({
+  description:
+    '従業員の状態を変える。履歴は消さない。退職した相手の打刻も計算も、' + '保持期間のあいだ残る',
+  properties: {
+    status: { type: 'string', enum: [...EMPLOYEE_STATUSES] },
+    reason: { type: 'string', minLength: 1, maxLength: 1000 },
+  },
+  required: ['status', 'reason'],
+});
+
+export const employeeStatusChangeSchema = objectSchema({
+  description: '状態を変えた結果と、併せて失効させたもの',
+  properties: {
+    employee: employeeSchema,
+    revokedSessions: { type: 'integer', minimum: 0 },
+    revokedCards: { type: 'integer', minimum: 0 },
+  },
+  required: ['employee', 'revokedSessions', 'revokedCards'],
 });

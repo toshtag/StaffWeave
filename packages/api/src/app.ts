@@ -153,8 +153,12 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
 
   const organizationService = createOrganizationService({
     repository: createOrganizationRepository(deps.db),
+    now,
     visibility,
-    transaction: (fn) => deps.db.transaction((tx) => fn(createOrganizationRepository(tx))),
+    transaction: (fn) =>
+      deps.db.transaction((tx) =>
+        fn({ organization: createOrganizationRepository(tx), audit: createAuditRepository(tx) }),
+      ),
   });
 
   const assignmentService = createAssignmentService({

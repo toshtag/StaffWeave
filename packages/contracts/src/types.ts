@@ -211,6 +211,37 @@ export interface EmployeeList {
   employees: Employee[];
 }
 
+export interface UpdateEmployeeRequest {
+  displayName?: string;
+  primarySiteId?: string | null;
+  primaryDepartmentId?: string | null;
+  hiredOn?: string | null;
+}
+
+/**
+ * 従業員の状態を変える。
+ *
+ * 履歴は消さない。退職した相手の打刻も計算も、保持期間のあいだ残る。
+ * 状態を変えるだけで、記録には触れない。
+ */
+export interface ChangeEmployeeStatusRequest {
+  status: EmployeeStatus;
+  /** なぜ変えたか。監査へ残す。 */
+  reason: string;
+}
+
+/**
+ * 状態を変えたときに、併せて失効させたもの。
+ *
+ * 端末はここに出ない。端末は拠点に属し、従業員には紐づかない。
+ * 誰が辞めても、その拠点の打刻端末は動き続ける必要がある。
+ */
+export interface EmployeeStatusChange {
+  employee: Employee;
+  revokedSessions: number;
+  revokedCards: number;
+}
+
 export interface AttendanceEventRecord {
   id: string;
   employeeId: string;

@@ -15,6 +15,23 @@ import { SettingsSection } from '../SettingsSection.tsx';
 export function EmployeeSettings({ permissions }: SectionProps): React.JSX.Element {
   const { messages } = useLocale();
   const labels = messages.admin;
+
+  /**
+   * 状態を変える。理由を必ず添える。
+   *
+   * 理由の無い変更は、監査から意図を読み取れない。空のまま送れないよう、
+   * ここで尋ねてから送る。
+   */
+  async function changeStatus(
+    employeeId: string,
+    status: 'active' | 'suspended' | 'retired',
+    reload: () => Promise<void>,
+  ): Promise<void> {
+    const reason = window.prompt(labels.statusChangeReason);
+    if (reason === null || reason.trim() === '') return;
+    await api.changeEmployeeStatus(employeeId, { status, reason });
+    await reload();
+  }
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [organizationId, setOrganizationId] = useState('');
   const [employeeNumber, setEmployeeNumber] = useState('');
@@ -65,6 +82,27 @@ export function EmployeeSettings({ permissions }: SectionProps): React.JSX.Eleme
       load={load}
       canRead={permissions.includes('employee.read')}
       importCsv={api.importEmployeesCsv}
+      rowActions={(row, reload) =>
+        permissions.includes('employee.manage') ? (
+          <span className="row-inline-form">
+            {row.status !== 'active' && (
+              <button type="button" onClick={() => void changeStatus(row.id, 'active', reload)}>
+                {labels.restoreEmployee}
+              </button>
+            )}
+            {row.status === 'active' && (
+              <button type="button" onClick={() => void changeStatus(row.id, 'suspended', reload)}>
+                {labels.suspendEmployee}
+              </button>
+            )}
+            {row.status !== 'retired' && (
+              <button type="button" onClick={() => void changeStatus(row.id, 'retired', reload)}>
+                {labels.retireEmployee}
+              </button>
+            )}
+          </span>
+        ) : null
+      }
       canWrite={permissions.includes('employee.manage')}
       emptyMessage={labels.noEmployees}
       onCopy={(row) => {
