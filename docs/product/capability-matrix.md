@@ -149,7 +149,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 端末のログの秘匿 | partial | `test:packages/agent/src/service/redact.test.ts` | 秘匿の規則は固定しているが、**常駐した端末のログを実機で確かめていない** |
 | 端末の診断 | partial | `test:packages/agent/src/service/spool.test.ts` | 送信待ちの状態を読める。**実機での確認は済んでいない** |
 | Windows での起動時の常駐 | partial | `test:packages/api/test/integration/agent-package.test.ts` `script:.github/workflows/windows-agent.yml` `docs:decisions/0002-windows-residency.md` | タスクスケジューラで登録する。サービスとしては登録しない（node.exe は SCM と話せない）。登録・開始・停止・削除は Windows の CI で通している。**実機での端末再起動は未確認** |
-| 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/pcsc.test.ts` `test:packages/api/test/integration/card-station.test.ts` `docs:operations/device-agent-service.md` | PC/SC を 1 つの対応先として実装し、受け渡しを配布物へ同梱した。`pnpm agent station` が読み取りと送信を 1 つの常駐で行う。**実機の読み取り装置では未確認** |
+| 物理の IC カードでの打刻 | partial | `test:packages/agent/src/card/pcsc.test.ts` `test:packages/api/test/integration/card-station.test.ts` `docs:operations/device-agent-service.md` | PC/SC を 1 つの対応先として実装し、受け渡しも装置の部品も Windows 向けの配布物へ入れた。端末では取り寄せない。`pnpm agent station` が読み取りと送信を 1 つの常駐で行う。**実機の読み取り装置では未確認** |
 | 端末の自動更新 | planned | - | 署名と配布の方式が決まってから（P26） |
 | 打刻時の位置情報 | implemented | `op:listAttendanceLocations` `docs:operations/retention.md` `test:packages/api/test/integration/attendance-location.test.ts` `ui:packages/web/src/admin/sections/OrganizationSettings.tsx` | 保持期間は 400 日（訂正できる範囲と同じ）。打刻とは別の表に持ち、消しても打刻は残る |
 
