@@ -63,6 +63,7 @@ import { createLaborSystemRepository } from './schedule/labor-system-repository.
 import { createScheduleRepository } from './schedule/repository.js';
 import { createScheduleRoutes } from './schedule/routes.js';
 import { createScheduleService } from './schedule/service.js';
+import { createSettingsImportService } from './schedule/settings-import.js';
 import { createWorkCategoryRepository } from './schedule/work-category-repository.js';
 import { createSessionObservationRepository } from './session/repository.js';
 import { createSessionRoutes } from './session/routes.js';
@@ -87,6 +88,8 @@ import { createSystemRoutes } from './system/routes.js';
 const BULK_REQUEST_PATHS = [
   `/api${operations.importEmployeesCsv.path}`,
   `/api${operations.importLeaveGrantsCsv.path}`,
+  `/api${operations.importWorkCategoriesCsv.path}`,
+  `/api${operations.importRequestTypesCsv.path}`,
 ] as const;
 
 export interface AppDependencies {
@@ -304,6 +307,17 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     visibility,
   });
 
+  const settingsImportService = createSettingsImportService({
+    transaction: (fn) =>
+      deps.db.transaction((tx) =>
+        fn({
+          categories: createWorkCategoryRepository(tx),
+          requests: createRequestRepository(tx),
+          audit: createAuditRepository(tx),
+        }),
+      ),
+  });
+
   const notificationService = createNotificationService({
     repository: createNotificationRepository(deps.db),
   });
@@ -360,12 +374,15 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     }),
   );
   api.route('/', createAttendanceRoutes({ service: attendanceService }));
-  api.route('/', createScheduleRoutes({ service: scheduleService }));
+  api.route(
+    '/',
+    createScheduleRoutes({ service: scheduleService, imports: settingsImportService }),
+  );
   api.route('/', createApprovalRoutes({ service: approvalService }));
   api.route('/', createNotificationRoutes({ service: notificationService }));
   api.route('/', createMonthlyRoutes({ service: monthlyService, periods: periodService }));
   api.route('/', createLeaveRoutes({ service: leaveService, grants: leaveGrantService }));
-  api.route('/', createRequestRoutes({ service: requestService }));
+  api.route('/', createRequestRoutes({ service: requestService, imports: settingsImportService }));
   api.route('/', createDeviceRoutes({ service: deviceService }));
   // 指紋鍵が無い構成では、カードの経路を受け付けない。
   // 鍵なしで計算した指紋は、保存した値からカードを言い当てられる。

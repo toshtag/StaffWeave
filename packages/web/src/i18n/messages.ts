@@ -369,6 +369,9 @@ export interface AdminMessages {
   remainingMinutes: string;
   asOf: string;
   through: string;
+  importCsv: string;
+  importCsvHint: string;
+  imported: (count: number) => string;
   sectionMonthlySummaries: string;
   sectionPeriodSummaries: string;
   periodSummariesHint: string;
@@ -824,6 +827,10 @@ const ja: Messages = {
     remainingMinutes: '残り（分）',
     asOf: '基準日',
     through: 'この日まで',
+    importCsv: 'CSV で取り込む',
+    importCsvHint:
+      '取り出した CSV と同じ列で書きます。1 行でも読めなければ、1 行も取り込みません。',
+    imported: (count: number) => `${count} 件を取り込みました。`,
     sectionMonthlySummaries: '月次の集計',
     sectionPeriodSummaries: '期間の集計',
     periodSummariesHint:
@@ -1296,6 +1303,10 @@ const en: Messages = {
     remainingMinutes: 'Remaining (minutes)',
     asOf: 'As of',
     through: 'Through',
+    importCsv: 'Import CSV',
+    importCsvHint:
+      'Use the same columns as the exported CSV. If a single row cannot be read, nothing is imported.',
+    imported: (count: number) => `Imported ${count} rows.`,
     sectionMonthlySummaries: 'Monthly totals',
     sectionPeriodSummaries: 'Period totals',
     periodSummariesHint:

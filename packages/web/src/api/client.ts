@@ -29,11 +29,13 @@ import type {
   DiscrepancyReport,
   Employee,
   EmployeeList,
+  ErrorDetail,
   ErrorResponse,
   GrantLeaveInBulkRequest,
   GrantLeaveInBulkResponse,
   GrantLeaveRequest,
   GrantUserScopeRequest,
+  ImportResult,
   LaborSystemAssignmentList,
   LaborSystemAssignmentRecord,
   LeaveBalanceList,
@@ -84,12 +86,15 @@ import type {
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
+  /** 行や項目ごとの理由。取込のように、どこが悪いのかを示す必要がある応答で入る。 */
+  readonly details: ErrorDetail[] | undefined;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details?: ErrorDetail[]) {
     super(message);
     this.name = 'ApiRequestError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -113,6 +118,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       response.status,
       error?.code ?? 'unknown',
       error?.message ?? 'エラーが発生しました',
+      error?.details,
     );
   }
 
@@ -228,6 +234,24 @@ export const api = {
     request<LaborSystemAssignmentRecord>(`/labor-system-assignments/${assignmentId}/end`, {
       method: 'POST',
       body: JSON.stringify({ effectiveTo }),
+    }),
+  importWorkCategoriesCsv: (text: string) =>
+    request<ImportResult>('/work-categories/imports', {
+      method: 'POST',
+      headers: { 'content-type': 'text/csv' },
+      body: text,
+    }),
+  importRequestTypesCsv: (text: string) =>
+    request<ImportResult>('/request-types/imports', {
+      method: 'POST',
+      headers: { 'content-type': 'text/csv' },
+      body: text,
+    }),
+  importLeaveGrantsCsv: (text: string) =>
+    request<ImportResult>('/leave-ledger/imports', {
+      method: 'POST',
+      headers: { 'content-type': 'text/csv' },
+      body: text,
     }),
   listNotifications: (query: { unreadOnly?: boolean }) =>
     request<NotificationList>(

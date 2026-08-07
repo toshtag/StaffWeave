@@ -38,6 +38,24 @@ export interface SettingsSectionProps<T> {
   emptyMessage?: string;
   /** 入力欄の見出し。直す画面では「新しく作る」ではなくなる。 */
   formTitle?: string;
+  /**
+   * CSV をまとめて取り込む。渡すと、取込の入口を出す。
+   *
+   * 取り込めなかったときは、行ごとの理由をそのまま見せる。
+   * 「失敗しました」だけでは、どこを直せばよいのかが伝わらない。
+   */
+  importCsv?: (text: string) => Promise<{ created: number }>;
+}
+
+/** 取り込めなかった理由を、行ごとに並べて見せる。 */
+function describeImportFailure(error: ApiRequestError): string {
+  if (error.details === undefined || error.details.length === 0) return error.message;
+  return [
+    error.message,
+    ...error.details.map((detail) =>
+      detail.field === undefined ? detail.message : `${detail.field}: ${detail.message}`,
+    ),
+  ].join('\n');
 }
 
 export function SettingsSection<T>(props: SettingsSectionProps<T>): React.JSX.Element {
@@ -50,6 +68,27 @@ export function SettingsSection<T>(props: SettingsSectionProps<T>): React.JSX.El
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const { importCsv } = props;
+  const onImport = useCallback(
+    async (file: File): Promise<void> => {
+      if (importCsv === undefined) return;
+      setImportMessage(null);
+      setImportError(null);
+      try {
+        const result = await importCsv(await file.text());
+        setImportMessage(labels.imported(result.created));
+        await reload();
+      } catch (error) {
+        setImportError(
+          error instanceof ApiRequestError ? describeImportFailure(error) : labels.saveFailed,
+        );
+      }
+    },
+    [importCsv, labels, reload],
+  );
 
   const { submit } = props;
   const onSubmit = useCallback(
@@ -89,6 +128,35 @@ export function SettingsSection<T>(props: SettingsSectionProps<T>): React.JSX.El
       {props.hint !== undefined && <p className="subtitle">{props.hint}</p>}
 
       {props.toolbar !== undefined && <div className="admin-toolbar">{props.toolbar}</div>}
+
+      {props.canWrite && props.importCsv !== undefined && (
+        <div className="admin-toolbar">
+          <div className="field">
+            <label htmlFor={`${props.csvName}-import`}>{labels.importCsv}</label>
+            <input
+              id={`${props.csvName}-import`}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file !== undefined) void onImport(file);
+                event.target.value = '';
+              }}
+            />
+            <p className="hint">{labels.importCsvHint}</p>
+          </div>
+          {importMessage !== null && (
+            <p className="notice" role="status">
+              {importMessage}
+            </p>
+          )}
+          {importError !== null && (
+            <p className="form-error" role="alert">
+              {importError}
+            </p>
+          )}
+        </div>
+      )}
 
       {state.status === 'loading' && <p>{messages.loading}</p>}
 
