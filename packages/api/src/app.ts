@@ -175,6 +175,7 @@ export function createApp(deps: AppDependencies): Hono<AppEnv> {
     schedule: createScheduleRepository(deps.db),
     calculations: createCalculationRepository(deps.db),
     approval: createApprovalRepository(deps.db),
+    requests: createRequestRepository(deps.db),
   };
 
   const workCategoryRepository = createWorkCategoryRepository(deps.db);

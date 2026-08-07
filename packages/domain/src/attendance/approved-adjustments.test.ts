@@ -87,9 +87,9 @@ describe('残業の認定', () => {
       }),
     );
 
-    expect(
-      (result.recognizedOvertimeMinutes ?? 0) + (result.unapprovedOvertimeMinutes ?? 0),
-    ).toBe(result.outsideScheduleMinutes);
+    expect((result.recognizedOvertimeMinutes ?? 0) + (result.unapprovedOvertimeMinutes ?? 0)).toBe(
+      result.outsideScheduleMinutes,
+    );
   });
 
   it('所定始業より前の実労働は、終わりの上限では認定しない', () => {

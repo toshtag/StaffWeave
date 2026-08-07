@@ -38,6 +38,7 @@ export interface MonthlyRepositories {
   schedule: DayRepositories['schedule'];
   calculations: DayRepositories['calculations'];
   approval: DayRepositories['approval'];
+  requests: DayRepositories['requests'];
   audit: AuditRepository;
 }
 

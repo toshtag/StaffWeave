@@ -9,6 +9,7 @@ import { createAttendanceRepository } from '../attendance/repository.js';
 import type { AuditEntry, AuditRepository } from '../audit/repository.js';
 import { createDeviceRepository } from '../device/repository.js';
 import { createAssignmentRepository } from '../organization/assignment-repository.js';
+import { createRequestRepository } from '../request/repository.js';
 import { createScheduleRepository } from '../schedule/repository.js';
 import { createEmployeeVisibilityGuard } from '../shared/employee-visibility.js';
 import { ApiError } from '../shared/errors.js';
@@ -98,6 +99,7 @@ function serviceWith(cards: Partial<CardRepository>): Harness {
     schedule: createScheduleRepository(unusedDatabase),
     calculations: createCalculationRepository(unusedDatabase),
     approval: createApprovalRepository(unusedDatabase),
+    requests: createRequestRepository(unusedDatabase),
     cards: {
       ...createCardRepository(unusedDatabase),
       insertCredential: async (_workspaceId, input): Promise<CardCredentialRecord> => {

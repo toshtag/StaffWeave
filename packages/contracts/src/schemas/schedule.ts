@@ -286,6 +286,24 @@ export const attendanceCalculationSchema = objectSchema({
       oneOf: [{ type: 'integer' }, { type: 'null' }],
       description: '給与向けのみなし労働。設定が無ければ null',
     },
+    recognizedOvertimeMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description:
+        '認定した所定外。承認しきった残業の上限時刻までに収まる、所定終業より後の実労働。' +
+        '所定の時間帯が決まっていない日は null',
+    },
+    unapprovedOvertimeMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '認定の外に出た所定外。上限を超えた分と、承認の無い所定外',
+    },
+    approvedHolidayMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '承認のある休日労働',
+    },
+    unapprovedHolidayMinutes: {
+      oneOf: [{ type: 'integer' }, { type: 'null' }],
+      description: '承認の無い休日労働',
+    },
     basis: objectSchema({
       properties: {
         ruleVersion: { type: 'string' },

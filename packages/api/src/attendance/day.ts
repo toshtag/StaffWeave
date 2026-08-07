@@ -18,6 +18,7 @@ import {
   summarizeWorkDay,
 } from '@staffweave/domain';
 import type { ApprovalRepository } from '../approval/repository.js';
+import type { RequestRepository } from '../request/repository.js';
 import type { ScheduleRepository } from '../schedule/repository.js';
 import type { CalculationRepository } from './calculation-repository.js';
 import type { AttendanceRepository } from './repository.js';
@@ -27,6 +28,8 @@ export interface DayRepositories {
   schedule: ScheduleRepository;
   calculations: CalculationRepository;
   approval: ApprovalRepository;
+  /** 承認しきった申請を、計算の入力として読むために要る。 */
+  requests: RequestRepository;
 }
 
 function toCorrectable(record: AttendanceEventRecord): CorrectableEvent {
@@ -97,6 +100,12 @@ async function buildContext(
     employeeId,
     closingPeriodOf(businessDate),
   );
+  // 承認しきった申請だけを読む。途中の段では計算を動かさない。
+  const approvals = await repositories.requests.findApprovedAdjustments(
+    workspaceId,
+    employeeId,
+    businessDate,
+  );
 
   const byId = new Map(history.map((record) => [record.id, record]));
   const effective = resolveEffectiveEvents(history.map(toCorrectable));
@@ -117,6 +126,7 @@ async function buildContext(
       events,
       schedule: toDomainSchedule(schedule, businessDate, timeZone),
       rules,
+      approvals,
     },
     day: {
       businessDate,

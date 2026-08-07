@@ -25,6 +25,7 @@ import { createDeviceRepository } from '../../src/device/repository.js';
 import type { DeviceRepositories } from '../../src/device/service.js';
 import { createDeviceService } from '../../src/device/service.js';
 import { createAssignmentRepository } from '../../src/organization/assignment-repository.js';
+import { createRequestRepository } from '../../src/request/repository.js';
 import { createScheduleRepository } from '../../src/schedule/repository.js';
 import { createSessionObservationRepository } from '../../src/session/repository.js';
 import type { SessionRepositories } from '../../src/session/service.js';
@@ -105,6 +106,7 @@ function transactionWith(hooks: Hooks) {
         schedule: createScheduleRepository(tx),
         calculations: createCalculationRepository(tx),
         approval: createApprovalRepository(tx),
+        requests: createRequestRepository(tx),
         observations: createSessionObservationRepository(tx),
         cards: createCardRepository(tx),
         audit: hooks.audit ?? createAuditRepository(tx),
@@ -127,6 +129,7 @@ function sessionServiceWith(hooks: Hooks = {}) {
       schedule: createScheduleRepository(db),
       calculations: createCalculationRepository(db),
       approval: createApprovalRepository(db),
+      requests: createRequestRepository(db),
     },
     observations: createSessionObservationRepository(db),
     devices: createDeviceRepository(db),
