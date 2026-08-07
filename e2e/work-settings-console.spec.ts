@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { businessPeriod, businessToday } from './setup/business-date.js';
 import { E2E_ADMIN_CONSOLE_ADMIN } from './setup/prepare-database.js';
 
 /**
@@ -24,10 +25,10 @@ import { E2E_ADMIN_CONSOLE_ADMIN } from './setup/prepare-database.js';
  * 勤務区分・予定・割り当てのどれかが欠ければ、この検査は落ちる。
  */
 
-/** 検査の当日。予定はこの日へ作る。 */
-const TODAY = new Date().toISOString().slice(0, 10);
+/** 検査の当日。予定はこの日へ作る。業務日は拠点の時間帯で決まる。 */
+const TODAY = businessToday();
 /** 当月の 1 日。月次はこの月を見る。 */
-const PERIOD = `${TODAY.slice(0, 7)}-01`;
+const PERIOD = businessPeriod();
 /**
  * 勤務区分に入れる所定労働分数。
  *

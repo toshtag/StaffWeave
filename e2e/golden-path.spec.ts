@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { businessPeriod, businessToday } from './setup/business-date.js';
 import { E2E_GOLDEN_ADMIN, E2E_GOLDEN_MANAGER } from './setup/prepare-database.js';
 
 /**
@@ -66,17 +67,13 @@ async function save(page: Page): Promise<void> {
   await expect(card(page).getByRole('status')).toHaveText('保存しました');
 }
 
-/** その月の 1 日。締めの対象月として使う。 */
-function firstOfThisMonth(): string {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
 test.describe('製品を一巡する', () => {
   test('設定から締め直しまでを、画面だけで通す', async ({ page }) => {
     test.slow();
-    const today = new Date().toISOString().slice(0, 10);
-    const period = firstOfThisMonth();
+    // 業務日は拠点の時間帯で決まる。UTC の日付を使うと、UTC で 15 時を
+    // 過ぎたときだけ 1 日ずれ、その時間帯に走った検査だけが落ちる。
+    const today = businessToday();
+    const period = businessPeriod();
 
     // --- 設定 ---------------------------------------------------------------
     await signIn(page, E2E_GOLDEN_ADMIN.email, E2E_GOLDEN_ADMIN.password);

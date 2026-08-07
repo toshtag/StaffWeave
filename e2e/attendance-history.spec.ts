@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '@playwright/test';
+import { businessToday } from './setup/business-date.js';
 import { E2E_HISTORY_EMPLOYEE } from './setup/prepare-database.js';
 
 /**
@@ -35,7 +36,8 @@ test.describe('過去の勤怠', () => {
 
     // 打刻はこの画面の外で起き、保存へ届くのは表示が変わるより後になり得る。
     // 届くまで読み直す。届かなければ、ここで落ちる。
-    const today = new Date().toISOString().slice(0, 10);
+    // 業務日は拠点の時間帯で決まる。UTC の日付では、UTC で 15 時を過ぎると 1 日ずれる。
+    const today = businessToday();
     const row = history(page).locator('.history-list > li', { hasText: today });
     await expect(async () => {
       await history(page).getByRole('button', { name: '読み直す' }).click();
