@@ -19,6 +19,7 @@ import { ChangePassword } from './ChangePassword.tsx';
 import { DiscrepancyPanel } from './DiscrepancyPanel.tsx';
 import { NotificationPanel } from './NotificationPanel.tsx';
 import { PendingApprovals } from './PendingApprovals.tsx';
+import { RequestCenter } from './RequestCenter.tsx';
 import { TodayAttendance } from './TodayAttendance.tsx';
 
 type OrganizationsState =
@@ -148,6 +149,8 @@ export function HomePage({ session }: { session: SessionResponse }): React.JSX.E
         {session.employee !== null && <DiscrepancyPanel businessDate={businessToday(session)} />}
 
         <NotificationPanel />
+
+        <RequestCenter session={session} />
 
         <PendingApprovals session={session} />
 

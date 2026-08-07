@@ -289,6 +289,10 @@ export interface CreateLeaveTypeRequest {
   paid?: boolean;
 }
 
+export interface LeaveTypeList {
+  leaveTypes: LeaveTypeRecord[];
+}
+
 export interface WorkCycleDayRecord {
   position: number;
   dayType: 'working_day' | 'non_working_day' | 'public_holiday';

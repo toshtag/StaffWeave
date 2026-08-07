@@ -90,8 +90,14 @@ export function createRequestRoutes(deps: RequestRouteDependencies): Hono<AppEnv
       state?: EmployeeRequestRecord['state'];
       from?: string;
       to?: string;
+      awaitingMe?: 'true';
     }>(c, listEmployeeRequestsQuerySchema);
-    return c.json({ requests: await service.list(auth, query) }, 200);
+    // 問い合わせ文字列は文字しか運べない。真偽として受け取り直す。
+    const { awaitingMe, ...rest } = query;
+    return c.json(
+      { requests: await service.list(auth, { ...rest, awaitingMe: awaitingMe === 'true' }) },
+      200,
+    );
   });
 
   app.post(operations.submitEmployeeRequest.path, async (c) => {

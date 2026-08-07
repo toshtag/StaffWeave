@@ -89,6 +89,8 @@ export interface RequestService {
       state?: EmployeeRequestRecord['state'];
       from?: string;
       to?: string;
+      /** いまの段の決裁が自分の番のものだけを返す。 */
+      awaitingMe?: boolean;
     },
   ): Promise<EmployeeRequestRecord[]>;
   submit(
@@ -687,12 +689,38 @@ export function createRequestService(deps: RequestServiceDependencies): RequestS
 
     async list(context, query) {
       const requests = await deps.repository.listRequests(context.workspace.id, query);
-      return deps.visibility.filterVisible(
+      const visible = await deps.visibility.filterVisible(
         context,
         requests,
         (request) => request.employeeId,
         periodOf,
       );
+      if (query.awaitingMe !== true) return visible;
+
+      // いまの段の決裁が自分の番のものだけを返す。全部を返すと、自分の番では
+      // ない申請が混ざり、押しても断られる。列としては使えない。
+      const delegatedFrom = await deps.repository.listDelegationsTo(
+        context.workspace.id,
+        context.user.id,
+        businessDateOf(deps.now(), context.workspace.timeZone),
+      );
+      const actor = { userId: context.user.id, roles: context.roles, delegatedFrom };
+
+      const mine: EmployeeRequestRecord[] = [];
+      for (const request of visible) {
+        if (request.state !== 'submitted') continue;
+        // 自分の申請は自分で決裁できない。列にも出さない。
+        if (request.employeeId === context.employee?.id) continue;
+        const steps = await deps.repository.listRequestSteps(
+          context.workspace.id,
+          request.id,
+          request.submissions,
+        );
+        const step = steps.find((candidate) => candidate.step === request.currentStep);
+        if (step === undefined) continue;
+        if (authorizeApproval({ step, actor }).ok) mine.push(request);
+      }
+      return mine;
     },
 
     async submit(context, input) {

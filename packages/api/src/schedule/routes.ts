@@ -30,7 +30,7 @@ import {
 } from '@staffweave/contracts';
 import { Hono } from 'hono';
 import type { AppEnv } from '../shared/context.js';
-import { requirePermission } from '../shared/context.js';
+import { currentAuth, requirePermission } from '../shared/context.js';
 import { pathParam, readBody, readQuery } from '../shared/request.js';
 import type { ScheduleService } from './service.js';
 import type { SettingsImportService } from './settings-import.js';
@@ -138,7 +138,10 @@ export function createScheduleRoutes(deps: ScheduleRouteDependencies): Hono<AppE
   });
 
   app.get(operations.listLeaveTypes.path, async (c) => {
-    const auth = requirePermission(c, 'organization.read');
+    // 休暇の申請を出すには、どの種別があるかを選べる必要がある。
+    // 組織の読み取りを求めると、従業員は自分の申請すら組み立てられない。
+    // 返すのは code・名称・有給かどうかだけで、誰かの情報は含まない。
+    const auth = currentAuth(c);
     return c.json({ leaveTypes: await service.listLeaveTypes(auth.workspace.id) }, 200);
   });
 

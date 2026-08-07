@@ -31,11 +31,14 @@ import type {
   DailyRequestList,
   DailyRequestRecord,
   DecideDailyRequestRequest,
+  DecideEmployeeRequestRequest,
   Department,
   DepartmentList,
   DiscrepancyReport,
   Employee,
   EmployeeList,
+  EmployeeRequestList,
+  EmployeeRequestRecord,
   EmployeeWorkCycleList,
   EmployeeWorkCycleRecord,
   ErrorDetail,
@@ -58,6 +61,7 @@ import type {
   LeaveLedgerEntryRecord,
   LeaveLedgerList,
   LeaveRegisterList,
+  LeaveTypeList,
   LeaveTypeSettingsList,
   LeaveTypeSettingsRecord,
   LoginRequest,
@@ -76,6 +80,7 @@ import type {
   ReplaceApprovalRouteRequest,
   RequestTypeList,
   RequestTypeRecord,
+  ResubmitEmployeeRequestRequest,
   ReverseLeaveEntryRequest,
   RevokedSessions,
   SessionList,
@@ -83,6 +88,7 @@ import type {
   Site,
   SiteList,
   SubmitDailyRequestRequest,
+  SubmitEmployeeRequestRequest,
   UpdateLeaveTypeRequest,
   UpdateOrganizationRequest,
   UpdatePreferencesRequest,
@@ -419,6 +425,40 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  listEmployeeRequests: (query: {
+    employeeId?: string;
+    state?: string;
+    from?: string;
+    to?: string;
+    awaitingMe?: 'true';
+  }) =>
+    request<EmployeeRequestList>(
+      `/employee-requests?${new URLSearchParams(
+        Object.fromEntries(
+          Object.entries(query).filter(([, value]) => value !== undefined && value !== ''),
+        ) as Record<string, string>,
+      ).toString()}`,
+    ),
+  submitEmployeeRequest: (input: SubmitEmployeeRequestRequest) =>
+    request<EmployeeRequestRecord>('/employee-requests', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  decideEmployeeRequest: (requestId: string, input: DecideEmployeeRequestRequest) =>
+    request<EmployeeRequestRecord>(`/employee-requests/${requestId}/decisions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  resubmitEmployeeRequest: (requestId: string, input: ResubmitEmployeeRequestRequest) =>
+    request<EmployeeRequestRecord>(`/employee-requests/${requestId}/resubmissions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  cancelEmployeeRequest: (requestId: string) =>
+    request<EmployeeRequestRecord>(`/employee-requests/${requestId}/cancellation`, {
+      method: 'POST',
+    }),
+  listLeaveTypes: () => request<LeaveTypeList>('/leave-types'),
   listRequestTypes: () => request<RequestTypeList>('/request-types'),
   createRequestType: (input: CreateRequestTypeRequest) =>
     request<RequestTypeRecord>('/request-types', { method: 'POST', body: JSON.stringify(input) }),

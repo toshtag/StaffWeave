@@ -154,6 +154,23 @@ export const E2E_ADMIN_CONSOLE_EMPLOYEE: SeededAccount = {
   displayName: '検証 十四郎',
 };
 
+/** 申請の検査で、1 段目を承認する組織の管理者。 */
+export const E2E_REQUEST_MANAGER: SeededAccount = {
+  email: 'request-manager@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E016',
+  displayName: '検証 十六郎',
+  role: 'organization_manager',
+};
+
+/** 申請の検査で、申請を出す従業員。 */
+export const E2E_REQUEST_EMPLOYEE: SeededAccount = {
+  email: 'request-employee@example.test',
+  password: 'staffweave e2e pass',
+  employeeNumber: 'E017',
+  displayName: '検証 十七郎',
+};
+
 /**
  * 系統ごとの検査と、アクセシビリティの検査で使う管理者。
  *
@@ -183,6 +200,8 @@ const SEEDED_ACCOUNTS = [
   E2E_API_KEY_ADMIN,
   E2E_ADMIN_CONSOLE_ADMIN,
   E2E_ADMIN_CONSOLE_EMPLOYEE,
+  E2E_REQUEST_MANAGER,
+  E2E_REQUEST_EMPLOYEE,
   E2E_CROSS_BROWSER_ADMIN,
 ];
 
@@ -268,6 +287,16 @@ export default async function prepareDatabase(): Promise<void> {
           userId,
           account.role ?? 'employee',
         ]);
+
+        // 組織の管理者は、範囲を与えないと誰も見られない。
+        // 見られない相手の申請は決裁できないため、ここで与える。
+        if (account.role === 'organization_manager') {
+          await tx.query(
+            `INSERT INTO user_organization_scopes (workspace_id, user_id, organization_id)
+             VALUES ($1, $2, $3)`,
+            [workspaceId, userId, organizationId],
+          );
+        }
 
         await tx.query(
           `INSERT INTO employees
