@@ -7,7 +7,6 @@ import {
   operations,
 } from '@staffweave/contracts';
 import type { ApiScope, EmployeeVisibility } from '@staffweave/domain';
-import { parseCsv } from '@staffweave/domain';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { OrganizationService } from '../organization/service.js';

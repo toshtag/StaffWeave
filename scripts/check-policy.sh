@@ -80,26 +80,11 @@ else
   pass 'API キーらしき値は含まれていません'
 fi
 
-echo '生成ツール由来の定型文'
-if printf '%s\n' "$TRACKED" | xargs grep -liE 'co-authored-by: *claude|generated with \[?claude' 2>/dev/null | grep . > /dev/null; then
-  fail '生成ツール由来の定型文が含まれています'
-else
-  pass '生成ツール由来の定型文はありません'
-fi
-
-echo '他の製品への言及'
-# 機能の要件は StaffWeave の設計として書く。他の製品を引き合いに出して説明すると、
-# その名前や画面の写しが入り込む入口になり、相手の版が変われば説明だけが古くなる。
+# 中身・ファイル名・branch・commit・PR を、同じ規則でまとめて検査する。
 #
-# ここで見るのは「引き合いに出す言い回し」だけで、製品名の一覧は持たない。
-# 一覧にすると、書かせたくない名前をこの脚本へ書き込むことになる。
-# 言い回しを止めれば、名前を書く文そのものが成り立たなくなる。
-#
-# 「競合」は同時更新の意味で全体に出るため、単独では見ない。
-COMPARISON_PATTERN='比較元|比較対象製品|参考製品|参考にした製品|他社製品|他社の製品|他社のサービス|競合製品|競合サービス|競合他社|本家'
-
-# 見る先は追跡ファイルの中身だけではない。名前を残せる場所はいくつもあり、
-# 中身だけを見ていると、他の経路から入ったものを検査が通してしまう。
+# 名前や語を残せる場所はいくつもある。中身だけを見ていると、他の経路から
+# 入ったものを検査が通してしまう。経路を 1 つでも見落とすなら、
+# 「無い」とは言わない。
 #
 # branch と commit は、Git の状態から推測しない。CI の checkout は既定で
 # detached HEAD になり、履歴も 1 件しか取らない。推測すると branch 名は `HEAD`、
@@ -110,65 +95,111 @@ COMPARISON_PATTERN='比較元|比較対象製品|参考製品|参考にした製
 #   POLICY_BASE_SHA   commit の範囲の起点
 #   POLICY_HEAD_SHA   範囲の終点
 #   PR_TITLE PR_BODY  PR の題と本文
-#
-# 出すのは経路ごとの件数だけにする。一致した行を出すと、
-# その行に並んでいた固有名がそのままログへ残る。
-# ログは PR の画面から誰でも読めるため、伏せたい語を伏せた意味が無くなる。
-comparison_hits() {
-  printf '%s\n' "$1" | grep -cE "$COMPARISON_PATTERN" || true
-}
 
 # 手元では、渡されていなくても分かるものを使う。CI では渡された値だけを見る。
 if [ -n "${POLICY_HEAD_REF-}" ]; then
-  COMPARISON_REF="$POLICY_HEAD_REF"
+  SURFACE_REF="$POLICY_HEAD_REF"
 elif [ -z "${CI-}" ]; then
-  COMPARISON_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  SURFACE_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 else
-  COMPARISON_REF=''
-  COMPARISON_UNCHECKED='branch'
+  SURFACE_REF=''
+  SURFACE_UNCHECKED='branch'
 fi
 
 if [ -n "${POLICY_BASE_SHA-}" ] && [ -n "${POLICY_HEAD_SHA-}" ]; then
-  COMPARISON_RANGE="${POLICY_BASE_SHA}..${POLICY_HEAD_SHA}"
+  SURFACE_RANGE="${POLICY_BASE_SHA}..${POLICY_HEAD_SHA}"
 elif [ -z "${CI-}" ]; then
-  COMPARISON_RANGE='origin/main..HEAD'
+  SURFACE_RANGE='origin/main..HEAD'
 else
-  COMPARISON_RANGE=''
-  COMPARISON_UNCHECKED="${COMPARISON_UNCHECKED-} commit"
+  SURFACE_RANGE=''
+  SURFACE_UNCHECKED="${SURFACE_UNCHECKED-} commit"
 fi
 
-COMPARISON_LOG=''
-if [ -n "$COMPARISON_RANGE" ]; then
+SURFACE_LOG=''
+if [ -n "$SURFACE_RANGE" ]; then
   # 範囲を読めないまま 0 件にしない。読めなければ、見ていないものとして示す。
-  if COMPARISON_LOG=$(git log --format='%s%n%b' "$COMPARISON_RANGE" 2>/dev/null); then
+  if SURFACE_LOG=$(git log --format='%s%n%b' "$SURFACE_RANGE" 2>/dev/null); then
     :
   else
-    COMPARISON_LOG=''
-    COMPARISON_UNCHECKED="${COMPARISON_UNCHECKED-} commit"
+    SURFACE_LOG=''
+    SURFACE_UNCHECKED="${SURFACE_UNCHECKED-} commit"
   fi
 fi
 
-# 中身は git grep で探す。改行区切りの一覧を xargs へ渡すと、
-# 名前に空白やタブを含むファイルが途中で切れ、そのファイルだけ検査されない。
-# この脚本自身は、検査の対象語をそのまま持つため除く。
-COMPARISON_CONTENT=$(git grep -hE "$COMPARISON_PATTERN" -- . ':!scripts/check-policy.sh' 2>/dev/null | grep -c . || true)
-# 名前の側も、NUL 区切りで受け取ってから 1 行ずつに直す。
-COMPARISON_NAME=$(git -c core.quotePath=false ls-files -z \
-  | tr '\0' '\n' | grep -v '^scripts/check-policy.sh$' | grep -cE "$COMPARISON_PATTERN" || true)
-COMPARISON_BRANCH=$(comparison_hits "$COMPARISON_REF")
-COMPARISON_COMMIT=$(comparison_hits "$COMPARISON_LOG")
-COMPARISON_PR=$(comparison_hits "$(printf '%s\n%s' "${PR_TITLE-}" "${PR_BODY-}")")
-COMPARISON_TOTAL=$((COMPARISON_CONTENT + COMPARISON_NAME + COMPARISON_BRANCH + COMPARISON_COMMIT + COMPARISON_PR))
-if [ "$COMPARISON_TOTAL" -ne 0 ]; then
-  printf '  内容 %s 件 / ファイル名 %s 件 / branch %s 件 / commit %s 件 / PR %s 件\n' \
-    "$COMPARISON_CONTENT" "$COMPARISON_NAME" "$COMPARISON_BRANCH" "$COMPARISON_COMMIT" "$COMPARISON_PR"
-  fail '他の製品を引き合いに出す言い回しが含まれています（場所は出しません。手元で探してください）'
-elif [ -n "${COMPARISON_UNCHECKED-}" ]; then
-  # 見ていない経路があるなら、見た経路だけで「無い」と言わない。
-  printf '  見ていない経路:%s\n' "$COMPARISON_UNCHECKED"
-  fail '他の製品を引き合いに出す言い回しを、一部の経路で検査できませんでした'
+SURFACE_PR=$(printf '%s\n%s' "${PR_TITLE-}" "${PR_BODY-}")
+
+# 出すのは経路ごとの件数だけにする。一致した行を出すと、その行に並んでいた
+# 語がそのままログへ残る。ログは PR の画面から誰でも読めるため、
+# 伏せたい語を伏せた意味が無くなる。
+#
+#   $1 検査する正規表現（ERE）
+#   $2 通ったときに出す名前
+#   $3 落ちたときに出す理由
+check_all_surfaces() {
+  SURFACE_PATTERN=$1
+  SURFACE_LABEL=$2
+  SURFACE_REASON=$3
+
+  # 中身は git grep で探す。改行区切りの一覧を xargs へ渡すと、
+  # 名前に空白やタブを含むファイルが途中で切れ、そのファイルだけ検査されない。
+  # この脚本自身は、検査の対象語をそのまま持つため除く。
+  HIT_CONTENT=$(git grep -hiE "$SURFACE_PATTERN" -- . ':!scripts/check-policy.sh' 2>/dev/null \
+    | grep -c . || true)
+  # 名前の側も、NUL 区切りで受け取ってから 1 行ずつに直す。
+  HIT_NAME=$(git -c core.quotePath=false ls-files -z \
+    | tr '\0' '\n' | grep -v '^scripts/check-policy.sh$' | grep -ciE "$SURFACE_PATTERN" || true)
+  HIT_BRANCH=$(printf '%s\n' "$SURFACE_REF" | grep -ciE "$SURFACE_PATTERN" || true)
+  HIT_COMMIT=$(printf '%s\n' "$SURFACE_LOG" | grep -ciE "$SURFACE_PATTERN" || true)
+  HIT_PR=$(printf '%s\n' "$SURFACE_PR" | grep -ciE "$SURFACE_PATTERN" || true)
+  HIT_TOTAL=$((HIT_CONTENT + HIT_NAME + HIT_BRANCH + HIT_COMMIT + HIT_PR))
+
+  if [ "$HIT_TOTAL" -ne 0 ]; then
+    printf '  内容 %s 件 / ファイル名 %s 件 / branch %s 件 / commit %s 件 / PR %s 件\n' \
+      "$HIT_CONTENT" "$HIT_NAME" "$HIT_BRANCH" "$HIT_COMMIT" "$HIT_PR"
+    fail "$SURFACE_REASON（場所は出しません。手元で探してください）"
+  elif [ -n "${SURFACE_UNCHECKED-}" ]; then
+    # 見ていない経路があるなら、見た経路だけで「無い」と言わない。
+    printf '  見ていない経路:%s\n' "$SURFACE_UNCHECKED"
+    fail "$SURFACE_LABEL を、一部の経路で検査できませんでした"
+  else
+    pass "$SURFACE_LABEL はありません（内容・ファイル名・branch・commit・PR）"
+  fi
+}
+
+echo '生成ツール由来の定型文'
+# 中身だけを見ていた。branch 名・commit・PR の本文にも同じ定型文は入る。
+# 入口を 1 つだけ塞いでも、他の入口から同じものが入る。
+check_all_surfaces 'co-authored-by: *claude|generated with \[?claude' \
+  '生成ツール由来の定型文' '生成ツール由来の定型文が含まれています'
+
+echo '他の製品への言及'
+# 機能の要件は StaffWeave の設計として書く。他の製品を引き合いに出して説明すると、
+# その名前や画面の写しが入り込む入口になり、相手の版が変われば説明だけが古くなる。
+#
+# ここで見るのは「引き合いに出す言い回し」だけで、製品名の一覧は持たない。
+# 一覧にすると、書かせたくない名前をこの脚本へ書き込むことになる。
+# 言い回しを止めれば、名前を書く文そのものが成り立たなくなる。
+#
+# 「競合」は同時更新の意味で全体に出るため、単独では見ない。
+check_all_surfaces \
+  '比較元|比較対象製品|参考製品|参考にした製品|他社製品|他社の製品|他社のサービス|競合製品|競合サービス|競合他社|本家' \
+  '他の製品を引き合いに出す言い回し' '他の製品を引き合いに出す言い回しが含まれています'
+
+echo '指定した禁止語'
+# 禁止語そのものは、この脚本にもリポジトリにも置かない。置いた時点で、
+# 書かせたくない語をリポジトリが持つことになる。
+#
+# 語は呼ぶ側が渡す。CI では repository variable などから環境変数として渡す。
+#
+#   POLICY_FORBIDDEN_PATTERN  禁止語の正規表現（ERE）
+#
+# 渡されていなければ、上の 2 つ以外は見ていないことを示す。
+# 「渡されていないから通った」と読めないよう、通ったとは言わない。
+if [ -n "${POLICY_FORBIDDEN_PATTERN-}" ]; then
+  check_all_surfaces "$POLICY_FORBIDDEN_PATTERN" '指定した禁止語' '指定した禁止語が含まれています'
 else
-  pass '他の製品を引き合いに出す言い回しはありません（内容・ファイル名・branch・commit・PR）'
+  printf '  POLICY_FORBIDDEN_PATTERN が渡されていないため、指定した語は見ていません\n'
+  pass '検査する語が渡されていません（上の 2 つの規則は全経路で見ています）'
 fi
 
 # 取り込んだ画像と PDF は、中身を差分で読めない。何が写っているかを確かめないまま
