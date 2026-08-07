@@ -28,6 +28,7 @@ export * from './schemas/integration.js';
 export * from './schemas/labor-system.js';
 export * from './schemas/leave.js';
 export * from './schemas/monthly.js';
+export * from './schemas/notification.js';
 export * from './schemas/organization.js';
 export * from './schemas/schedule.js';
 export * from './schemas/session.js';

@@ -46,8 +46,11 @@ import type {
   LeaveTypeSettingsList,
   LeaveTypeSettingsRecord,
   LoginRequest,
+  MarkNotificationsReadRequest,
+  MarkNotificationsReadResponse,
   MonthlyClosingRecord,
   MonthlySummaryList,
+  NotificationList,
   Organization,
   OrganizationList,
   PeriodSummaryList,
@@ -225,6 +228,15 @@ export const api = {
     request<LaborSystemAssignmentRecord>(`/labor-system-assignments/${assignmentId}/end`, {
       method: 'POST',
       body: JSON.stringify({ effectiveTo }),
+    }),
+  listNotifications: (query: { unreadOnly?: boolean }) =>
+    request<NotificationList>(
+      `/notifications${query.unreadOnly === true ? '?unreadOnly=true' : ''}`,
+    ),
+  markNotificationsRead: (input: MarkNotificationsReadRequest) =>
+    request<MarkNotificationsReadResponse>('/notifications/read', {
+      method: 'POST',
+      body: JSON.stringify(input),
     }),
   listLeaveGrantRules: (query: { leaveTypeId?: string }) =>
     request<LeaveGrantRuleList>(

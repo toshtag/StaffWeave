@@ -580,3 +580,27 @@ main.wide {
   margin: 0;
   padding: 0;
 }
+
+/* 通知の一覧。未読は左の線で示す。色だけに意味を持たせない。 */
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.notification-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-left: 4px solid transparent;
+  background: color-mix(in srgb, CanvasText 4%, transparent);
+}
+
+.notification-list li.unread {
+  border-left-color: CanvasText;
+  font-weight: 600;
+}

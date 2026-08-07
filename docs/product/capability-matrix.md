@@ -113,7 +113,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 差し戻し・出し直し・取消 | implemented | `op:resubmitEmployeeRequest` `op:cancelEmployeeRequest` `test:packages/domain/src/approval/staged-request.test.ts` | 出し直すと 1 段目からやり直し、前の提出の決裁も台帳に残る |
 | 承認結果の休暇台帳への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/employee-request.test.ts` | 承認しきった休暇の申請だけを、同じトランザクションで消化する |
 | 承認結果の勤怠への反映 | implemented | `op:decideEmployeeRequest` `test:packages/api/test/integration/request-attendance-effect.test.ts` | 残業・休日出勤・打刻修正を、承認しきった時点だけ日次へ効かせる。締め済みの期間を含む申請は承認を断る |
-| 利用者への通知 | planned | - | Webhook は外部システム向けで、利用者通知の代わりにはならない |
+| 利用者への通知 | implemented | `op:listNotifications` `op:markNotificationsRead` `test:packages/api/test/integration/notifications.test.ts` `ui:packages/web/src/pages/NotificationPanel.tsx` | 申請・承認・差し戻し・取消・代理承認を、製品内で届ける。正本は DB に残す |
 
 ## 締めと監査
 

@@ -132,6 +132,12 @@ import {
   recalculateAttendanceResponseSchema,
 } from './schemas/monthly.js';
 import {
+  listNotificationsQuerySchema,
+  markNotificationsReadRequestSchema,
+  markNotificationsReadResponseSchema,
+  notificationListSchema,
+} from './schemas/notification.js';
+import {
   createDepartmentRequestSchema,
   createEmployeeRequestSchema,
   createOrganizationRequestSchema,
@@ -1758,6 +1764,38 @@ export const operations = {
       invalidRequest,
       unauthorized,
       forbidden,
+    ],
+  },
+  listNotifications: {
+    operationId: 'listNotifications',
+    method: 'get',
+    path: '/notifications',
+    summary: '自分あての通知を一覧する',
+    tags: ['auth'],
+    security: 'session',
+    query: listNotificationsQuerySchema,
+    responses: [
+      { status: 200, description: '通知と未読の件数', schema: notificationListSchema },
+      invalidRequest,
+      unauthorized,
+    ],
+  },
+  markNotificationsRead: {
+    operationId: 'markNotificationsRead',
+    method: 'post',
+    path: '/notifications/read',
+    summary: '自分あての通知を既読にする',
+    tags: ['auth'],
+    security: 'session',
+    requestBody: markNotificationsReadRequestSchema,
+    responses: [
+      {
+        status: 200,
+        description: '既読にした件数',
+        schema: markNotificationsReadResponseSchema,
+      },
+      invalidRequest,
+      unauthorized,
     ],
   },
   listRequestTypes: {
