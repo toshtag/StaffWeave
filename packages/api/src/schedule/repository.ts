@@ -7,6 +7,7 @@ export interface UpsertWorkScheduleInput {
   employeeId: string;
   businessDate: BusinessDate;
   workPatternId: string | null;
+  workCategoryId: string | null;
   dayType: DayType;
   startMinutes: number | null;
   endMinutes: number | null;
@@ -98,6 +99,7 @@ interface WorkScheduleRow {
   employee_id: string;
   business_date: string;
   work_pattern_id: string | null;
+  work_category_id: string | null;
   day_type: DayType;
   start_minutes: number | null;
   end_minutes: number | null;
@@ -122,6 +124,7 @@ function toWorkSchedule(row: WorkScheduleRow): WorkScheduleRecord {
     employeeId: row.employee_id,
     businessDate: row.business_date,
     workPatternId: row.work_pattern_id,
+    workCategoryId: row.work_category_id,
     dayType: row.day_type,
     startMinutes: row.start_minutes,
     endMinutes: row.end_minutes,
@@ -131,7 +134,7 @@ function toWorkSchedule(row: WorkScheduleRow): WorkScheduleRecord {
 }
 
 const PATTERN_COLUMNS = 'id, code, name, start_minutes, end_minutes, break_minutes, created_at';
-const SCHEDULE_COLUMNS = `employee_id, business_date, work_pattern_id, day_type,
+const SCHEDULE_COLUMNS = `employee_id, business_date, work_pattern_id, work_category_id, day_type,
   start_minutes, end_minutes, break_minutes, leave_type_id`;
 
 export function createScheduleRepository(db: Queryable): ScheduleRepository {
@@ -193,23 +196,25 @@ export function createScheduleRepository(db: Queryable): ScheduleRepository {
     async upsertWorkSchedule(workspaceId, input) {
       const rows = await db.query<WorkScheduleRow>(
         `INSERT INTO work_schedules
-           (workspace_id, employee_id, business_date, work_pattern_id, day_type,
+           (workspace_id, employee_id, business_date, work_pattern_id, work_category_id, day_type,
             start_minutes, end_minutes, break_minutes, leave_type_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (workspace_id, employee_id, business_date) DO UPDATE
-           SET work_pattern_id = EXCLUDED.work_pattern_id,
-               day_type        = EXCLUDED.day_type,
-               start_minutes   = EXCLUDED.start_minutes,
-               end_minutes     = EXCLUDED.end_minutes,
-               break_minutes   = EXCLUDED.break_minutes,
-               leave_type_id   = EXCLUDED.leave_type_id,
-               updated_at      = now()
+           SET work_pattern_id  = EXCLUDED.work_pattern_id,
+               work_category_id = EXCLUDED.work_category_id,
+               day_type         = EXCLUDED.day_type,
+               start_minutes    = EXCLUDED.start_minutes,
+               end_minutes      = EXCLUDED.end_minutes,
+               break_minutes    = EXCLUDED.break_minutes,
+               leave_type_id    = EXCLUDED.leave_type_id,
+               updated_at       = now()
          RETURNING ${SCHEDULE_COLUMNS}`,
         [
           workspaceId,
           input.employeeId,
           input.businessDate,
           input.workPatternId,
+          input.workCategoryId,
           input.dayType,
           input.startMinutes,
           input.endMinutes,

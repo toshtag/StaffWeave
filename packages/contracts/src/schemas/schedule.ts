@@ -52,6 +52,7 @@ export const workScheduleSchema = objectSchema({
     employeeId: uuidSchema,
     businessDate: businessDateSchema,
     workPatternId: { oneOf: [uuidSchema, { type: 'null' }] },
+    workCategoryId: { oneOf: [uuidSchema, { type: 'null' }] },
     dayType: { type: 'string', enum: [...DAY_TYPES] },
     startMinutes: { oneOf: [startMinutesSchema, { type: 'null' }] },
     endMinutes: { oneOf: [endMinutesSchema, { type: 'null' }] },
@@ -62,6 +63,7 @@ export const workScheduleSchema = objectSchema({
     'employeeId',
     'businessDate',
     'workPatternId',
+    'workCategoryId',
     'dayType',
     'startMinutes',
     'endMinutes',
@@ -81,6 +83,7 @@ export const upsertWorkScheduleRequestSchema = objectSchema({
     employeeId: uuidSchema,
     businessDate: businessDateSchema,
     workPatternId: uuidSchema,
+    workCategoryId: { oneOf: [uuidSchema, { type: 'null' }] },
     dayType: { type: 'string', enum: [...DAY_TYPES] },
     startMinutes: startMinutesSchema,
     endMinutes: endMinutesSchema,
@@ -116,8 +119,9 @@ export const workCycleDaySchema = objectSchema({
     position: { type: 'integer', minimum: 0 },
     dayType: { type: 'string', enum: ['working_day', 'non_working_day', 'public_holiday'] },
     workPatternId: { oneOf: [uuidSchema, { type: 'null' }] },
+    workCategoryId: { oneOf: [uuidSchema, { type: 'null' }] },
   },
-  required: ['position', 'dayType', 'workPatternId'],
+  required: ['position', 'dayType', 'workPatternId', 'workCategoryId'],
 });
 
 export const workCycleSchema = objectSchema({
@@ -149,6 +153,7 @@ export const createWorkCycleRequestSchema = objectSchema({
           position: { type: 'integer', minimum: 0 },
           dayType: { type: 'string', enum: ['working_day', 'non_working_day', 'public_holiday'] },
           workPatternId: uuidSchema,
+          workCategoryId: uuidSchema,
         },
         required: ['position', 'dayType'],
       }),
