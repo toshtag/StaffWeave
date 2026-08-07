@@ -14,7 +14,7 @@
  * 生の識別子は端末の外へ出さない。サーバーへ送るのは一方向の指紋のみ。
  */
 
-import type { CardReader } from './reader.js';
+import { CardReadAborted, type CardReader } from './reader.js';
 
 /**
  * カードから識別子（UID）を読む APDU。
@@ -110,12 +110,19 @@ export function createPcscCardReader(
   return {
     name: `pcsc:${transport.name}`,
 
-    async read(): Promise<string> {
+    async read(signal?: AbortSignal): Promise<string> {
       let attempt = 0;
+      // 関数にしておく。式のまま書くと、一度見た時点で「もう打ち切られていない」
+      // と型が決めてしまい、待っている間に立った合図を見なくなる。
+      const aborted = (): boolean => signal?.aborted === true;
 
       for (;;) {
+        // 打ち切りは、装置への問い合わせより先に見る。開き直しの待ちから
+        // 戻ってきたところで打ち切られていたら、もう装置へは行かない。
+        if (aborted()) throw new CardReadAborted();
+
         try {
-          await transport.waitForCard();
+          await transport.waitForCard(signal);
           const uid = parseUid(await transport.transmit(GET_UID_APDU));
           attempt = 0;
 
@@ -123,7 +130,7 @@ export function createPcscCardReader(
           // カードが離れるまで待ってから、次の読み取りへ戻る。
           if (uid === lastUid && now() - lastReadAt < debounceMs) {
             log({ event: 'card.debounced' });
-            await transport.waitForRemoval();
+            await transport.waitForRemoval(signal);
             continue;
           }
 
@@ -131,6 +138,11 @@ export function createPcscCardReader(
           lastReadAt = now();
           return uid;
         } catch (error) {
+          // 打ち切りは失敗ではない。開き直しの対象にすると、止めろと言われた
+          // 装置へ、間を空けながら問い合わせ続けることになる。
+          if (error instanceof CardReadAborted) throw error;
+          if (aborted()) throw new CardReadAborted();
+
           // 読み取りの失敗と装置の切断を分けない。どちらも開き直しで復帰する。
           // 分けると、装置ごとに違う失敗の型を並べることになる。
           const delay = delays[Math.min(attempt, delays.length - 1)] ?? 0;
@@ -145,6 +157,7 @@ export function createPcscCardReader(
             },
           });
           await sleep(delay);
+          if (aborted()) throw new CardReadAborted();
           await transport.reconnect();
         }
       }
