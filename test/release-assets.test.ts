@@ -48,6 +48,7 @@ async function agentZip(options: {
   innerVersion: string;
   buildVersion: string;
   buildSha: string;
+  reader?: string;
 }): Promise<void> {
   const work = await mkdtemp(join(tmpdir(), 'staffweave-agent-zip-'));
   try {
@@ -59,8 +60,19 @@ async function agentZip(options: {
     );
     await writeFile(
       join(bundle, 'agent/build-info.json'),
-      JSON.stringify({ version: options.buildVersion, sourceSha: options.buildSha }),
+      JSON.stringify({
+        version: options.buildVersion,
+        sourceSha: options.buildSha,
+        nodeMajor: '24',
+        reader: options.reader ?? '',
+      }),
     );
+    // 組み立て済みの部品が入っている形にする。名前だけでは、端末の前で
+    // 初めて読めないと分かる。
+    if (options.reader !== undefined && options.reader !== '') {
+      await mkdir(join(bundle, 'node_modules/pcsclite/build/Release'), { recursive: true });
+      await writeFile(join(bundle, 'node_modules/pcsclite/build/Release/pcsclite.node'), 'native');
+    }
     await run('zip', ['-rq', join(output, options.name), 'staffweave-agent'], { cwd: work });
   } finally {
     await rm(work, { recursive: true, force: true });
@@ -76,6 +88,8 @@ async function layout(
     innerVersion?: string;
     buildVersion?: string;
     buildSha?: string;
+    windows?: boolean;
+    windowsSbomSha?: string;
   } = {},
 ): Promise<void> {
   const agentName = options.agentName ?? `staffweave-agent-${version}.zip`;
@@ -91,16 +105,35 @@ async function layout(
     'staffweave-container.cdx.json': sbom(options.sourceSha ?? SOURCE_SHA),
   };
 
+  // Windows 向けの配布物は、求められたときだけ並べる。手元では組めないため、
+  // 既定では見ない。
+  let windowsName: string | null = null;
+  if (options.windows === true) {
+    windowsName = `staffweave-agent-windows-x64-${version}.zip`;
+    await agentZip({
+      name: windowsName,
+      innerVersion: version,
+      buildVersion: version,
+      buildSha: options.sourceSha ?? SOURCE_SHA,
+      reader: 'pcsclite@1.0.1',
+    });
+    files['staffweave-agent-windows.cdx.json'] = sbom(
+      options.windowsSbomSha ?? options.sourceSha ?? SOURCE_SHA,
+    );
+  }
+
   const lines: string[] = [];
   for (const [name, content] of Object.entries(files)) {
     await writeFile(join(output, name), content);
     lines.push(`${createHash('sha256').update(content).digest('hex')}  ${name}`);
   }
-  lines.push(
-    `${createHash('sha256')
-      .update(await readFile(join(output, agentName)))
-      .digest('hex')}  ${agentName}`,
-  );
+  for (const name of [agentName, ...(windowsName === null ? [] : [windowsName])]) {
+    lines.push(
+      `${createHash('sha256')
+        .update(await readFile(join(output, name)))
+        .digest('hex')}  ${name}`,
+    );
+  }
   await writeFile(join(output, 'SHA256SUMS.txt'), `${lines.join('\n')}\n`);
 
   if (options.corrupt === true) {
@@ -295,6 +328,48 @@ describe('release ワークフローの取り決め', () => {
       const content = await readFile(join(REPOSITORY_ROOT, path), 'utf8');
       expect(content).not.toContain('RELEASE_MANIFEST_SKIP_CONTAINER');
     }
+  });
+
+  /**
+   * Windows の配布物の構成一覧も、元の commit へ結び付いていること。
+   *
+   * 「ある」だけでは、いつのソースから出来た構成なのかを言えない。
+   * 受け取った側が自分で作り直して確かめることもできない。
+   */
+  it('Windows の構成一覧が指す commit が違えば落とす', async () => {
+    await layout({
+      windows: true,
+      windowsSbomSha: '3333333333333333333333333333333333333333',
+    });
+
+    const result = await verify({
+      RELEASE_EXPECTED_SOURCE_SHA: SOURCE_SHA,
+      RELEASE_REQUIRE_WINDOWS_AGENT: '1',
+    });
+
+    expect(result.code).not.toBe(0);
+    expect(result.message).toContain('staffweave-agent-windows.cdx.json が指す commit');
+  });
+
+  it('Windows の配布物が揃っていれば通る', async () => {
+    await layout({ windows: true });
+
+    const result = await verify({
+      RELEASE_EXPECTED_SOURCE_SHA: SOURCE_SHA,
+      RELEASE_REQUIRE_WINDOWS_AGENT: '1',
+    });
+
+    expect(result.message).not.toContain('NG');
+    expect(result.code).toBe(0);
+  });
+
+  it('Windows の配布物を求めているのに無ければ落とす', async () => {
+    await layout();
+
+    const result = await verify({ RELEASE_REQUIRE_WINDOWS_AGENT: '1' });
+
+    expect(result.code).not.toBe(0);
+    expect(result.message).toContain('staffweave-agent-windows-x64');
   });
 
   it('署名はしない', () => {

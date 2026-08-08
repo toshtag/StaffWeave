@@ -84,7 +84,15 @@ for (const entry of listed) {
 }
 
 console.log('端末の配布物');
-const agent = listed.find((entry) => entry.name.startsWith('staffweave-agent-'));
+// 前方一致だけで拾うと、同じ接頭辞を持つ構成一覧（staffweave-agent-windows.cdx.json）
+// まで「端末の配布物」として掴む。zip であることと、Windows 向けでないことを足す。
+// 版が違う名前も拾う。拾わないと「並んでいない」になり、名前の食い違いを言えない。
+const agent = listed.find(
+  (entry) =>
+    entry.name.startsWith('staffweave-agent-') &&
+    entry.name.endsWith('.zip') &&
+    !entry.name.includes('-windows-'),
+);
 check(agent !== undefined, '端末の配布物が並んでいます');
 if (agent !== undefined) {
   check(
@@ -156,10 +164,28 @@ if (REQUIRE_WINDOWS) {
     }
   }
 
+  const windowsSbom = 'staffweave-agent-windows.cdx.json';
   check(
-    listed.some((entry) => entry.name === 'staffweave-agent-windows.cdx.json'),
+    listed.some((entry) => entry.name === windowsSbom),
     'Windows の配布物の構成一覧が並んでいます',
   );
+
+  // 「ある」だけでは、いつのソースから出来た構成なのかを言えない。
+  // 受け取った側が自分で作り直して確かめることもできない。
+  if (EXPECTED_SOURCE_SHA !== undefined && EXPECTED_SOURCE_SHA !== '') {
+    try {
+      const document = JSON.parse(await readFile(join(OUTPUT_DIR, windowsSbom), 'utf8'));
+      const recorded = (document.metadata?.component?.properties ?? []).find(
+        (property) => property.name === 'staffweave:source-sha',
+      )?.value;
+      check(
+        recorded === EXPECTED_SOURCE_SHA,
+        `${windowsSbom} が指す commit が、いま見ている commit と一致しています`,
+      );
+    } catch (error) {
+      check(false, `${windowsSbom} を読めます（${error.message}）`);
+    }
+  }
 }
 
 console.log('構成一覧');
