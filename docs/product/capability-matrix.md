@@ -38,7 +38,7 @@ StaffWeave が扱う能力を 1 行ずつ並べ、それぞれがいまどの状
 | 署名付き端末イベントの受理 | implemented | `op:recordDeviceEvent` `test:packages/domain/src/device/protocol.test.ts` `test:packages/api/test/integration/device.test.ts` | 署名・連番・時計差を検証して受け取る。送る側はシミュレーター |
 | 実運用できる共有打刻端末 | partial | `test:packages/api/test/integration/card-station.test.ts` `test:packages/api/test/integration/agent-package.test.ts` `docs:operations/device-agent-service.md` | 読み取りと送信を 1 つの常駐（`station`）で持ち、回線断をまたいで冪等に送る。**実機での常駐は未確認** |
 | カードイベントの受理と指紋の登録 | implemented | `op:recordCardEvent` `op:registerCard` `test:packages/api/test/integration/card.test.ts` | 生の識別子は送らず保存もしない |
-| 実カードリーダーからの読み取り | partial | `test:packages/agent/src/card/pcsc.test.ts` `docs:operations/device-agent-service.md` | PC/SC の経路（APDU・状態語・連続タップ・開き直し）はある。装置を叩く部品は端末側で用意する。**実機の読み取り装置では未確認** |
+| 実カードリーダーからの読み取り | partial | `test:packages/agent/src/card/pcsc.test.ts` `docs:operations/device-agent-service.md` | PC/SC の経路（APDU・状態語・連続タップ・開き直し）はある。装置を叩く部品も Windows 向けの配布物へ同梱している。**実機の読み取り装置では未確認** |
 | PC セッション観測の受理と差異の提示 | implemented | `op:recordSessionObservations` `op:getDiscrepancyReport` `test:packages/domain/src/attendance/session-observations.test.ts` `test:packages/api/test/integration/session-observations.test.ts` | 勤務時間は自動確定しない |
 | OS からのセッション観測の自動取得 | planned | - | 送る側は常駐サービスが要る（P24） |
 | 拠点のタイムゾーンによる業務日判定 | implemented | `test:packages/domain/src/attendance/business-date.test.ts` `test:packages/api/test/integration/attendance.test.ts` | 現地の暦日と時刻で決める。夏時間の切り替わる日もずれない |

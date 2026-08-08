@@ -26,7 +26,7 @@
 | [deployment.md](operations/deployment.md) | Docker で立てる。公開する前にやること |
 | [backup.md](operations/backup.md) | バックアップと復元 |
 | [retention.md](operations/retention.md) | どのデータをいつまで持つか。消してはいけないもの |
-| [device-agent-service.md](operations/device-agent-service.md) | 打刻端末の常駐、Windows サービス、実機で確かめること |
+| [device-agent-service.md](operations/device-agent-service.md) | 打刻端末の常駐、Windows での起動時の常駐、実機で確かめること |
 
 ## リリース — `release/`
 
