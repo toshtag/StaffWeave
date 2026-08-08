@@ -317,9 +317,6 @@ Node.js は同梱しません。実行ファイルも作りません（署名と
 - StaffWeave のリポジトリ
 
 読み取り装置の部品は Windows 向けの配布物へ入っています。端末では取り寄せません。
-確かめていない項目は
-[docs/product/capability-matrix.md](../product/capability-matrix.md) でも
-`partial` として示しています。
 
 ### 物理の IC カード
 

@@ -26,9 +26,9 @@ sc.exe create StaffWeaveAgent binPath= "node.exe agent\cli.js station --store ..
 そのような wrapper は既存のもの（WinSW、NSSM など）を使うのが普通で、
 どれも実行ファイルです。
 
-私たちは「実行ファイルを配らない」と決めています（`docs/roadmap.md` の P24、
-`scripts/package-agent.sh`）。署名と配布の方式が決まっていない今、署名なしの実行ファイルを
-出せば、受け取った側はそれが本物かどうかを確かめられません。方式は P26 で決めます。
+私たちは「実行ファイルを配らない」と決めています（`scripts/package-agent.sh`）。
+署名と配布の方式が決まっていない今、署名なしの実行ファイルを出せば、
+受け取った側はそれが本物かどうかを確かめられません。
 
 ## 決定
 

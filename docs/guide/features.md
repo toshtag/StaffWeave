@@ -6,10 +6,7 @@
 止まらずに動くか、脆弱性が無いかは保証しません。
 
 リリース候補の条件は満たしていますが、実機・第三者・試行運用の確認が済んでいません。
-正式なリリースタグはありません（[release/checklist.md](../release/checklist.md)）。
-
-一部だけ動くものや、作らないと決めたものまで含めた一覧は
-[capability-matrix.md](../product/capability-matrix.md) にあります。
+正式なリリースタグはありません（[checklist.md](../release/checklist.md)）。
 
 ## 動くもの
 
@@ -136,4 +133,4 @@
 - 端末の自動更新。配布物を置き直して入れ替えます。
 - 公開デモ、Row-Level Security、メトリクスとアラート。
 
-どの順で作るかは [roadmap.md](../roadmap.md)、個々の課題の進み具合は GitHub の Issue を見てください。
+どの順で作るか、個々の課題がいまどこまで進んでいるかは、GitHub の Issue を見てください。
