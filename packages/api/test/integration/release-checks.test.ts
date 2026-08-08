@@ -61,20 +61,26 @@ afterEach(async () => {
   await new Promise<void>((done) => server.close(() => done()));
 });
 
-async function gate(env: Record<string, string>): Promise<{ code: number; message: string }> {
+async function gate(env: Record<string, string | undefined>): Promise<{
+  code: number;
+  message: string;
+}> {
+  const merged: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+    GITHUB_API_ORIGIN: origin,
+    GITHUB_REPOSITORY: 'example/staffweave',
+    GH_TOKEN: 'test-token',
+    RELEASE_SHA: VERIFIED_SHA,
+    RELEASE_REQUIRED_WORKFLOWS: 'ci.yml,runtime.yml',
+  };
+  // undefined を渡したものは、そもそも環境から外す。空文字を渡すのとは違う。
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+
   try {
-    const result = await run('node', [SCRIPT], {
-      cwd: REPOSITORY_ROOT,
-      env: {
-        ...process.env,
-        GITHUB_API_ORIGIN: origin,
-        GITHUB_REPOSITORY: 'example/staffweave',
-        GH_TOKEN: 'test-token',
-        RELEASE_SHA: VERIFIED_SHA,
-        RELEASE_REQUIRED_WORKFLOWS: 'ci.yml,runtime.yml',
-        ...env,
-      },
-    });
+    const result = await run('node', [SCRIPT], { cwd: REPOSITORY_ROOT, env: merged });
     return { code: 0, message: result.stdout };
   } catch (error) {
     const failure = error as { code?: number; stdout?: string; stderr?: string };
@@ -90,6 +96,49 @@ describe('配る前のゲート', () => {
     const { code } = await gate({});
 
     expect(code).toBe(0);
+  });
+
+  /**
+   * Windows のワークフローも、既定で必須であること。
+   *
+   * Windows の常駐は Linux の runner では確かめられない。配る側の workflow に
+   * ある Windows の job は配布物を組むだけで、登録・開始・停止・削除までは
+   * 行わない。既定に入れていないと、その SHA で Windows の検査が落ちていても
+   * 未実行でも、関門は通ってしまう。
+   */
+  it('既定では Windows のワークフローも求める', async () => {
+    successes.set('ci.yml', 1);
+    successes.set('runtime.yml', 1);
+    successes.set('sbom.yml', 1);
+    // windows-agent.yml は成功していない。
+
+    // 既定の一覧を使う（RELEASE_REQUIRED_WORKFLOWS を渡さない）。
+    const { code, message } = await gate({ RELEASE_REQUIRED_WORKFLOWS: undefined });
+
+    expect(code).not.toBe(0);
+    expect(message).toContain('windows-agent.yml');
+  });
+
+  it('4 つすべて成功していれば通る', async () => {
+    for (const name of ['ci.yml', 'runtime.yml', 'sbom.yml', 'windows-agent.yml']) {
+      successes.set(name, 1);
+    }
+
+    const { code } = await gate({ RELEASE_REQUIRED_WORKFLOWS: undefined });
+
+    expect(code).toBe(0);
+  });
+
+  it('必須の一覧が空なら、確かめずに通さない', async () => {
+    for (const name of ['ci.yml', 'runtime.yml', 'sbom.yml', 'windows-agent.yml']) {
+      successes.set(name, 1);
+    }
+
+    // 渡し方を間違えて空になることはある。何も確かめないまま通してはいけない。
+    const { code, message } = await gate({ RELEASE_REQUIRED_WORKFLOWS: '' });
+
+    expect(code).not.toBe(0);
+    expect(message).toContain('1 つも指定されていません');
   });
 
   it('1 つでも成功していなければ落とす', async () => {
