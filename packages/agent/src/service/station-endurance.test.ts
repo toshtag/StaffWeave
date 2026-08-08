@@ -5,14 +5,13 @@
  * 繰り返すうちに積み上がって出ます。ここで見るのは 2 つ。
  *
  *   止めろと言われたら、カードを待っている途中でも戻ってくること
- *   タップを繰り返しても、待ち受けが増え続けないこと
+ *   繰り返し読んでも、積む数と連番が崩れないこと
  *
- * 待ち受けが増え続けるのは、1 回ずつでは気付けません。増えても動き続け、
- * ある日「待ち受けが多すぎる」という警告が出て、そこで初めて分かります。
+ * 装置の側の待ち受けが溜まらないことは、受け渡しの検査
+ * （`card/pcsc-winscard.test.ts`）で見ています。
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createPcscCardReader, type PcscTransport } from '../card/pcsc.js';
-import { createPcscTransport } from '../card/pcsc-winscard.js';
 import { CardReadAborted, createScriptedCardReader } from '../card/reader.js';
 import { createAgentLogger } from './redact.js';
 import type { Spool, SpooledPunch } from './spool.js';
@@ -46,47 +45,6 @@ function repeatingReader(cardId: string): {
     read: async (signal) => {
       if (signal?.aborted === true) throw new CardReadAborted();
       return cardId;
-    },
-  };
-}
-
-/**
- * `pcsclite` が返す装置の代わり。待ち受けの数を数えられるようにしてある。
- *
- * 本物は OS ごとに組み立てが要るため、ここでは使えない。数えたいのは
- * 私たちが足し外しする側なので、装置そのものは要らない。
- */
-function fakePcscLiteReader(): {
-  listenerCount: () => number;
-  emit: (present: boolean) => void;
-} & Record<string, unknown> {
-  const listeners = new Set<(status: { state: number }) => void>();
-  return {
-    name: 'fake',
-    SCARD_SHARE_SHARED: 2,
-    SCARD_STATE_PRESENT: 0x20,
-    SCARD_PROTOCOL_T0: 1,
-    SCARD_PROTOCOL_T1: 2,
-    SCARD_LEAVE_CARD: 0,
-    connect: (_options: unknown, callback: (error: Error | null, protocol: number) => void) =>
-      callback(null, 2),
-    disconnect: (_disposition: number, callback: (error: Error | null) => void) => callback(null),
-    transmit: (
-      _input: Buffer,
-      _length: number,
-      _protocol: number,
-      callback: (error: Error | null, output: Buffer) => void,
-    ) => callback(null, Buffer.from([0x04, 0xa1, 0x90, 0x00])),
-    on: (event: string, listener: (status: { state: number }) => void) => {
-      if (event === 'status') listeners.add(listener);
-    },
-    off: (event: string, listener: (status: { state: number }) => void) => {
-      if (event === 'status') listeners.delete(listener);
-    },
-    close: () => listeners.clear(),
-    listenerCount: () => listeners.size,
-    emit: (present: boolean) => {
-      for (const listener of [...listeners]) listener({ state: present ? 0x20 : 0x00 });
     },
   };
 }
@@ -154,58 +112,6 @@ describe('長く動かし続ける', () => {
     });
 
     expect(spool.entries).toHaveLength(0);
-  });
-
-  /**
-   * タップと離脱を繰り返しても、待ち受けが増え続けないこと。
-   *
-   * 装置の側は、待つたびに `on('status', ...)` を足す作りになっている。
-   * 決まったところで外さないと、1 回のタップにつき 2 つずつ溜まる。
-   * 据え置きの端末は何か月も動くため、溜まったぶんだけ記憶を使う。
-   *
-   * 見るのは本物の受け渡し（`pcsc-winscard.ts`）。読み取りの側だけを見ても、
-   * 溜まる場所はそこではないので何も分からない。
-   */
-  it('多数のタップのあとでも、待ち受けが増えていない', async () => {
-    const taps = 500;
-    const reader = fakePcscLiteReader();
-    const transport = await createPcscTransport(async () => () => ({
-      on: (event: string, listener: (value: never) => void) => {
-        if (event === 'reader') (listener as (value: unknown) => void)(reader);
-      },
-      close: () => {},
-    }));
-
-    for (let index = 0; index < taps; index += 1) {
-      const placed = transport.waitForCard();
-      reader.emit(true);
-      await placed;
-
-      const removed = transport.waitForRemoval();
-      reader.emit(false);
-      await removed;
-    }
-
-    expect(reader.listenerCount()).toBe(0);
-  });
-
-  it('打ち切られた待ちも、待ち受けを残さない', async () => {
-    const reader = fakePcscLiteReader();
-    const transport = await createPcscTransport(async () => () => ({
-      on: (event: string, listener: (value: never) => void) => {
-        if (event === 'reader') (listener as (value: unknown) => void)(reader);
-      },
-      close: () => {},
-    }));
-
-    for (let index = 0; index < 100; index += 1) {
-      const stopper = new AbortController();
-      const waiting = transport.waitForCard(stopper.signal);
-      stopper.abort();
-      await expect(waiting).rejects.toBeInstanceOf(CardReadAborted);
-    }
-
-    expect(reader.listenerCount()).toBe(0);
   });
 
   it('繰り返し読んでも、送信待ちは読んだ回数だけ増える', async () => {
