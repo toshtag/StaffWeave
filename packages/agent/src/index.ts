@@ -1,5 +1,5 @@
 export type { BuildInfo } from './build-info.js';
-export { loadBuildInfo, UNPACKAGED } from './build-info.js';
+export { loadBuildInfo, nodeMismatchOf, UNPACKAGED } from './build-info.js';
 export type { CardReader } from './card/reader.js';
 export { cardFingerprint, createScriptedCardReader, isSameCard } from './card/reader.js';
 export {
