@@ -155,16 +155,14 @@ jobs:
         run: |
           $dir = "$PWD/secure-node"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          $acl = Get-Acl $dir
-          $acl.SetAccessRuleProtection($true, $false)
-          foreach ($rule in @($acl.Access)) { $acl.RemoveAccessRule($rule) | Out-Null }
-          foreach ($who in @('NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators')) {
-            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-              $who, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
-          }
-          $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-            'BUILTIN\\Users', 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
-          Set-Acl -Path $dir -AclObject $acl
+
+          # 権限を絞るのは、配布物を置く手順と同じやり方にする。ここで別に
+          # 書くと、片方だけ直したときに食い違う。
+          icacls $dir /inheritance:r | Out-Null
+          icacls $dir /grant 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
+          icacls $dir /grant 'BUILTIN\Administrators:(OI)(CI)F' | Out-Null
+          icacls $dir /grant 'BUILTIN\Users:(OI)(CI)RX' | Out-Null
+
           Copy-Item (Get-Command node).Source "$dir/node.exe" -Force
           "SECURE_NODE=$dir/node.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
@@ -220,10 +218,7 @@ jobs:
 
           function Grant-UsersModify {
             param([string] $Path)
-            $acl = Get-Acl $Path
-            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-              'BUILTIN\\Users', 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
-            Set-Acl -Path $Path -AclObject $acl
+            icacls $Path /grant 'BUILTIN\Users:(OI)(CI)M' | Out-Null
           }
 
           function Assert-Refused {
