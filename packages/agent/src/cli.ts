@@ -30,7 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { requireSecureBaseUrl } from '@staffweave/contracts';
 import type { AttendanceEventType } from '@staffweave/domain';
 import { isAttendanceEventType, isSessionObservationType } from '@staffweave/domain';
-import { loadBuildInfo } from './build-info.js';
+import { loadBuildInfo, nodeMismatchOf } from './build-info.js';
 import { createPcscCardReader } from './card/pcsc.js';
 import { BUNDLED_PCSC_MODULE, loadPcscTransport } from './card/pcsc-module.js';
 import { cardFingerprint } from './card/reader.js';
@@ -195,6 +195,7 @@ async function runCardRegister(): Promise<void> {
 
   let rawCardId: string;
   if (process.argv.includes('--reader')) {
+    await requireSupportedNode();
     const transport = await loadPcscTransport(option('pcsc') ?? BUNDLED_PCSC_MODULE);
     const reader = createPcscCardReader(transport);
     console.log(`カードを置いてください: ${reader.name}`);
@@ -439,12 +440,14 @@ async function runStation(): Promise<void> {
   const { running, sleep, dispose, stopping } = residency(logger);
   const spool = createFileSpool(spoolPath());
 
+  // 読み取りの部品を読む前に確かめる。読んでからでは、組み込みの側が先に落ちる。
+  await requireSupportedNode();
+
   const transport = await loadPcscTransport(option('pcsc') ?? BUNDLED_PCSC_MODULE);
   const reader = createPcscCardReader(transport, {
     log: (entry) => logger.info(`agent.${entry.event}`, entry.detail ?? {}),
   });
 
-  await warnOnNodeMismatch(logger);
   logger.info('agent.started', { store: storePath(), spool: spoolPath(), reader: reader.name });
 
   // 読み取りと送信を並べて動かす。読み取りが待っている間も送信は進む。
@@ -536,21 +539,18 @@ async function runVersion(): Promise<void> {
 }
 
 /**
- * 動かしている Node の版が、組み立てたときの版と合っているか。
+ * 動かしている Node の版が、組み立てたときの版と合っているか。合わなければ止める。
  *
- * 読み取り装置の部品は Node の版ごとの ABI に合わせて組み立てられている。
- * 別の版で動かすと、装置を開こうとした時点で落ちる。落ちてから理由を探すより、
- * 先に言ったほうがよい。止めはしない。合っていなくても、送信だけは続けられる。
+ * 読み取り装置の部品は Node の版ごとの取り決め（ABI）に合わせて組み立てられている。
+ * 別の版で読み込もうとすると、組み込みの側が落ちる。その言葉は
+ * 「見つからない」や「別の版のためにコンパイルされた」といった形で、
+ * 端末の前の人には何をすればよいか分からない。
+ *
+ * 記録へ出すだけにすると、そのあと必ず読み込みで落ちる。先に、こちらの言葉で止める。
  */
-async function warnOnNodeMismatch(logger: ReturnType<typeof createAgentLogger>): Promise<void> {
-  const build = await loadBuildInfo();
-  if (build.nodeMajor === '' || build.reader === '') return;
-  const running = process.versions.node.split('.')[0] ?? '';
-  if (running === build.nodeMajor) return;
-  logger.error('agent.node_version_mismatch', {
-    expected: build.nodeMajor,
-    running,
-  });
+async function requireSupportedNode(): Promise<void> {
+  const problem = nodeMismatchOf(await loadBuildInfo(), process.versions.node);
+  if (problem !== null) throw new Error(problem);
 }
 
 async function main(): Promise<void> {

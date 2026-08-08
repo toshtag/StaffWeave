@@ -38,6 +38,26 @@ export const UNPACKAGED: BuildInfo = {
   reader: '',
 };
 
+/**
+ * 動かしている Node が、組み立てたときの版と合っているか。
+ *
+ * 合わなければ理由を返す。合っていれば null。読み取りの部品を持たない配布物と、
+ * リポジトリから直接動かしているときは、確かめる相手が無いので null。
+ *
+ * 判断をここへ置くのは、呼ぶ側が複数あるため。命令の入口と、常駐の入口で
+ * 別々に書くと、片方だけ直したときに食い違う。
+ */
+export function nodeMismatchOf(build: BuildInfo, runningVersion: string): string | null {
+  if (build.nodeMajor === '' || build.reader === '') return null;
+  const running = runningVersion.split('.')[0] ?? '';
+  if (running === build.nodeMajor) return null;
+  return (
+    `この配布物は Node ${build.nodeMajor} 用です（いま動いているのは ${running}）。` +
+    `読み取り装置の部品は Node ${build.nodeMajor} に合わせて組み立てられており、` +
+    '別の版では読み込めません。対応する版の Node で動かしてください'
+  );
+}
+
 export async function loadBuildInfo(
   directory: string = dirname(fileURLToPath(import.meta.url)),
 ): Promise<BuildInfo> {
