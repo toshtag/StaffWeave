@@ -1,0 +1,59 @@
+name: 依存の勧告
+
+# 依存の既知脆弱性を見る。
+#
+# どの PR でも走らせない。レジストリへ問い合わせるため通信が要り、
+# 依存を触っていない PR では結果が変わらないまま待ち時間だけが増える。
+#
+# 勧告は依存を変えなくても新しく出る。見送りの期限も日付で切れる。
+# どちらも変更とは関係なく起きるため、週に一度も走らせる。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - packages/*/package.json
+      - pnpm-lock.yaml
+      - scripts/audit-exceptions.txt
+      - scripts/check-audit.sh
+      - .github/workflows/audit.yml
+  pull_request:
+    paths:
+      - package.json
+      - packages/*/package.json
+      - pnpm-lock.yaml
+      - scripts/audit-exceptions.txt
+      - scripts/check-audit.sh
+      - .github/workflows/audit.yml
+  schedule:
+    # 月曜の 6:00 JST。週の初めに、その週の勧告を持って始められるようにする。
+    - cron: '0 21 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: 依存の脆弱性
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 依存の脆弱性
+        run: pnpm check:audit

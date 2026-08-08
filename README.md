@@ -42,6 +42,7 @@ Docker だけで動かす場合や、初期パスワードを自分で決める�
 ## ドキュメント
 
 [docs/](docs/README.md) にあります。版ごとの変更は [CHANGELOG.md](CHANGELOG.md)。
+開発に参加する場合は [CONTRIBUTING.md](CONTRIBUTING.md) から読んでください。
 
 ## 免責
 

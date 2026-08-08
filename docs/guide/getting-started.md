@@ -77,4 +77,4 @@ pnpm seed:demo --reset    # 作り直す
 | --- | --- |
 | 打刻端末と IC カードを試す | [device-agent.md](device-agent.md) |
 | API キー・CSV・Webhook を使う | [integrations.md](integrations.md) |
-| 変更を検証する | [testing.md](../development/testing.md) |
+| 開発に参加する | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
