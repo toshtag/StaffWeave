@@ -519,7 +519,12 @@ jobs:
       - name: 違う版の Node では、先に止まることを確かめる
         shell: pwsh
         run: |
-          $root = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          # 登録の段も通るので、絞った場所へ置いてから試す。絞っていない場所だと
+          # 権限のほうで断られ、この段が見たいものを見なくなる。
+          $source = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          $root = "$PWD/reader-root"
+          & "$source/install-agent.ps1" -Source $source -Destination $root
+
           $expected = (Get-Content "$root/agent/build-info.json" -Raw | ConvertFrom-Json).nodeMajor
           Write-Host "配布物が対応する Node: $expected"
 
