@@ -458,6 +458,9 @@ async function runStation(): Promise<void> {
         fingerprint: (rawCardId) => cardFingerprint(key, rawCardId),
         allocateSequence,
         running,
+        // 止めろと言われたら、カード待ちの途中でも戻ってくる。渡さないと、
+        // 送信側が止まってもプロセス全体が終わらない。
+        signal: stopping,
         now: () => new Date(),
       }),
       runAgent({ spool, logger, running, sleep, send: sender() }),
