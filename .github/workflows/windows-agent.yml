@@ -195,7 +195,8 @@ jobs:
             "workspaceSlug": "default",
             "privateKeyPem": "",
             "publicKeyPem": "",
-            "nextSequence": 1
+            "nextSequence": 1,
+            "cardFingerprintKey": "0123456789abcdef"
           }
           "@ | Out-File -Encoding ascii $store
 
@@ -323,8 +324,9 @@ jobs:
           $otherNode = "$dir/node.exe"
           Write-Host "用意した Node: $(& $otherNode -v)"
 
-          $store = "$PWD/mismatch-store.json"
-          Copy-Item "$PWD/station-store.json" $store
+          # 権限を絞った正規の置き場を使う。別の場所へ置くと、Node の版ではなく
+          # 置き場の権限で断られ、この段が見たいものを見なくなる。
+          $store = $env:AGENT_STORE
 
           $output = & $otherNode "$root/agent/cli.js" station --store $store 2>&1 | Out-String
           Write-Host $output
@@ -340,13 +342,21 @@ jobs:
               -TaskName 'StaffWeaveMismatch' -Store $store -NoReader
           } catch {
             $failed = $true
-            Write-Host "登録は断られました: $($_.Exception.Message)"
+            $reason = $_.Exception.Message
+            Write-Host "登録は断られました: $reason"
+            if ($reason -notmatch 'Node') {
+              throw "断った理由が Node の版ではありません: $reason"
+            }
           }
           if (-not $failed) {
             Unregister-ScheduledTask -TaskName 'StaffWeaveMismatch' -Confirm:$false `
               -ErrorAction SilentlyContinue
             throw '対応していない版で登録できてしまいました'
           }
+
+          # 途中で呼んだ命令が残す終了コードを、この段の結果にしない。
+          # 断られることを確かめる段なので、非 0 は想定どおり。
+          exit 0
 
       - name: 常駐を外す
         shell: pwsh
