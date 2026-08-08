@@ -39,4 +39,4 @@ pnpm release:manifest > /dev/null
 echo ''
 echo 'リリース候補の条件を満たしています。'
 echo '正式リリースには、実機・第三者・試行運用の確認が別に要ります。'
-echo 'docs/release/checklist.md の 4 章を読んでください。'
+echo 'docs/release/checklist.md の 2 章を読んでください。'
