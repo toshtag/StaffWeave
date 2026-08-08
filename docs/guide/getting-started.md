@@ -3,7 +3,7 @@
 手元の環境で API と画面を動かすまでの手順です。
 最短の 6 コマンドは [README](../../README.md) にあります。ここでは各段階の補足を書きます。
 
-Docker だけで動かす場合は [deployment.md](../operations/deployment.md) を参照してください。
+Docker だけで動かす場合は [Docker で立てる](../operations/deployment.md)を参照してください。
 
 ## 必要なもの
 
@@ -49,7 +49,7 @@ pnpm bootstrap --email admin@example.com --password-file /run/secrets/admin
 `--password` でも渡せますが、値がシェル履歴とプロセス一覧へ残るため将来やめます。
 
 初期化時に表示されたパスワードは、画面の「パスワードの変更」から変えてください
-（[security/authentication.md](../security/authentication.md)）。
+（[認証とセッション](../security/authentication.md)）。
 
 ## 稼働確認
 
@@ -75,6 +75,6 @@ pnpm seed:demo --reset    # 作り直す
 
 | 目的 | 文書 |
 | --- | --- |
-| 打刻端末と IC カードを試す | [device-agent.md](device-agent.md) |
-| API キー・CSV・Webhook を使う | [integrations.md](integrations.md) |
-| 開発に参加する | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
+| 打刻端末と IC カードを試す | [打刻端末と IC カード](device-agent.md) |
+| API キー・CSV・Webhook を使う | [外部とつなぐ](integrations.md) |
+| 開発に参加する | [はじめての変更](../../CONTRIBUTING.md) |

@@ -4,7 +4,7 @@ Issue も Pull Request も歓迎します。大きな変更は、先に Issue �
 
 ## 手元で動かす
 
-手順は [getting-started.md](docs/guide/getting-started.md) にあります。
+手順は[手元で動かす](docs/guide/getting-started.md)にあります。
 
 ## 変更したら
 
@@ -21,21 +21,15 @@ pnpm check      # lint、型検査、単体テスト。DB は要りません
 | 画面 | `pnpm test:e2e` |
 
 残りは PR の CI が確かめます。手元ですべてを再現できなくても構いません。
-テストの書き方と、CI がどう分かれているかは
-[testing.md](docs/development/testing.md) にあります。
+テストの書き方は[検証](docs/development/testing.md)にあります。
 
-## 変更するときに気を付けること
+## 設計上の決まり
 
-- パッケージの依存の向きは [architecture.md](docs/development/architecture.md) が決めています。
-  逆向きの依存は CI が落とします。
-- 打刻などの観測イベントは書き換えません。訂正は追記で表します。
-- Repository は `workspaceId` を必ず受け取り、SQL の `WHERE` 句に含めます。
-- 適用済みのマイグレーションは書き換えず、新しい番号で足します。
-- 日本語と英語の名前の対応は [glossary.md](docs/development/glossary.md) にあります。
-- 不正打刻を完全に防ぐ、法令に適合する、といった保証を文書や画面へ書きません。
-- まだ無い機能を、あるものとして書きません。画面に「まだ実装されていません」と
-  置くのもやめてください。動くようになったとき、その文言だけが古いまま残ります。
-- 範囲外の問題まで直そうとしなくて構いません。重大でなければ Issue へ回してください。
+パッケージの依存の向き、ワークスペース境界、観測イベントを書き換えないことなどは
+[アーキテクチャ](docs/development/architecture.md)にまとまっています。
+依存の向きに反する変更は CI が落とします。
+
+名前を付けるときは[用語](docs/development/glossary.md)を引いてください。
 
 ## Pull Request
 

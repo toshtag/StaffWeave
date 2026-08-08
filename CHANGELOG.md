@@ -37,4 +37,4 @@
 
 ### まだ無いもの
 
-[docs/guide/features.md](docs/guide/features.md) の「まだ無いもの」にあります。
+[できること](docs/guide/features.md)の「まだ無いもの」にあります。

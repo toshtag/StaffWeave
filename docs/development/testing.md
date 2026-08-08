@@ -17,7 +17,7 @@
 `pnpm verify` は上をまとめて流し、既存 DB への移行と、書き出して戻したものの
 突き合わせまで含めます。広い範囲を触ったときと、配る前に使います。
 配れる状態かの判定は `pnpm verify:release-candidate` で、
-コンテナのビルドと構成一覧まで含みます（[release/checklist.md](../release/checklist.md)）。
+コンテナのビルドと構成一覧まで含みます（[リリースの判定](../release/checklist.md)）。
 
 ## CI の分かれ方
 
