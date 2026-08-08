@@ -166,6 +166,62 @@ for package in contracts domain; do
 JSON
 done
 
+# 配布物を、権限を絞った場所へ置く手順。Windows の導入はここから始める。
+cat > "$BUNDLE/install-agent.ps1" <<'PS1'
+# StaffWeave の Agent を、権限を絞った場所へ置く。
+#
+# Windows の導入はここから始める。この作業は SYSTEM の権限で動くため、
+# 起動する相手を標準の利用者が書き換えられる場所へ置いてはいけない。
+# 置けてしまうと、次に上がったときそのコードが SYSTEM で動く。
+#
+# 管理者として実行すること。展開した配布物の中から動かす。
+param(
+  [string] $Source = $PSScriptRoot,
+  [string] $Destination = 'C:\ProgramData\StaffWeave\agent'
+)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path (Join-Path $Source 'agent/cli.js'))) {
+  throw "配布物が見つかりません: $Source"
+}
+
+New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+
+# 先に権限を絞る。中身を置いてから絞ると、その間だけ書き換えられる。
+$acl = Get-Acl $Destination
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($rule in @($acl.Access)) { $acl.RemoveAccessRule($rule) | Out-Null }
+foreach ($who in @('NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')) {
+  $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $who, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+}
+# 標準の利用者には読み取りだけ。動かすのは SYSTEM なので、書き換えは要らない。
+$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+  'BUILTIN\Users', 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+Set-Acl -Path $Destination -AclObject $acl
+
+Copy-Item -Path (Join-Path $Source '*') -Destination $Destination -Recurse -Force
+
+# 絞れたことを、その場で確かめる。絞ったつもりのまま進むと、登録の段で
+# 断られてから理由を探すことになる。
+$after = (Get-Acl $Destination).Access | Where-Object {
+  $_.AccessControlType -eq 'Allow' -and
+  $_.IdentityReference -match 'Everyone|BUILTIN\\Users|Authenticated Users' -and
+  ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::WriteData) -ne 0
+}
+if ($after) {
+  throw "権限を絞れませんでした: $Destination"
+}
+
+Write-Host "置きました: $Destination"
+Write-Host '書き換えられるのは SYSTEM と Administrators だけです。'
+Write-Host ''
+Write-Host '次に、資格情報の置き場を用意します:'
+Write-Host "  cd `"$Destination`""
+Write-Host '  .\install-store.ps1'
+PS1
+
 # 資格情報の置き場を用意する手順。Windows の導入はここから始める。
 cat > "$BUNDLE/install-store.ps1" <<'PS1'
 # StaffWeave の資格情報を置く場所を用意する。
@@ -247,15 +303,63 @@ if (-not (Test-Path $Store)) {
   exit 1
 }
 
-# 置き場の権限も見る。誰でも読める場所に置いてあると、端末の秘密鍵が読まれる。
-$storeDirectory = Split-Path -Parent $Store
-$open = (Get-Acl $storeDirectory).Access | Where-Object {
-  $_.IdentityReference -match 'Everyone|BUILTIN\\Users|Authenticated Users' -and
-  $_.AccessControlType -eq 'Allow'
+# 権限を確かめる。
+#
+# この作業は SYSTEM の権限で動く。起動する相手を標準の利用者が書き換えられるなら、
+# 次に上がったときそのコードが SYSTEM で動く。資格情報だけ安全で、実行するコードが
+# 書き換えられる状態は許さない。
+#
+# 確かめられないときも断る。「見られなかった」を「大丈夫だった」にしない。
+function Assert-NotWritableByUsers {
+  param([Parameter(Mandatory = $true)][string] $Path, [string] $What = $Path)
+
+  # 経路をたどって実体にする。近道や別名を挟むと、見た相手と動かす相手がずれる。
+  $resolved = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).ProviderPath
+  $item = Get-Item -LiteralPath $resolved -Force -ErrorAction Stop
+  if ($item.LinkType) {
+    throw "$What は別名です（$($item.LinkType)）。実体を指してください: $resolved"
+  }
+
+  try {
+    $acl = Get-Acl -LiteralPath $resolved -ErrorAction Stop
+  } catch {
+    throw "$What の権限を確かめられませんでした: $resolved"
+  }
+
+  # 書き換えにつながる 1 つずつの権限だけを並べる。
+  #
+  # Modify や FullControl のような、まとまった名前を混ぜてはいけない。
+  # それらは読み取りの権限も含むため、重なりを見る形だと読み取りだけの相手まで
+  # 「書き換えられる」と判定する。実際にそうなり、絞った場所を断っていた。
+  $writable = [System.Security.AccessControl.FileSystemRights]::WriteData -bor
+    [System.Security.AccessControl.FileSystemRights]::AppendData -bor
+    [System.Security.AccessControl.FileSystemRights]::WriteAttributes -bor
+    [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
+    [System.Security.AccessControl.FileSystemRights]::Delete -bor
+    [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+    [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+    [System.Security.AccessControl.FileSystemRights]::TakeOwnership
+
+  $open = $acl.Access | Where-Object {
+    $_.AccessControlType -eq 'Allow' -and
+    ($_.FileSystemRights -band $writable) -ne 0 -and
+    $_.IdentityReference -match 'Everyone|BUILTIN\\Users|Authenticated Users|INTERACTIVE'
+  }
+  if ($open) {
+    $who = ($open | ForEach-Object { $_.IdentityReference } | Sort-Object -Unique) -join ', '
+    throw "$What を標準の利用者が書き換えられます（$who）: $resolved`n" +
+      'SYSTEM で動かすものは、SYSTEM と Administrators だけが書き換えられる場所へ置いてください。'
+  }
 }
-if ($open) {
-  throw "資格情報の置き場が広く開いています: $storeDirectory（install-store.ps1 で絞ってください）"
-}
+
+# 資格情報の置き場。端末の秘密鍵が入る。
+Assert-NotWritableByUsers -Path (Split-Path -Parent $Store) -What '資格情報の置き場'
+
+# 起動する相手。ここを書き換えられると、SYSTEM で好きなコードが動く。
+Assert-NotWritableByUsers -Path $AgentRoot -What '配布物の置き場'
+Assert-NotWritableByUsers -Path $cli -What '起動する JS'
+Assert-NotWritableByUsers -Path $NodePath -What 'Node の実行ファイル'
+Assert-NotWritableByUsers -Path (Split-Path -Parent $NodePath) -What 'Node の置き場'
 
 # 渡された Node の版が、この配布物に合っているかを先に確かめる。
 # 合わない版で登録すると、端末の再起動まで気付かず、上がっては落ちを繰り返す。

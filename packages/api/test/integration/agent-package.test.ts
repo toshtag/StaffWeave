@@ -244,6 +244,7 @@ describe('打刻端末の配布物', () => {
     const files = await filesUnder(bundle);
     expect(files).not.toContain('install-reader.ps1');
     expect(files.filter((file) => file.endsWith('.ps1'))).toEqual([
+      'install-agent.ps1',
       'install-startup.ps1',
       'install-store.ps1',
       'uninstall-startup.ps1',
@@ -317,6 +318,38 @@ describe('打刻端末の配布物', () => {
     expect(script).toContain('enroll');
     // 置き場が広く開いていれば断る。端末の秘密鍵が入る。
     expect(script).toContain('Get-Acl');
+  });
+
+  /**
+   * SYSTEM で動かす相手を、標準の利用者が書き換えられないこと。
+   *
+   * この作業は SYSTEM の権限で動く。起動する相手を書き換えられるなら、次に
+   * 上がったときそのコードが SYSTEM で動く。資格情報だけ安全で、実行する
+   * コードが書き換えられる状態は許さない。
+   */
+  it('起動する相手の権限も、登録の前に確かめる', async () => {
+    const script = await readFile(join(bundle, 'install-startup.ps1'), 'utf8');
+
+    // 資格情報だけでなく、配布物・起動する JS・Node も見る。
+    for (const what of ['配布物の置き場', '起動する JS', 'Node の実行ファイル']) {
+      expect(script).toContain(what);
+    }
+    // 別名を挟むと、見た相手と動かす相手がずれる。
+    expect(script).toContain('LinkType');
+    // 確かめられないときも断る。
+    expect(script).toContain('権限を確かめられませんでした');
+  });
+
+  it('配布物を絞った場所へ置く手順を同梱する', async () => {
+    const files = await filesUnder(bundle);
+    expect(files).toContain('install-agent.ps1');
+
+    const script = await readFile(join(bundle, 'install-agent.ps1'), 'utf8');
+    expect(script).toContain('SetAccessRuleProtection');
+    // 標準の利用者には読み取りだけ。動かすのは SYSTEM なので書き換えは要らない。
+    expect(script).toContain('ReadAndExecute');
+    // 中身を置いてから絞ると、その間だけ書き換えられる。
+    expect(script.indexOf('Set-Acl')).toBeLessThan(script.indexOf('Copy-Item'));
   });
 
   it('実行ファイルは作らない', async () => {

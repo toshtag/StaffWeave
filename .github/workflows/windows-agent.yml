@@ -144,13 +144,39 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # 絞った Node を用意する。
+      #
+      # runner の Node は書き換えられる場所（tool cache）に居る。実機では
+      # Program Files に入るが、ここでは絞った場所へ写して使う。絞っていない
+      # Node のままだと、以降の段が「Node が書き換えられる」で断られ、
+      # それぞれの段が見たいものを見なくなる。
+      - name: 絞った場所へ Node を写す
+        shell: pwsh
+        run: |
+          $dir = "$PWD/secure-node"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+          # 権限を絞るのは、配布物を置く手順と同じやり方にする。ここで別に
+          # 書くと、片方だけ直したときに食い違う。
+          icacls $dir /inheritance:r | Out-Null
+          icacls $dir /grant 'NT AUTHORITY\SYSTEM:(OI)(CI)F' | Out-Null
+          icacls $dir /grant 'BUILTIN\Administrators:(OI)(CI)F' | Out-Null
+          icacls $dir /grant 'BUILTIN\Users:(OI)(CI)RX' | Out-Null
+
+          Copy-Item (Get-Command node).Source "$dir/node.exe" -Force
+          "SECURE_NODE=$dir/node.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
       # 資格情報が無いまま登録できないこと。無いまま登録すると、登録は成功し、
       # 端末の起動後に読めずに落ちる。落ちてから理由を探すことになる。
       - name: 資格情報が無ければ登録しないことを確かめる
         shell: pwsh
         run: |
-          $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
-          $node = (Get-Command node).Source
+          # 絞った場所へ置いてから試す。絞っていない場所だと、資格情報ではなく
+          # 権限のほうで断られ、この段が見たいものを見なくなる。
+          $source = Join-Path $PWD 'artifacts/agent/staffweave-agent'
+          $root = "$PWD/probe-root"
+          & "$source/install-agent.ps1" -Source $source -Destination $root
+          $node = $env:SECURE_NODE
           $missing = "$PWD/not-enrolled/agent.json"
 
           $failed = $false
@@ -169,14 +195,97 @@ jobs:
           $task = Get-ScheduledTask -TaskName 'StaffWeaveMissingStore' -ErrorAction SilentlyContinue
           if ($task) { throw '登録が残っています' }
 
-      # 導入の順どおりに通す。置き場を用意 → 登録（資格情報を置く）→ 常駐の登録。
-      - name: 置き場を用意して、常駐として登録する
+      # SYSTEM で動かす相手を、標準の利用者が書き換えられてはいけない。
+      # 書き換えられるなら、次に上がったときそのコードが SYSTEM で動く。
+      - name: 書き換えられる場所からは登録しないことを確かめる
         shell: pwsh
         run: |
-          $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
-          $node = (Get-Command node).Source
+          $node = $env:SECURE_NODE
+          $store = "$PWD/acl-store/StaffWeave/agent.json"
+
+          # 資格情報の置き場だけは正しく用意しておく。断る理由を 1 つに絞る。
+          & "$PWD/artifacts/agent/staffweave-agent/install-store.ps1" -Store $store
+          @"
+          {
+            "baseUrl": "https://staffweave.invalid",
+            "deviceId": "00000000-0000-4000-8000-000000000000",
+            "workspaceSlug": "default",
+            "privateKeyPem": "",
+            "publicKeyPem": "",
+            "nextSequence": 1
+          }
+          "@ | Out-File -Encoding ascii $store
+
+          function Grant-UsersModify {
+            param([string] $Path)
+            icacls $Path /grant 'BUILTIN\Users:(OI)(CI)M' | Out-Null
+          }
+
+          function Assert-Refused {
+            param([string] $What, [string] $AgentRoot, [string] $NodePath)
+            $failed = $false
+            try {
+              & "$AgentRoot/install-startup.ps1" -NodePath $NodePath -AgentRoot $AgentRoot `
+                -TaskName 'StaffWeaveAclProbe' -Store $store -NoReader
+              if ($LASTEXITCODE -ne 0) { $failed = $true }
+            } catch {
+              $failed = $true
+              Write-Host "$What は断られました: $($_.Exception.Message)"
+            }
+            if (-not $failed) {
+              Unregister-ScheduledTask -TaskName 'StaffWeaveAclProbe' -Confirm:$false `
+                -ErrorAction SilentlyContinue
+              throw "$What なのに登録できてしまいました"
+            }
+            $task = Get-ScheduledTask -TaskName 'StaffWeaveAclProbe' -ErrorAction SilentlyContinue
+            if ($task) { throw "$What で登録が残っています" }
+          }
+
+          # 1. 配布物の置き場が書き換えられる
+          $openRoot = "$PWD/open-agent"
+          Copy-Item "$PWD/artifacts/agent/staffweave-agent" $openRoot -Recurse -Force
+          Grant-UsersModify -Path $openRoot
+          Assert-Refused -What '配布物の置き場が書き換えられる' -AgentRoot $openRoot -NodePath $node
+
+          # 2. Node が書き換えられる
+          $secureRoot = "$PWD/secure-agent"
+          & "$PWD/artifacts/agent/staffweave-agent/install-agent.ps1" `
+            -Source "$PWD/artifacts/agent/staffweave-agent" -Destination $secureRoot
+
+          $openNodeDir = "$PWD/open-node"
+          New-Item -ItemType Directory -Force -Path $openNodeDir | Out-Null
+          Copy-Item $node "$openNodeDir/node.exe" -Force
+          Grant-UsersModify -Path $openNodeDir
+          Assert-Refused -What 'Node が書き換えられる' -AgentRoot $secureRoot `
+            -NodePath "$openNodeDir/node.exe"
+
+          # 3. どちらも絞ってあれば登録できる
+          & "$secureRoot/install-startup.ps1" -NodePath $node -AgentRoot $secureRoot `
+            -TaskName 'StaffWeaveAclOk' -Store $store -NoReader
+          # 区切りの書き方は場所によって混ざる。名前で見る。
+          $action = (Get-ScheduledTask -TaskName 'StaffWeaveAclOk').Actions[0]
+          if ($action.Arguments -notlike '*secure-agent*') {
+            throw "登録した作業が、絞った場所を指していません: $($action.Arguments)"
+          }
+          if ($action.Arguments -like '*open-agent*') {
+            throw "登録した作業が、書き換えられる場所を指しています: $($action.Arguments)"
+          }
+          Unregister-ScheduledTask -TaskName 'StaffWeaveAclOk' -Confirm:$false
+          Write-Host '絞った場所からは登録できました'
+
+          exit 0
+
+      # 導入の順どおりに通す。
+      # 配布物を絞った場所へ置く → 資格情報の置き場を用意 → 資格情報を置く → 常駐の登録。
+      - name: 絞った場所へ置いて、常駐として登録する
+        shell: pwsh
+        run: |
+          $source = Join-Path $PWD 'artifacts/agent/staffweave-agent'
+          $root = "$PWD/agent-root"
+          $node = $env:SECURE_NODE
           $store = "$PWD/store/StaffWeave/agent.json"
 
+          & "$source/install-agent.ps1" -Source $source -Destination $root
           & "$root/install-store.ps1" -Store $store
 
           # 権限が絞れていること。誰でも読める場所に端末の秘密鍵は置けない。
@@ -230,7 +339,7 @@ jobs:
       - name: 行儀よく止まることを確かめる
         shell: pwsh
         run: |
-          $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
+          $root = "$PWD/agent-root"
           $node = (Get-Command node).Source
           & $node "$root/agent/cli.js" stop --store $env:AGENT_STORE
 
@@ -410,7 +519,12 @@ jobs:
       - name: 違う版の Node では、先に止まることを確かめる
         shell: pwsh
         run: |
-          $root = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          # 登録の段も通るので、絞った場所へ置いてから試す。絞っていない場所だと
+          # 権限のほうで断られ、この段が見たいものを見なくなる。
+          $source = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          $root = "$PWD/reader-root"
+          & "$source/install-agent.ps1" -Source $source -Destination $root
+
           $expected = (Get-Content "$root/agent/build-info.json" -Raw | ConvertFrom-Json).nodeMajor
           Write-Host "配布物が対応する Node: $expected"
 
@@ -460,7 +574,7 @@ jobs:
       - name: 常駐を外す
         shell: pwsh
         run: |
-          $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
+          $root = "$PWD/agent-root"
           $node = (Get-Command node).Source
           & "$root/uninstall-startup.ps1" -NodePath $node -AgentRoot $root `
             -Store $env:AGENT_STORE

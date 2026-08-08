@@ -123,29 +123,45 @@ node agent\cli.js diagnose
 C:\ProgramData\StaffWeave\agent.json
 ```
 
+常駐は SYSTEM の権限で動きます。**起動する相手を標準の利用者が書き換えられる場所へ
+置いてはいけません。** 置けてしまうと、次に上がったときそのコードが SYSTEM で動きます。
+
 ```powershell
-# 1. 置き場を用意する（SYSTEM と Administrators だけへ権限を絞る）
+# 1. 配布物を、権限を絞った場所へ置く
+.\install-agent.ps1   # 既定は C:\ProgramData\StaffWeave\agent
+
+# 以降は、置いた先で行う
+cd C:\ProgramData\StaffWeave\agent
+
+# 2. 資格情報の置き場を用意する（SYSTEM と Administrators だけへ権限を絞る）
 .\install-store.ps1
 
-# 2. この端末を登録する。置き場を明示する。
+# 3. この端末を登録する。置き場を明示する。
 node agent\cli.js enroll --url https://staffweave.example --token-stdin `
   --store "C:\ProgramData\StaffWeave\agent.json"
 
-# 3. カードを登録する（読み取り装置を使う端末だけ）
+# 4. カードを登録する（読み取り装置を使う端末だけ）
 node agent\cli.js card-register --token-file <path> --reader `
   --store "C:\ProgramData\StaffWeave\agent.json"
 
-# 4. 状態を見る
+# 5. 状態を見る
 node agent\cli.js diagnose --store "C:\ProgramData\StaffWeave\agent.json"
 
-# 5. 起動時の常駐として登録する
+# 6. 起動時の常駐として登録する
 .\install-startup.ps1 -NodePath "C:\Program Files\nodejs\node.exe" `
-  -AgentRoot "C:\StaffWeave\staffweave-agent"
+  -AgentRoot "C:\ProgramData\StaffWeave\agent"
 ```
 
-`install-startup.ps1` は、資格情報が置かれていなければ登録しません。無いまま
-登録すると、登録そのものは成功し、起動してから落ちます。置き場の権限が広いときも
-断ります。誰でも読める場所に、端末の秘密鍵は置けません。
+`install-startup.ps1` は、登録の前に次を確かめます。1 つでも満たさなければ登録しません。
+
+- 資格情報が置かれていること。無いまま登録すると、登録そのものは成功し、
+  起動してから落ちます
+- 資格情報の置き場を、標準の利用者が書き換えられないこと
+- **配布物の置き場と、起動する JS と、Node の実行ファイルを、標準の利用者が
+  書き換えられないこと**。ここを書き換えられると、SYSTEM で好きなコードが動きます
+- 別名（近道）ではなく実体を指していること。見た相手と動かす相手がずれます
+
+確かめられないときも断ります。「見られなかった」を「大丈夫だった」にはしません。
 
 登録は管理者として行います。起動するのは `agent/cli.js` です。
 
