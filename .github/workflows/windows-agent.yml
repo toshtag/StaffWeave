@@ -144,6 +144,30 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # 絞った Node を用意する。
+      #
+      # runner の Node は書き換えられる場所（tool cache）に居る。実機では
+      # Program Files に入るが、ここでは絞った場所へ写して使う。絞っていない
+      # Node のままだと、以降の段が「Node が書き換えられる」で断られ、
+      # それぞれの段が見たいものを見なくなる。
+      - name: 絞った場所へ Node を写す
+        shell: pwsh
+        run: |
+          $dir = "$PWD/secure-node"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $acl = Get-Acl $dir
+          $acl.SetAccessRuleProtection($true, $false)
+          foreach ($rule in @($acl.Access)) { $acl.RemoveAccessRule($rule) | Out-Null }
+          foreach ($who in @('NT AUTHORITY\\SYSTEM', 'BUILTIN\\Administrators')) {
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+              $who, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+          }
+          $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+            'BUILTIN\\Users', 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+          Set-Acl -Path $dir -AclObject $acl
+          Copy-Item (Get-Command node).Source "$dir/node.exe" -Force
+          "SECURE_NODE=$dir/node.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
       # 資格情報が無いまま登録できないこと。無いまま登録すると、登録は成功し、
       # 端末の起動後に読めずに落ちる。落ちてから理由を探すことになる。
       - name: 資格情報が無ければ登録しないことを確かめる
@@ -154,7 +178,7 @@ jobs:
           $source = Join-Path $PWD 'artifacts/agent/staffweave-agent'
           $root = "$PWD/probe-root"
           & "$source/install-agent.ps1" -Source $source -Destination $root
-          $node = (Get-Command node).Source
+          $node = $env:SECURE_NODE
           $missing = "$PWD/not-enrolled/agent.json"
 
           $failed = $false
@@ -178,7 +202,7 @@ jobs:
       - name: 書き換えられる場所からは登録しないことを確かめる
         shell: pwsh
         run: |
-          $node = (Get-Command node).Source
+          $node = $env:SECURE_NODE
           $store = "$PWD/acl-store/StaffWeave/agent.json"
 
           # 資格情報の置き場だけは正しく用意しておく。断る理由を 1 つに絞る。
@@ -259,7 +283,7 @@ jobs:
         run: |
           $source = Join-Path $PWD 'artifacts/agent/staffweave-agent'
           $root = "$PWD/agent-root"
-          $node = (Get-Command node).Source
+          $node = $env:SECURE_NODE
           $store = "$PWD/store/StaffWeave/agent.json"
 
           & "$source/install-agent.ps1" -Source $source -Destination $root
