@@ -262,9 +262,13 @@ jobs:
           # 3. どちらも絞ってあれば登録できる
           & "$secureRoot/install-startup.ps1" -NodePath $node -AgentRoot $secureRoot `
             -TaskName 'StaffWeaveAclOk' -Store $store -NoReader
+          # 区切りの書き方は場所によって混ざる。名前で見る。
           $action = (Get-ScheduledTask -TaskName 'StaffWeaveAclOk').Actions[0]
-          if ($action.Arguments -notlike "*$($secureRoot -replace '/', '\\')*") {
+          if ($action.Arguments -notlike '*secure-agent*') {
             throw "登録した作業が、絞った場所を指していません: $($action.Arguments)"
+          }
+          if ($action.Arguments -like '*open-agent*') {
+            throw "登録した作業が、書き換えられる場所を指しています: $($action.Arguments)"
           }
           Unregister-ScheduledTask -TaskName 'StaffWeaveAclOk' -Confirm:$false
           Write-Host '絞った場所からは登録できました'
