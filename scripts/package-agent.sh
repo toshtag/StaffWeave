@@ -203,6 +203,17 @@ Set-Acl -Path $Destination -AclObject $acl
 
 Copy-Item -Path (Join-Path $Source '*') -Destination $Destination -Recurse -Force
 
+# 絞れたことを、その場で確かめる。絞ったつもりのまま進むと、登録の段で
+# 断られてから理由を探すことになる。
+$after = (Get-Acl $Destination).Access | Where-Object {
+  $_.AccessControlType -eq 'Allow' -and
+  $_.IdentityReference -match 'Everyone|BUILTIN\\Users|Authenticated Users' -and
+  ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::WriteData) -ne 0
+}
+if ($after) {
+  throw "権限を絞れませんでした: $Destination"
+}
+
 Write-Host "置きました: $Destination"
 Write-Host '書き換えられるのは SYSTEM と Administrators だけです。'
 Write-Host ''
@@ -315,14 +326,19 @@ function Assert-NotWritableByUsers {
     throw "$What の権限を確かめられませんでした: $resolved"
   }
 
-  # 書き換えにつながる権限だけを見る。読み取りは、ここでは断る理由にしない。
-  $writable = [System.Security.AccessControl.FileSystemRights]::Write -bor
-    [System.Security.AccessControl.FileSystemRights]::Modify -bor
-    [System.Security.AccessControl.FileSystemRights]::FullControl -bor
-    [System.Security.AccessControl.FileSystemRights]::WriteData -bor
-    [System.Security.AccessControl.FileSystemRights]::CreateFiles -bor
-    [System.Security.AccessControl.FileSystemRights]::TakeOwnership -bor
-    [System.Security.AccessControl.FileSystemRights]::ChangePermissions
+  # 書き換えにつながる 1 つずつの権限だけを並べる。
+  #
+  # Modify や FullControl のような、まとまった名前を混ぜてはいけない。
+  # それらは読み取りの権限も含むため、重なりを見る形だと読み取りだけの相手まで
+  # 「書き換えられる」と判定する。実際にそうなり、絞った場所を断っていた。
+  $writable = [System.Security.AccessControl.FileSystemRights]::WriteData -bor
+    [System.Security.AccessControl.FileSystemRights]::AppendData -bor
+    [System.Security.AccessControl.FileSystemRights]::WriteAttributes -bor
+    [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
+    [System.Security.AccessControl.FileSystemRights]::Delete -bor
+    [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+    [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+    [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
   $open = $acl.Access | Where-Object {
     $_.AccessControlType -eq 'Allow' -and
