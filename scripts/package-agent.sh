@@ -105,6 +105,7 @@ cat > "$BUNDLE/package.json" <<JSON
   "private": true,
   "type": "module",
   "bin": { "staffweave-agent": "./agent/cli.js" },
+  "engines": { "node": ">=$NODE_MAJOR <$((NODE_MAJOR + 1))" },
   "dependencies": {
     "ajv": "$AJV_VERSION",
     "ajv-formats": "$AJV_FORMATS_VERSION",
@@ -196,6 +197,19 @@ if (-not (Test-Path $AgentRoot)) { throw "配布物が見つかりません: $Ag
 # 起動するのはコンパイル済みの JS。Node は .ts を読めない。
 $cli = Join-Path $AgentRoot 'agent/cli.js'
 if (-not (Test-Path $cli)) { throw "配布物が壊れています。agent/cli.js がありません: $cli" }
+
+# 渡された Node の版が、この配布物に合っているかを先に確かめる。
+# 合わない版で登録すると、端末の再起動まで気付かず、上がっては落ちを繰り返す。
+$build = Join-Path $AgentRoot 'agent/build-info.json'
+if (Test-Path $build) {
+  $expected = (Get-Content $build -Raw | ConvertFrom-Json).nodeMajor
+  if ($expected) {
+    $actual = (& $NodePath -p 'process.versions.node.split(".")[0]').Trim()
+    if ($actual -ne $expected) {
+      throw "この配布物は Node $expected 用です（渡された Node は $actual）。対応する版を指してください。"
+    }
+  }
+}
 
 # 読み取りと送信を 1 つのプロセスで持つ。分けると、登録した側だけが動く。
 $mode = if ($NoReader) { 'serve' } else { 'station' }
