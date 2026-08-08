@@ -166,6 +166,41 @@ for package in contracts domain; do
 JSON
 done
 
+# 資格情報の置き場を用意する手順。Windows の導入はここから始める。
+cat > "$BUNDLE/install-store.ps1" <<'PS1'
+# StaffWeave の資格情報を置く場所を用意する。
+#
+# Windows の導入はここから始める。作ってから enroll する。逆にすると、
+# 資格情報がいまいる場所へ保存され、常駐は別の場所を読もうとする。
+#
+# 管理者として実行すること。
+param(
+  [string] $Store = 'C:\ProgramData\StaffWeave\agent.json'
+)
+
+$ErrorActionPreference = 'Stop'
+
+$directory = Split-Path -Parent $Store
+New-Item -ItemType Directory -Force -Path $directory | Out-Null
+
+# 権限を継承させない。継承したままだと、ProgramData の既定で
+# Users にも読み取りが開く。資格情報には端末の秘密鍵が入る。
+$acl = Get-Acl $directory
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($rule in @($acl.Access)) { $acl.RemoveAccessRule($rule) | Out-Null }
+foreach ($who in @('NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')) {
+  $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $who, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+}
+Set-Acl -Path $directory -AclObject $acl
+
+Write-Host "用意しました: $directory"
+Write-Host "読み書きできるのは SYSTEM と Administrators だけです。"
+Write-Host ''
+Write-Host '次に、この端末を登録します:'
+Write-Host "  node agent\cli.js enroll --url https://staffweave.example --token-stdin --store `"$Store`""
+PS1
+
 # 端末の起動時に常駐させる手順。実行はしない。実行すると、この場の権限で登録される。
 #
 # Windows のサービスとしては登録しない。サービスとして動くプロセスは SCM と話す
@@ -197,6 +232,30 @@ if (-not (Test-Path $AgentRoot)) { throw "配布物が見つかりません: $Ag
 # 起動するのはコンパイル済みの JS。Node は .ts を読めない。
 $cli = Join-Path $AgentRoot 'agent/cli.js'
 if (-not (Test-Path $cli)) { throw "配布物が壊れています。agent/cli.js がありません: $cli" }
+
+# 資格情報が置かれているかを先に確かめる。無いまま登録すると、登録そのものは
+# 成功し、端末の起動後に読めずに落ちる。落ちてから理由を探すことになる。
+if (-not (Test-Path $Store)) {
+  Write-Error @"
+資格情報がありません: $Store
+
+先に置き場を用意して、この端末を登録してください。
+
+  .\install-store.ps1 -Store "$Store"
+  node agent\cli.js enroll --url https://staffweave.example --token-stdin --store "$Store"
+"@
+  exit 1
+}
+
+# 置き場の権限も見る。誰でも読める場所に置いてあると、端末の秘密鍵が読まれる。
+$storeDirectory = Split-Path -Parent $Store
+$open = (Get-Acl $storeDirectory).Access | Where-Object {
+  $_.IdentityReference -match 'Everyone|BUILTIN\\Users|Authenticated Users' -and
+  $_.AccessControlType -eq 'Allow'
+}
+if ($open) {
+  throw "資格情報の置き場が広く開いています: $storeDirectory（install-store.ps1 で絞ってください）"
+}
 
 # 渡された Node の版が、この配布物に合っているかを先に確かめる。
 # 合わない版で登録すると、端末の再起動まで気付かず、上がっては落ちを繰り返す。

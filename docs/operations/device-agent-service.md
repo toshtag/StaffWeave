@@ -18,6 +18,10 @@ pnpm agent enroll --url https://staffweave.example --token-stdin
 pnpm agent station
 ```
 
+Windows の端末では、資格情報の置き場を先に決めます。手順は
+[導入の順番](#導入の順番)にあります。`--store` を省くと、いまいる場所へ
+保存されます。
+
 `station` は、読み取り装置と送信を 1 つのプロセスで持ちます。読み取ったカードは
 その場で送らず、送信待ちへ積みます。積んだものは同じプロセスが送ります。
 
@@ -107,11 +111,43 @@ Node.js そのものは同梱しません。実行ファイルも作りません
 node agent\cli.js diagnose
 ```
 
-登録は管理者として行います。起動するのは `agent/cli.js` です。
+### 導入の順番
+
+**この順で行います。** 資格情報の置き場を先に作らないと、資格情報はいまいる場所へ
+保存され、常駐は別の場所を読もうとします。登録は成功し、端末の起動後に読めずに
+落ちます。
+
+1 台の端末で使う置き場は 1 つだけです。
+
+```text
+C:\ProgramData\StaffWeave\agent.json
+```
 
 ```powershell
-.\install-startup.ps1 -NodePath "C:\Program Files\nodejs\node.exe" -AgentRoot "C:\StaffWeave\agent"
+# 1. 置き場を用意する（SYSTEM と Administrators だけへ権限を絞る）
+.\install-store.ps1
+
+# 2. この端末を登録する。置き場を明示する。
+node agent\cli.js enroll --url https://staffweave.example --token-stdin `
+  --store "C:\ProgramData\StaffWeave\agent.json"
+
+# 3. カードを登録する（読み取り装置を使う端末だけ）
+node agent\cli.js card-register --token-file <path> --reader `
+  --store "C:\ProgramData\StaffWeave\agent.json"
+
+# 4. 状態を見る
+node agent\cli.js diagnose --store "C:\ProgramData\StaffWeave\agent.json"
+
+# 5. 起動時の常駐として登録する
+.\install-startup.ps1 -NodePath "C:\Program Files\nodejs\node.exe" `
+  -AgentRoot "C:\StaffWeave\staffweave-agent"
 ```
+
+`install-startup.ps1` は、資格情報が置かれていなければ登録しません。無いまま
+登録すると、登録そのものは成功し、起動してから落ちます。置き場の権限が広いときも
+断ります。誰でも読める場所に、端末の秘密鍵は置けません。
+
+登録は管理者として行います。起動するのは `agent/cli.js` です。
 
 **Windows のサービスとしては登録しません。** タスクスケジューラで、端末の起動時に
 始まる作業として登録します。サービスとして動くプロセスは Service Control Manager と

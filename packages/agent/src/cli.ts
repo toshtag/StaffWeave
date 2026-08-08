@@ -434,14 +434,15 @@ async function runStop(): Promise<void> {
  * なしで立ち続けると、打刻できない端末が動いているように見える。
  */
 async function runStation(): Promise<void> {
+  // 版の食い違いは、いちばん先に言う。あとに置くと、別の理由で先に止まったときに
+  // 「この配布物は Node X 用です」が出ない。端末の前の人は、直す相手を間違える。
+  await requireSupportedNode();
+
   const credentials = (await loadCredentials(storePath())) as StoredCredentials;
   const key = requireCardKey(credentials);
   const logger = createAgentLogger();
   const { running, sleep, dispose, stopping } = residency(logger);
   const spool = createFileSpool(spoolPath());
-
-  // 読み取りの部品を読む前に確かめる。読んでからでは、組み込みの側が先に落ちる。
-  await requireSupportedNode();
 
   const transport = await loadPcscTransport(option('pcsc') ?? BUNDLED_PCSC_MODULE);
   const reader = createPcscCardReader(transport, {

@@ -144,17 +144,68 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # 常駐そのものを試す前に、送信だけの形で登録する。
-      # 読み取り装置は runner に無く、あっても物理カードは置けない。
-      - name: 起動時の常駐として登録する
+      # 資格情報が無いまま登録できないこと。無いまま登録すると、登録は成功し、
+      # 端末の起動後に読めずに落ちる。落ちてから理由を探すことになる。
+      - name: 資格情報が無ければ登録しないことを確かめる
         shell: pwsh
         run: |
           $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
           $node = (Get-Command node).Source
-          & "$root/install-startup.ps1" -NodePath $node -AgentRoot $root `
-            -Store "$PWD/agent-store.json" -NoReader
+          $missing = "$PWD/not-enrolled/agent.json"
+
+          $failed = $false
+          try {
+            & "$root/install-startup.ps1" -NodePath $node -AgentRoot $root `
+              -TaskName 'StaffWeaveMissingStore' -Store $missing -NoReader
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          } catch {
+            $failed = $true
+          }
+          if (-not $failed) {
+            Unregister-ScheduledTask -TaskName 'StaffWeaveMissingStore' -Confirm:$false `
+              -ErrorAction SilentlyContinue
+            throw '資格情報が無いのに登録できてしまいました'
+          }
+          $task = Get-ScheduledTask -TaskName 'StaffWeaveMissingStore' -ErrorAction SilentlyContinue
+          if ($task) { throw '登録が残っています' }
+
+      # 導入の順どおりに通す。置き場を用意 → 登録（資格情報を置く）→ 常駐の登録。
+      - name: 置き場を用意して、常駐として登録する
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
+          $node = (Get-Command node).Source
+          $store = "$PWD/store/StaffWeave/agent.json"
+
+          & "$root/install-store.ps1" -Store $store
+
+          # 権限が絞れていること。誰でも読める場所に端末の秘密鍵は置けない。
+          $directory = Split-Path -Parent $store
+          $open = (Get-Acl $directory).Access | Where-Object {
+            $_.IdentityReference -match 'Everyone|BUILTIN\\Users|Authenticated Users' -and
+            $_.AccessControlType -eq 'Allow'
+          }
+          if ($open) { throw "置き場が広く開いています: $directory" }
+
+          # enroll はサーバーが要る。ここでは同じ場所へ資格情報を置いて代える。
+          @"
+          {
+            "baseUrl": "https://staffweave.invalid",
+            "deviceId": "00000000-0000-4000-8000-000000000000",
+            "workspaceSlug": "default",
+            "privateKeyPem": "",
+            "publicKeyPem": "",
+            "nextSequence": 1,
+            "cardFingerprintKey": "0123456789abcdef"
+          }
+          "@ | Out-File -Encoding ascii $store
+
+          & "$root/install-startup.ps1" -NodePath $node -AgentRoot $root -Store $store -NoReader
           $task = Get-ScheduledTask -TaskName 'StaffWeaveAgent'
           if ($task.State -eq 'Disabled') { throw '登録した作業が無効になっています' }
+
+          # あとの段が同じ置き場を使えるようにする。
+          "AGENT_STORE=$store" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       # 端末の再起動は runner では起こせない。手で開始して、動き続けることを見る。
       - name: 開始して、動き続けることを確かめる
@@ -181,7 +232,7 @@ jobs:
         run: |
           $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
           $node = (Get-Command node).Source
-          & $node "$root/agent/cli.js" stop --store "$PWD/agent-store.json"
+          & $node "$root/agent/cli.js" stop --store $env:AGENT_STORE
 
           $deadline = (Get-Date).AddSeconds(30)
           while ((Get-Date) -lt $deadline) {
@@ -273,8 +324,9 @@ jobs:
           $otherNode = "$dir/node.exe"
           Write-Host "用意した Node: $(& $otherNode -v)"
 
-          $store = "$PWD/mismatch-store.json"
-          Copy-Item "$PWD/station-store.json" $store
+          # 権限を絞った正規の置き場を使う。別の場所へ置くと、Node の版ではなく
+          # 置き場の権限で断られ、この段が見たいものを見なくなる。
+          $store = $env:AGENT_STORE
 
           $output = & $otherNode "$root/agent/cli.js" station --store $store 2>&1 | Out-String
           Write-Host $output
@@ -290,7 +342,11 @@ jobs:
               -TaskName 'StaffWeaveMismatch' -Store $store -NoReader
           } catch {
             $failed = $true
-            Write-Host "登録は断られました: $($_.Exception.Message)"
+            $reason = $_.Exception.Message
+            Write-Host "登録は断られました: $reason"
+            if ($reason -notmatch 'Node') {
+              throw "断った理由が Node の版ではありません: $reason"
+            }
           }
           if (-not $failed) {
             Unregister-ScheduledTask -TaskName 'StaffWeaveMismatch' -Confirm:$false `
@@ -298,13 +354,17 @@ jobs:
             throw '対応していない版で登録できてしまいました'
           }
 
+          # 途中で呼んだ命令が残す終了コードを、この段の結果にしない。
+          # 断られることを確かめる段なので、非 0 は想定どおり。
+          exit 0
+
       - name: 常駐を外す
         shell: pwsh
         run: |
           $root = Join-Path $PWD 'artifacts/agent/staffweave-agent'
           $node = (Get-Command node).Source
           & "$root/uninstall-startup.ps1" -NodePath $node -AgentRoot $root `
-            -Store "$PWD/agent-store.json"
+            -Store $env:AGENT_STORE
 
           $task = Get-ScheduledTask -TaskName 'StaffWeaveAgent' -ErrorAction SilentlyContinue
           if ($task) { throw '登録が残っています' }
