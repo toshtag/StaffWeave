@@ -27,8 +27,8 @@ GitHub の Issue で決めます。外部の確認は数週間かかるため、
 | lint と書式 | `pnpm lint` | 静的検証 |
 | 型 | `pnpm typecheck` | 静的検証 |
 | 単体 | `pnpm test:unit` | 静的検証 |
-| リポジトリの決めごと | `pnpm check:policy` | 静的検証 |
-| 依存の勧告 | `pnpm check:audit` | 静的検証 |
+| リポジトリの不変条件 | `pnpm check:policy` | 静的検証 |
+| 依存の勧告 | `pnpm check:audit` | 依存の脆弱性 |
 | まっさらな DB への移行 | `pnpm db:migrate` と `pnpm db:verify` | マイグレーションと統合テスト |
 | 既存 DB への移行（0025 から最新まで） | `pnpm verify:upgrade` | マイグレーションと統合テスト |
 | 書き出しと復元 | `pnpm verify:restore` | マイグレーションと統合テスト |
