@@ -112,16 +112,24 @@ function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** 装置を差した状態で受け渡しを作る。 */
+/**
+ * 装置を 1 台掴んだ状態の受け渡しを作る。
+ *
+ * 受け渡しそのものは装置が無くても作れる。掴むのは最初の `waitForCard` なので、
+ * ここで 1 回通しておく。
+ */
 async function connected(
   pcsc: FakePcsc,
   reader: FakeReader,
 ): Promise<Awaited<ReturnType<typeof createPcscTransport>>> {
-  const pending = createPcscTransport(async () => () => pcsc as never);
-  // 作る側が待ち受けを置くまで進める。
+  const transport = await createPcscTransport(async () => () => pcsc as never);
+  const placed = transport.waitForCard();
   await tick();
   pcsc.plug(reader);
-  return pending;
+  await tick();
+  reader.card(true);
+  await placed;
+  return transport;
 }
 
 describe('読み取り装置の抜き差し', () => {
@@ -262,13 +270,67 @@ describe('読み取り装置の抜き差し', () => {
     await expect(transport.transmit(GET_UID_APDU)).rejects.toBeInstanceOf(ReaderGone);
   });
 
-  it('装置が現れなければ、待ち受けを残さずに諦める', async () => {
+  /**
+   * 起動したときに装置が無くても、受け渡しは作れること。
+   *
+   * 作る時点で待つと、端末の起動時に装置がまだ見えていないだけで常駐そのものが
+   * 終わる。認識が遅い、あとから挿す、USB の口の初期化が遅れる、はどれも普通に
+   * 起こる。タスクスケジューラの上げ直しは 3 回しかなく、数分見えなければ
+   * 止まったままになっていた。
+   */
+  it('装置が 1 台も無くても、受け渡しは作れる', async () => {
     const pcsc = new FakePcsc();
-    // 短い上限で、現れないまま終わる形にする。
-    await expect(createPcscTransport(async () => () => pcsc as never, 10)).rejects.toThrow(
-      '読み取り装置が見つかりません',
-    );
 
+    const transport = await createPcscTransport(async () => () => pcsc as never, 10);
+
+    // まだ見つけていないことが、名前から分かる。
+    expect(transport.name).toContain('待っています');
+  });
+
+  it('1 回の待ちを越えても終わらず、あとから挿すと読める', async () => {
+    const pcsc = new FakePcsc();
+    // 1 回の待ちを短くする。実機の 30 秒を、何度も越える状況にあたる。
+    const transport = await createPcscTransport(async () => () => pcsc as never, 10);
+    const card = createPcscCardReader(transport, {
+      debounceMs: 0,
+      sleep: async () => {},
+      reconnectDelaysMs: [0],
+    });
+
+    const reading = card.read();
+
+    // 待ちを何度も越える。終わっていれば、このあと挿しても読めない。
+    for (let round = 0; round < 5; round += 1) await tick();
+
+    const reader = new FakeReader('late');
+    pcsc.plug(reader);
+    for (let round = 0; round < 5; round += 1) await tick();
+    reader.card(true);
+
+    expect(await reading).toBe('04A1B2C3');
+    expect(transport.name).toBe('late');
+  });
+
+  it('装置が 1 台も無いまま止めても、短い時間で返る', async () => {
+    const pcsc = new FakePcsc();
+    const transport = await createPcscTransport(async () => () => pcsc as never, 10_000);
+
+    const stopper = new AbortController();
+    const waiting = transport.waitForCard(stopper.signal);
+    await tick();
+    stopper.abort();
+
+    await expect(waiting).rejects.toBeInstanceOf(CardReadAborted);
+    expect(pcsc.waiting()).toBe(0);
+  });
+
+  it('待ちを越えたときは、待ち受けを残さずに区切る', async () => {
+    const pcsc = new FakePcsc();
+    const transport = await createPcscTransport(async () => () => pcsc as never, 10);
+
+    await expect(transport.waitForCard()).rejects.toThrow('読み取り装置が見つかりません');
+
+    // 区切っただけ。次の待ちへ入れる形で残っていないこと。
     expect(pcsc.waiting()).toBe(0);
   });
 

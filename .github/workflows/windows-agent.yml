@@ -242,6 +242,105 @@ jobs:
           $state = (Get-ScheduledTask -TaskName 'StaffWeaveAgent').State
           if ($state -eq 'Running') { throw '止まりませんでした（強制終了に頼らせない）' }
 
+      # 装置が無いまま起動しても、常駐が終わらず、あとから挿すと読めること。
+      #
+      # 端末の起動時に装置がまだ見えていないことはある。認識が遅い、あとから
+      # 挿す、USB の口の初期化が遅れる。作る時点で待っていたため、30 秒
+      # 見えないだけで常駐そのものが終わっていた。
+      - name: 装置が無いまま起動しても、あとから挿せば読めることを確かめる
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          $node = (Get-Command node).Source
+          $store = "$PWD/late-store.json"
+          $flag = "$PWD/reader-present"
+
+          @"
+          {
+            "baseUrl": "https://staffweave.invalid",
+            "deviceId": "00000000-0000-4000-8000-000000000000",
+            "workspaceSlug": "default",
+            "privateKeyPem": "",
+            "publicKeyPem": "",
+            "nextSequence": 1,
+            "cardFingerprintKey": "0123456789abcdef"
+          }
+          "@ | Out-File -Encoding ascii $store
+
+          # 目印のファイルが置かれるまでは装置が無い、という受け渡し。
+          # 1 回の待ちは短くして、何度も越える状況を作る。
+          @'
+          import { existsSync } from 'node:fs';
+          const FLAG = process.env.READER_FLAG;
+          const WAIT_MS = 300;
+          export function createPcscTransport() {
+            let present = false;
+            const appear = (signal) => new Promise((resolve, reject) => {
+              const holder = setInterval(() => {
+                if (existsSync(FLAG)) { done(); present = true; resolve(); }
+              }, 50);
+              const cutoff = setTimeout(() => {
+                done();
+                reject(new Error('読み取り装置が見つかりません'));
+              }, WAIT_MS);
+              const done = () => {
+                clearInterval(holder);
+                clearTimeout(cutoff);
+                signal?.removeEventListener('abort', onAbort);
+              };
+              const onAbort = () => { done(); reject(new Error('aborted')); };
+              if (signal?.aborted) { onAbort(); return; }
+              signal?.addEventListener('abort', onAbort, { once: true });
+            });
+            return {
+              get name() { return present ? 'late-reader' : '(waiting)'; },
+              waitForCard: appear,
+              transmit: async () => new Uint8Array([0x04, 0xa1, 0xb2, 0xc3, 0x90, 0x00]),
+              waitForRemoval: async () => {},
+              reconnect: async () => {},
+              close: async () => { console.log('transport-closed'); },
+            };
+          }
+          '@ | Out-File -Encoding utf8 late-transport.mjs
+
+          $env:READER_FLAG = $flag
+          $log = "$PWD/late-station.log"
+          $proc = Start-Process -FilePath $node -PassThru -NoNewWindow `
+            -RedirectStandardOutput $log `
+            -ArgumentList "`"$root/agent/cli.js`"", 'station', '--store', "`"$store`"", `
+              '--pcsc', "`"$PWD/late-transport.mjs`""
+
+          # 1 回の待ち（300 ミリ秒）を何度も越える。作る時点で待っていれば、
+          # ここで終わっている。
+          Start-Sleep -Seconds 8
+          if ($proc.HasExited) {
+            Get-Content $log -ErrorAction SilentlyContinue | Write-Host
+            throw "装置が無いだけで常駐が終わりました（exit=$($proc.ExitCode)）"
+          }
+
+          # あとから挿す。同じプロセスのまま読み取りへ移る。
+          New-Item -ItemType File -Path $flag | Out-Null
+          $deadline = (Get-Date).AddSeconds(20)
+          $queued = $false
+          while ((Get-Date) -lt $deadline) {
+            if (Test-Path "$store.spool") {
+              if ((Get-ChildItem "$store.spool" -Filter '*.json').Count -gt 0) {
+                $queued = $true
+                break
+              }
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $queued) {
+            $proc.Kill()
+            Get-Content $log -ErrorAction SilentlyContinue | Write-Host
+            throw 'あとから挿しても読み取りへ戻りませんでした'
+          }
+          Write-Host '装置を挿したあと、同じプロセスで読み取れました'
+
+          & $node "$root/agent/cli.js" stop --store $store
+          if (-not $proc.WaitForExit(20000)) { $proc.Kill(); throw '止まりませんでした' }
+
       # 読み取りを待っている状態からでも止まること。据え置きの端末は、カードが
       # 置かれていない時間のほうが長い。その待ちを打ち切れないと、止めろと
       # 言われてもプロセスが終わらない。
