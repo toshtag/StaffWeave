@@ -32,6 +32,16 @@ function isImplemented(capability: string): boolean {
 }
 
 /**
+ * 一覧に載っている能力かどうか（状態は問わない）。
+ *
+ * `partial` の能力にも、逆向きの断定は起こる。実機で未確認なことと、
+ * 実装の方法が違うことは別の話で、後者を取り違えると読む人は迷う。
+ */
+function isListed(capability: string): boolean {
+  return matrix.split('\n').some((line) => line.startsWith(`| ${capability} |`));
+}
+
+/**
  * 一覧の能力と、それを否定するガイドの言い回しの対。
  *
  * 言い回しは、実際にその文書へ書かれていたものを使う。似た言い方まで広げると、
@@ -53,12 +63,33 @@ const PAIRS: readonly { capability: string; guide: string; denial: string }[] = 
     guide: 'docs/guide/features.md',
     denial: '勤務周期・契約',
   },
+  // 常駐はタスクスケジューラへ変えた（decisions/0002）。現在の状態を書く文書が
+  // 「Windows のサービス」と断定していると、読む人は sc.exe を探すことになる。
+  {
+    capability: 'Windows での起動時の常駐',
+    guide: 'docs/release/checklist.md',
+    denial: 'Windows のサービスとして起動',
+  },
+  {
+    capability: 'Windows での起動時の常駐',
+    guide: 'docs/README.md',
+    denial: 'Windows サービス',
+  },
+  // 読み取りの部品は Windows 向けの配布物へ同梱した。端末側で用意すると書くと、
+  // 通信も組み立ての道具も無い端末では導入できないと読まれる。
+  {
+    capability: '実カードリーダーからの読み取り',
+    guide: 'docs/roadmap.md',
+    denial: '装置を叩く部分は\n端末側で用意します',
+  },
 ];
 
 describe('利用ガイドと能力の一覧', () => {
-  it('一覧が implemented と書く能力を、ガイドが無いと断定しない', () => {
+  it('一覧の能力を、文書が逆向きに断定しない', () => {
     const contradictions = PAIRS.filter(
-      (pair) => isImplemented(pair.capability) && read(pair.guide).includes(pair.denial),
+      (pair) =>
+        (isImplemented(pair.capability) || isListed(pair.capability)) &&
+        read(pair.guide).includes(pair.denial),
     ).map((pair) => `${pair.guide}: ${pair.capability} を「${pair.denial}」と書いている`);
 
     expect(contradictions).toEqual([]);
