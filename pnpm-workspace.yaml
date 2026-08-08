@@ -4,3 +4,8 @@ allowBuilds:
   # tsx が TypeScript の変換に使う。ネイティブバイナリの取得にビルドスクリプトが必要。
   # Vite 8 のバンドラは rolldown、CSS は lightningcss で、どちらも許可を必要としない。
   esbuild: true
+overrides:
+  # 直接は使っていないが、道具の依存として入ってくる。
+  # GHSA-2v37-7h3g-55p8（推測しやすい識別子）が moderate として出た。
+  # 上流（postcss / vite）が上げるまで、こちらで下限を引き上げる。
+  nanoid: '^3.3.17'
