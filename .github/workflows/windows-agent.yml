@@ -93,6 +93,10 @@ jobs:
             --output-format json \
             --output-file artifacts/windows-agent/staffweave-agent-windows.cdx.json \
             -- artifacts/windows-agent-bundle/staffweave-agent/package.json
+          # 作る道具は元の commit を書けない。書かないと、その構成がいつの
+          # ソースから出来ているかを受け取った側が確かめられない。
+          node scripts/stamp-sbom-source.mjs \
+            artifacts/windows-agent/staffweave-agent-windows.cdx.json "$GITHUB_SHA"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

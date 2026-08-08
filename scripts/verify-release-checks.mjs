@@ -25,8 +25,17 @@ import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 
-/** 成功していなければ配らない workflow。ファイル名で指す。 */
-const REQUIRED_WORKFLOWS = (process.env.RELEASE_REQUIRED_WORKFLOWS ?? 'ci.yml,runtime.yml,sbom.yml')
+/**
+ * 成功していなければ配らない workflow。ファイル名で指す。
+ *
+ * Windows の常駐は Linux の runner では確かめられない。配る側の workflow にある
+ * Windows の job は配布物を組むだけで、登録・開始・停止・削除までは行わない。
+ * ここへ入れておかないと、その SHA で Windows の検査が落ちていても、
+ * 未実行でも、関門は通ってしまう。
+ */
+const DEFAULT_REQUIRED_WORKFLOWS = 'ci.yml,runtime.yml,sbom.yml,windows-agent.yml';
+
+const REQUIRED_WORKFLOWS = (process.env.RELEASE_REQUIRED_WORKFLOWS ?? DEFAULT_REQUIRED_WORKFLOWS)
   .split(',')
   .map((name) => name.trim())
   .filter((name) => name.length > 0);
@@ -35,6 +44,12 @@ const problems = [];
 
 function fail(message) {
   problems.push(message);
+}
+
+// 空の一覧は受け取らない。渡し方を間違えて空になったとき、何も確かめないまま
+// 通ってしまう。「確かめる相手が居ない」ことを、確かめた扱いにしない。
+if (REQUIRED_WORKFLOWS.length === 0) {
+  fail('必須の workflow が 1 つも指定されていません（RELEASE_REQUIRED_WORKFLOWS）');
 }
 
 const sha = (process.env.RELEASE_SHA ?? '').trim();
