@@ -62,8 +62,7 @@ describe('画面の文言', () => {
    * 名乗り続けることになる。実際に、休憩・勤務時間の計算・申請・承認が動くようになった
    * あとも「まだ実装されていません」と表示していた。
    *
-   * 何が動いていて何が無いかは docs/product/capability-matrix.md を正本にする。
-   * 文書なら、能力を足すときに同じ表を触ることになるため、古いまま残りにくい。
+   * 何が動いていて何が無いかは docs/guide/features.md に書く。
    */
   it('実装されていないと告げる文言を持たない', () => {
     const claiming = declaredValues().filter((value) =>

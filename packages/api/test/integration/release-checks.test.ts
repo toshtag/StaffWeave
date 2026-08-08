@@ -109,6 +109,7 @@ describe('配る前のゲート', () => {
   it('既定では Windows のワークフローも求める', async () => {
     successes.set('ci.yml', 1);
     successes.set('runtime.yml', 1);
+    successes.set('audit.yml', 1);
     successes.set('sbom.yml', 1);
     // windows-agent.yml は成功していない。
 
@@ -119,8 +120,27 @@ describe('配る前のゲート', () => {
     expect(message).toContain('windows-agent.yml');
   });
 
-  it('4 つすべて成功していれば通る', async () => {
-    for (const name of ['ci.yml', 'runtime.yml', 'sbom.yml', 'windows-agent.yml']) {
+  /**
+   * 依存の勧告も、既定で必須であること。
+   *
+   * どの PR でも走る側からは外してある。既定に入れていないと、その SHA で
+   * 一度も勧告を見ていないまま配れてしまう。
+   */
+  it('既定では依存の勧告も求める', async () => {
+    successes.set('ci.yml', 1);
+    successes.set('runtime.yml', 1);
+    successes.set('sbom.yml', 1);
+    successes.set('windows-agent.yml', 1);
+    // audit.yml は成功していない。
+
+    const { code, message } = await gate({ RELEASE_REQUIRED_WORKFLOWS: undefined });
+
+    expect(code).not.toBe(0);
+    expect(message).toContain('audit.yml');
+  });
+
+  it('既定の一覧がすべて成功していれば通る', async () => {
+    for (const name of ['ci.yml', 'runtime.yml', 'audit.yml', 'sbom.yml', 'windows-agent.yml']) {
       successes.set(name, 1);
     }
 
@@ -130,7 +150,7 @@ describe('配る前のゲート', () => {
   });
 
   it('必須の一覧が空なら、確かめずに通さない', async () => {
-    for (const name of ['ci.yml', 'runtime.yml', 'sbom.yml', 'windows-agent.yml']) {
+    for (const name of ['ci.yml', 'runtime.yml', 'audit.yml', 'sbom.yml', 'windows-agent.yml']) {
       successes.set(name, 1);
     }
 

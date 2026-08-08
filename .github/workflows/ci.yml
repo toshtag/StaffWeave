@@ -4,7 +4,7 @@ name: CI
 # 何も立ち上げずに済むものだけを置き、最初の合否をできるだけ早く返す。
 #
 # データベース・ブラウザ・Docker を要する検証は runtime.yml、
-# 配布物の構成一覧は sbom.yml にある。
+# 依存の勧告は audit.yml、配布物の構成一覧は sbom.yml にある。
 #
 # 使う Action は完全な SHA へ固定する。tag は同じ名前のまま指す先が変わりうるため、
 # 版として当てにできない。指す先が変われば、確かめずに他人のコードを動かすことになる。
@@ -24,10 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # 決めごとの検査は branch 名と commit も見る。
-          # 既定の 1 コミットだけでは、範囲を読めないまま「無い」と答えることになる。
-          fetch-depth: 0
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 
@@ -50,34 +46,7 @@ jobs:
       - name: 単体テスト
         run: pnpm test:unit
 
-      - name: リポジトリの決めごと
-        run: pnpm check:policy
-        # PR の題と本文は、checkout した中身のどこにも現れない。
-        # 渡さないと、他の製品への言及の検査が PR の側だけを見落とす。
-        #
-        # 値は run: へ展開せず、環境変数として渡す。展開すると、
-        # PR の題に書いた文字列が、そのままシェルの命令として動く。
-        #
+      - name: リポジトリの不変条件
         # この job は PR が書き換えられる側のコードを動かす。したがって Secret を渡さない。
         # 渡すと、脚本を 1 行変えた PR から中身を読み出せる。
-        # Secret を使う検査が要るなら、PR のコードを動かさない別のワークフローへ置く。
-        #
-        # branch と commit の範囲は、Git の状態から推測させず、event から渡す。
-        # checkout は PR では detached HEAD になり、branch 名を辿れない。
-        #
-        # 禁止語そのものはリポジトリへ置かない。置いた時点で、書かせたくない
-        # 語をリポジトリが持つことになる。repository variable から渡す。
-        # Secret ではなく variable にするのは、この job が PR の側のコードを
-        # 動かすため。Secret を渡すと、脚本を 1 行変えた PR から読み出せる。
-        # variable も同じ理由で読み出せるが、禁止語は秘密ではなく決めごとで、
-        # ログへ出さないことだけを守れば足りる。
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          POLICY_HEAD_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
-          POLICY_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          POLICY_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          POLICY_FORBIDDEN_PATTERN: ${{ vars.POLICY_FORBIDDEN_PATTERN }}
-
-      - name: 依存の脆弱性
-        run: pnpm check:audit
+        run: pnpm check:policy

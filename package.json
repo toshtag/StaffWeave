@@ -24,6 +24,7 @@
     "retention": "pnpm --filter \"@staffweave/api\" retention",
     "db:migrate": "pnpm --filter \"@staffweave/db\" migrate",
     "db:status": "pnpm --filter \"@staffweave/db\" status",
+    "check": "pnpm lint && pnpm typecheck && pnpm test:unit",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm db:verify && pnpm verify:upgrade && pnpm verify:restore && pnpm check:policy && pnpm check:audit",
     "test:e2e": "playwright test",
     "agent": "pnpm --filter \"@staffweave/agent\" start",

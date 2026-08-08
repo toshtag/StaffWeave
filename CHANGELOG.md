@@ -37,5 +37,4 @@
 
 ### まだ無いもの
 
-`docs/product/capability-matrix.md` の `planned` と、
-`docs/product/v0.1-scope.md` の「次期へ回すもの」がそのまま残りの一覧です。
+[できること](docs/guide/features.md)の「まだ無いもの」にあります。

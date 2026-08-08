@@ -32,8 +32,12 @@ const ROOT = resolve(import.meta.dirname, '..');
  * Windows の job は配布物を組むだけで、登録・開始・停止・削除までは行わない。
  * ここへ入れておかないと、その SHA で Windows の検査が落ちていても、
  * 未実行でも、関門は通ってしまう。
+ *
+ * 依存の勧告（audit.yml）は、どの PR でも走る側から外してある。走っていない
+ * SHA を配らないよう、ここでは必須のままにする。走っていなければ、
+ * その SHA で手動起動してから配る。
  */
-const DEFAULT_REQUIRED_WORKFLOWS = 'ci.yml,runtime.yml,sbom.yml,windows-agent.yml';
+const DEFAULT_REQUIRED_WORKFLOWS = 'ci.yml,runtime.yml,audit.yml,sbom.yml,windows-agent.yml';
 
 const REQUIRED_WORKFLOWS = (process.env.RELEASE_REQUIRED_WORKFLOWS ?? DEFAULT_REQUIRED_WORKFLOWS)
   .split(',')
