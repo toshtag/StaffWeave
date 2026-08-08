@@ -245,6 +245,7 @@ describe('打刻端末の配布物', () => {
     expect(files).not.toContain('install-reader.ps1');
     expect(files.filter((file) => file.endsWith('.ps1'))).toEqual([
       'install-startup.ps1',
+      'install-store.ps1',
       'uninstall-startup.ps1',
     ]);
   });
@@ -285,6 +286,37 @@ describe('打刻端末の配布物', () => {
     expect(build.version).toBe(root.version);
     // 秘密は入れない。診断は保守の人が現場で実行し、画面と端末の履歴に残る。
     expect(Object.keys(build).sort()).toEqual(['nodeMajor', 'reader', 'sourceSha', 'version']);
+  });
+
+  /**
+   * 資格情報の置き場を用意する手順を同梱し、無いまま登録しないこと。
+   *
+   * CLI の既定はいまいる場所（`.staffweave-agent.json`）で、Windows の登録の
+   * 既定は ProgramData だった。手順どおりに進めると、資格情報といまの登録が
+   * 別の場所を指す。登録そのものは成功し、端末の起動後に読めずに落ちる。
+   */
+  it('資格情報の置き場を用意する手順を同梱する', async () => {
+    const files = await filesUnder(bundle);
+    expect(files).toContain('install-store.ps1');
+
+    const script = await readFile(join(bundle, 'install-store.ps1'), 'utf8');
+    // 権限を継承させない。継承したままだと ProgramData の既定で Users にも開く。
+    expect(script).toContain('SetAccessRuleProtection');
+    expect(script).toContain('NT AUTHORITY\\SYSTEM');
+    expect(script).toContain('BUILTIN\\Administrators');
+    // 次に何をすればよいかを、その場で言う。
+    expect(script).toContain('enroll');
+  });
+
+  it('資格情報が無ければ、常駐として登録しない', async () => {
+    const script = await readFile(join(bundle, 'install-startup.ps1'), 'utf8');
+
+    expect(script).toContain('Test-Path $Store');
+    // 何をすればよいかまで言う。「無い」だけでは、次の手が分からない。
+    expect(script).toContain('install-store.ps1');
+    expect(script).toContain('enroll');
+    // 置き場が広く開いていれば断る。端末の秘密鍵が入る。
+    expect(script).toContain('Get-Acl');
   });
 
   it('実行ファイルは作らない', async () => {
