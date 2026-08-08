@@ -159,17 +159,26 @@ jobs:
           $store = "$PWD/station-store.json"
 
           # 装置は無いので、カードが来ないまま待ち続ける受け渡しを渡す。
+          #
+          # 待っている間は輪を保つ（setInterval）。保たないと、解決しない Promise は
+          # Node の輪を押さえないため、送信側さえ止まればプロセスは終われてしまう。
+          # 合図が読み取りまで届いていなくても緑になり、この検査は何も見ていない
+          # ことになる。本物の装置は待ち受けを持つので、そちらへ寄せる。
           @'
           export function createPcscTransport() {
+            const waiting = (signal) => new Promise((_resolve, reject) => {
+              const holder = setInterval(() => {}, 1000);
+              const finish = () => { clearInterval(holder); reject(new Error('aborted')); };
+              if (signal?.aborted) { finish(); return; }
+              signal?.addEventListener('abort', finish, { once: true });
+            });
             return {
               name: 'never',
-              waitForCard: (signal) => new Promise((_resolve, reject) => {
-                signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
-              }),
+              waitForCard: waiting,
               transmit: async () => new Uint8Array([0x90, 0x00]),
-              waitForRemoval: async () => {},
+              waitForRemoval: waiting,
               reconnect: async () => {},
-              close: async () => {},
+              close: async () => { console.log('transport-closed'); },
             };
           }
           '@ | Out-File -Encoding utf8 never-transport.mjs
