@@ -202,6 +202,50 @@ jobs:
           $elapsed = ((Get-Date) - $started).TotalSeconds
           Write-Host "止まるまで $elapsed 秒"
 
+      # 対応していない版の Node で起動したとき、組み込みの読み込みより先に、
+      # こちらの言葉で止まること。組み込みが落ちる言葉では、端末の前の人に
+      # 何をすればよいかが分からない。
+      - name: 違う版の Node では、先に止まることを確かめる
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          $expected = (Get-Content "$root/agent/build-info.json" -Raw | ConvertFrom-Json).nodeMajor
+          Write-Host "配布物が対応する Node: $expected"
+
+          # 対応していない版を用意する。
+          $other = if ($expected -eq '22') { '20' } else { '22' }
+          $dir = Join-Path $PWD "node-$other"
+          $url = "https://nodejs.org/dist/latest-v$other.x/win-x64/node.exe"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "$dir/node.exe"
+          $otherNode = "$dir/node.exe"
+          Write-Host "用意した Node: $(& $otherNode -v)"
+
+          $store = "$PWD/mismatch-store.json"
+          Copy-Item "$PWD/station-store.json" $store
+
+          $output = & $otherNode "$root/agent/cli.js" station --store $store 2>&1 | Out-String
+          Write-Host $output
+          if ($LASTEXITCODE -eq 0) { throw '対応していない版で起動できてしまいました' }
+          if ($output -notmatch "この配布物は Node $expected 用です") {
+            throw "こちらの言葉で止まっていません: $output"
+          }
+
+          # 登録の手順も、渡された Node の版を先に確かめる。
+          $failed = $false
+          try {
+            & "$root/install-startup.ps1" -NodePath $otherNode -AgentRoot $root `
+              -TaskName 'StaffWeaveMismatch' -Store $store -NoReader
+          } catch {
+            $failed = $true
+            Write-Host "登録は断られました: $($_.Exception.Message)"
+          }
+          if (-not $failed) {
+            Unregister-ScheduledTask -TaskName 'StaffWeaveMismatch' -Confirm:$false `
+              -ErrorAction SilentlyContinue
+            throw '対応していない版で登録できてしまいました'
+          }
+
       - name: 常駐を外す
         shell: pwsh
         run: |
