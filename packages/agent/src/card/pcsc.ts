@@ -108,7 +108,11 @@ export function createPcscCardReader(
   let lastReadAt = Number.NEGATIVE_INFINITY;
 
   return {
-    name: `pcsc:${transport.name}`,
+    // 受け渡しの名前は、装置が見つかったあとで変わる。1 度きりで写すと、
+    // 「待っています」のまま固定され、診断で切り分けられなくなる。
+    get name() {
+      return `pcsc:${transport.name}`;
+    },
 
     async read(signal?: AbortSignal): Promise<string> {
       let attempt = 0;

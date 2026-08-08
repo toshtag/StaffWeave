@@ -187,8 +187,13 @@ function waitForState(
  * 一度抜いた時点で終わりになる。差し直しても、死んだ装置へつなぎ直そうとする。
  * 据え置きの端末で装置が抜かれるのは、事故ではなく普通に起こることとして扱う。
  *
+ * 装置が 1 台も無くても作れる。作る時点で待つと、端末の起動時に装置がまだ
+ * 見えていないだけで常駐そのものが終わる。認識が遅い、あとから挿す、USB の口の
+ * 初期化が遅れる、はどれも普通に起こる。装置を待つのは `waitForCard` の側。
+ *
  * @param load 部品の読み込み。検査から差し替えるために開ける。
- * @param timeoutMs 装置が現れるのを待つ上限。
+ * @param timeoutMs 装置が現れるのを、1 回にどれだけ待つか。ここを越えても
+ *   終わりにはしない。待ちを区切るだけで、呼ぶ側が待ち直す。
  */
 export async function createPcscTransport(
   load: (specifier: string) => Promise<unknown> = (target) => import(target),
@@ -197,15 +202,18 @@ export async function createPcscTransport(
   const factory = await loadPcscLite(load);
   const pcsc = factory();
 
-  /** いま使っている装置。抜かれたら null へ戻し、次を待つ。 */
-  let reader: PcscLiteReader | null = await nextReader(pcsc, timeoutMs);
+  /** いま使っている装置。まだ無い、あるいは抜かれた間は null。 */
+  let reader: PcscLiteReader | null = null;
   let protocol = 0;
+  /** 一度でも装置を見たか。診断に出す名前を決めるために持つ。 */
+  let seen: string | null = null;
 
   /** 装置を確保する。抜けていれば、次に現れるまで待つ。 */
   const require = async (signal?: AbortSignal): Promise<PcscLiteReader> => {
     if (reader !== null) return reader;
     reader = await nextReader(pcsc, timeoutMs, signal);
     protocol = 0;
+    seen = reader.name;
     return reader;
   };
 
@@ -246,9 +254,11 @@ export async function createPcscTransport(
   };
 
   return {
-    // 名前は最初に見つけた装置のもの。差し替わっても、診断の見た目は変えない。
-    // 変えると、記録を読む側が別の端末だと思う。
-    name: reader.name,
+    // まだ見つけていない間は、そのことが分かる名前にする。診断へ出るのは
+    // この値で、装置が無いのか読めないのかを、そこで切り分けられる。
+    get name() {
+      return seen ?? '（読み取り装置を待っています）';
+    },
 
     waitForCard(signal) {
       return using(signal, async (target) => {
