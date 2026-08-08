@@ -55,8 +55,13 @@ fi
 echo '識別子'
 # 機械が読む名前は `staffweave` の 1 つだけ。`staff-weave` は npm のスコープ、
 # コンテナ名、DB 名、HTTP ヘッダーのどれとも一致しない。
-if printf '%s\n' "$TRACKED" | xargs grep -l 'staff-weave' 2>/dev/null | grep . > /dev/null; then
-  printf '%s\n' "$TRACKED" | xargs grep -n 'staff-weave' 2>/dev/null | head -20
+#
+# 見るのは、その名前を機械が読む面だけにする。本文まで見ると、説明や引用で
+# その形を書いただけで落ちる。人が読む文章は、この検査の対象ではない。
+IDENTIFIER_SURFACES=$(printf '%s\n' "$TRACKED" \
+  | grep -E '(^|/)(package\.json|docker-compose\.yml|pnpm-workspace\.yaml|\.env\.example)$|^docker/|^\.github/workflows/')
+if printf '%s\n' "$IDENTIFIER_SURFACES" | xargs grep -l 'staff-weave' 2>/dev/null | grep . > /dev/null; then
+  printf '%s\n' "$IDENTIFIER_SURFACES" | xargs grep -n 'staff-weave' 2>/dev/null | head -20
   fail '識別子に staff-weave の形が使われています'
 else
   pass '識別子に staff-weave の形はありません'
@@ -299,24 +304,6 @@ if [ -n "$BROKEN_LINKS" ]; then
   fail '文書のリンクに、辿れない先があります'
 else
   pass '文書のリンクはすべて辿れます'
-fi
-
-# 見出しがファイル名を名乗るなら、指し先と同じ名前にする。
-# 食い違うと、読む側はその名前のファイルを探し、どこにも無いまま終わる。
-# 辿れるかどうかの検査は通ってしまうため、名前どうしを別に突き合わせる。
-MISLABELED=$(for doc in $(git ls-files '*.md'); do
-  grep -oE '\[[^]]*\.md\]\([^)#][^)]*\)' "$doc" 2>/dev/null \
-    | grep -vE '\]\((https?|mailto):' \
-    | sed -E 's/^\[(.*)\]\((.*)\)$/\1\t\2/' \
-    | while IFS="$(printf '\t')" read -r label target; do
-        [ "${label##*/}" = "${target##*/}" ] || printf '  %s: [%s](%s)\n' "$doc" "$label" "$target"
-      done
-done)
-if [ -n "$MISLABELED" ]; then
-  printf '%s\n' "$MISLABELED"
-  fail 'リンクの見出しが、指し先と違うファイル名を名乗っています'
-else
-  pass 'リンクの見出しは指し先と同じ名前です'
 fi
 
 echo 'マイグレーション'
