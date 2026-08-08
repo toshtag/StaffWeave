@@ -12,7 +12,7 @@
  * 手元と CI の検証範囲を揃えるには既存の 2 つのどちらかへ入れる必要がある。
  */
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -200,6 +200,46 @@ describe('打刻端末の配布物', () => {
    * 形にすると、配布物だけでは物理カードを読めず、確かめた構成と実際に動く構成も
    * 別になる。読み取りの部品は、その OS の上で組むときに入れる。
    */
+  /**
+   * 配布物の根から普通に起動したとき、同梱の受け渡しまで辿り着くこと。
+   *
+   * Windows へ登録すると、作業ディレクトリは配布物の根になる。既定の場所を
+   * 作業ディレクトリからの相対で書いていたため、隣の `agent/card/...` ではなく
+   * 根の直下を探していた。`--pcsc` を省いた普通の経路が通っていなかった。
+   *
+   * ここでは `diagnose` を使う。装置を開くところまで行くが、部品が無ければ
+   * 「配布物に入っていません」で止まる。読み込む場所を間違えていれば、
+   * 「読み込めませんでした」になり、言葉が変わる。
+   */
+  it('配布物の根から起動しても、同梱の受け渡しを読む', async () => {
+    // 資格情報は配布物の外へ置く。中へ置くと、配布物の中身を数える検査が変わる。
+    const outside = await mkdtemp(join(tmpdir(), 'staffweave-diagnose-'));
+    const store = join(outside, 'agent.json');
+    await writeFile(
+      store,
+      JSON.stringify({
+        baseUrl: 'https://staffweave.invalid',
+        deviceId: '00000000-0000-4000-8000-000000000000',
+        workspaceSlug: 'default',
+        privateKeyPem: '',
+        publicKeyPem: '',
+        nextSequence: 1,
+      }),
+      { mode: 0o600 },
+    );
+
+    // 作業ディレクトリは配布物の根。Windows へ登録したときと同じ形。
+    const { stdout } = await run(process.execPath, ['agent/cli.js', 'diagnose', '--store', store], {
+      cwd: bundle,
+    });
+
+    await rm(outside, { recursive: true, force: true });
+
+    // 受け渡しまでは辿り着いている。止まっているのは装置の部品が無いため。
+    expect(stdout).toContain('配布物に入っていません');
+    expect(stdout).not.toContain('読み込めませんでした');
+  });
+
   it('端末で部品を取り寄せる手順を同梱しない', async () => {
     const files = await filesUnder(bundle);
     expect(files).not.toContain('install-reader.ps1');

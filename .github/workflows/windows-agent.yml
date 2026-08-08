@@ -74,6 +74,45 @@ jobs:
           $probe | Out-File -Encoding utf8 probe.mjs
           node probe.mjs
 
+      # 配布物の根から、--pcsc を省いた普通の経路で起動できること。
+      #
+      # Windows へ登録すると作業ディレクトリは配布物の根になる。既定の場所を
+      # 作業ディレクトリからの相対で書いていたため、隣の agent/card/... ではなく
+      # 根の直下を探していた。ここを通していなかったので気付けなかった。
+      - name: 配布物の根から、既定の受け渡しを読めることを確かめる
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'artifacts/windows-agent-bundle/staffweave-agent'
+          $store = "$PWD/default-path-store.json"
+          @"
+          {
+            "baseUrl": "https://staffweave.invalid",
+            "deviceId": "00000000-0000-4000-8000-000000000000",
+            "workspaceSlug": "default",
+            "privateKeyPem": "",
+            "publicKeyPem": "",
+            "nextSequence": 1
+          }
+          "@ | Out-File -Encoding ascii $store
+
+          Push-Location $root
+          try {
+            $output = & node agent/cli.js diagnose --store $store 2>&1 | Out-String
+          } finally {
+            Pop-Location
+          }
+          Write-Host $output
+
+          # 読み込む場所を間違えていれば「読み込めませんでした」になる。
+          if ($output -match '読み込めませんでした') {
+            throw "既定の受け渡しを読めていません: $output"
+          }
+          # Windows 向けの配布物には部品が入っているので、装置の名前まで出るか、
+          # 装置が無いという言葉になる。どちらでも、受け渡しは読めている。
+          if ($output -notmatch '読み取り装置:') {
+            throw "診断に読み取り装置の行がありません: $output"
+          }
+
       # Windows の runner に zip コマンドは無い。PowerShell の圧縮を使う。
       - name: 配布物をまとめる
         shell: pwsh

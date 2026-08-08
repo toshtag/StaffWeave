@@ -22,9 +22,16 @@ export const TRANSPORT_FACTORY_NAME = 'createPcscTransport';
 /**
  * 同梱している受け渡し。`--pcsc` を省いたときはこれを読む。
  *
- * 配布物の中の場所を指す。外の部品を指すと、配布物だけでは動かない。
+ * 自分（このファイル）の位置から決める。作業ディレクトリからの相対で書くと、
+ * どこから起動したかで指す先が変わる。実際、Windows へ登録すると作業ディレクトリは
+ * 配布物の根になり、`./card/...` は隣の `agent/card/...` ではなく根の直下を指して
+ * いた。既定の受け渡しを読めない状態だった。
+ *
+ * 利用者が `--pcsc ./custom.mjs` と渡したときは、これまでどおり作業ディレクトリから
+ * 決める。渡した人はそのつもりで書いている。同梱の既定と、渡された場所で、
+ * 意味を分ける。
  */
-export const BUNDLED_PCSC_MODULE = './card/pcsc-winscard.js';
+export const BUNDLED_PCSC_MODULE = new URL('./pcsc-winscard.js', import.meta.url).href;
 
 interface TransportModule {
   [TRANSPORT_FACTORY_NAME]?: unknown;
