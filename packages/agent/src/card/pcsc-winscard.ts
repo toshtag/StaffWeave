@@ -49,13 +49,25 @@ interface PcscLiteReader {
   on(event: 'error', listener: (error: Error) => void): void;
   on(event: 'end', listener: () => void): void;
   off(event: 'status', listener: (status: { state: number }) => void): void;
+  off(event: 'error', listener: (error: Error) => void): void;
+  off(event: 'end', listener: () => void): void;
   close(): void;
 }
 
 interface PcscLite {
   on(event: 'reader', listener: (reader: PcscLiteReader) => void): void;
   on(event: 'error', listener: (error: Error) => void): void;
+  off(event: 'reader', listener: (reader: PcscLiteReader) => void): void;
+  off(event: 'error', listener: (error: Error) => void): void;
   close(): void;
+}
+
+/** 装置が外れた、あるいは直せない失敗を起こしたことを表す。 */
+export class ReaderGone extends Error {
+  constructor(reason: string) {
+    super(`読み取り装置が使えなくなりました: ${reason}`);
+    this.name = 'ReaderGone';
+  }
 }
 
 type PcscLiteFactory = () => PcscLite;
@@ -89,22 +101,38 @@ async function loadPcscLite(
  *
  * 複数刺さっている場合は、最初に現れたものを使う。選ばせる仕組みは置かない。
  * 据え置きの端末に読み取り装置を 2 つ付ける運用は想定していない。
+ *
+ * 待ち受けは、決まったときにも時間切れにも打ち切りにも外す。外さないと、
+ * 抜き差しのたびに 1 つずつ溜まる。抜き差しは何度も起こる。
  */
-function firstReader(pcsc: PcscLite, timeoutMs: number): Promise<PcscLiteReader> {
+function nextReader(
+  pcsc: PcscLite,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<PcscLiteReader> {
   return new Promise((resolve, reject) => {
+    const settle = (finish: () => void): void => {
+      clearTimeout(timer);
+      pcsc.off('reader', onReader);
+      pcsc.off('error', onError);
+      signal?.removeEventListener('abort', onAbort);
+      finish();
+    };
+    const onReader = (reader: PcscLiteReader): void => settle(() => resolve(reader));
+    const onError = (error: Error): void => settle(() => reject(error));
+    const onAbort = (): void => settle(() => reject(new CardReadAborted()));
     const timer = setTimeout(() => {
-      reject(new Error('読み取り装置が見つかりません。接続を確かめてください'));
+      settle(() => reject(new Error('読み取り装置が見つかりません。接続を確かめてください')));
     }, timeoutMs);
     timer.unref?.();
 
-    pcsc.on('reader', (reader) => {
-      clearTimeout(timer);
-      resolve(reader);
-    });
-    pcsc.on('error', (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
+    if (signal?.aborted === true) {
+      settle(() => reject(new CardReadAborted()));
+      return;
+    }
+    pcsc.on('reader', onReader);
+    pcsc.on('error', onError);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -122,21 +150,29 @@ function waitForState(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const settle = (finish: () => void): void => {
-      reader.off('status', listener);
+      reader.off('status', onStatus);
+      reader.off('end', onEnd);
+      reader.off('error', onError);
       signal?.removeEventListener('abort', onAbort);
       finish();
     };
-    const listener = (status: { state: number }): void => {
+    const onStatus = (status: { state: number }): void => {
       const isPresent = (status.state & reader.SCARD_STATE_PRESENT) !== 0;
       if (isPresent === present) settle(resolve);
     };
+    // 装置が抜かれると、状態は二度と来ない。end を見ていないと、
+    // ここで待ち続けたまま固まり、開き直しの輪へも戻れない。
+    const onEnd = (): void => settle(() => reject(new ReaderGone('取り外されました')));
+    const onError = (error: Error): void => settle(() => reject(new ReaderGone(error.message)));
     const onAbort = (): void => settle(() => reject(new CardReadAborted()));
 
     if (signal?.aborted === true) {
       reject(new CardReadAborted());
       return;
     }
-    reader.on('status', listener);
+    reader.on('status', onStatus);
+    reader.on('end', onEnd);
+    reader.on('error', onError);
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
@@ -147,7 +183,12 @@ function waitForState(
  * `loadPcscTransport` から名前で呼ばれる形（`createPcscTransport`）に合わせてある。
  * `--pcsc` を省いたときの既定として、Agent がこれを読み込む。
  *
+ * 装置は抱え込まない。抜かれたら捨てて、次に現れたものへ差し替える。抱え込むと、
+ * 一度抜いた時点で終わりになる。差し直しても、死んだ装置へつなぎ直そうとする。
+ * 据え置きの端末で装置が抜かれるのは、事故ではなく普通に起こることとして扱う。
+ *
  * @param load 部品の読み込み。検査から差し替えるために開ける。
+ * @param timeoutMs 装置が現れるのを待つ上限。
  */
 export async function createPcscTransport(
   load: (specifier: string) => Promise<unknown> = (target) => import(target),
@@ -155,12 +196,28 @@ export async function createPcscTransport(
 ): Promise<PcscTransport> {
   const factory = await loadPcscLite(load);
   const pcsc = factory();
-  const reader = await firstReader(pcsc, timeoutMs);
+
+  /** いま使っている装置。抜かれたら null へ戻し、次を待つ。 */
+  let reader: PcscLiteReader | null = await nextReader(pcsc, timeoutMs);
   let protocol = 0;
 
-  const connect = (): Promise<void> =>
+  /** 装置を確保する。抜けていれば、次に現れるまで待つ。 */
+  const require = async (signal?: AbortSignal): Promise<PcscLiteReader> => {
+    if (reader !== null) return reader;
+    reader = await nextReader(pcsc, timeoutMs, signal);
+    protocol = 0;
+    return reader;
+  };
+
+  /** 抜けたことにする。次の確保で新しいものを待つ。 */
+  const forget = (): void => {
+    reader = null;
+    protocol = 0;
+  };
+
+  const connect = (target: PcscLiteReader): Promise<void> =>
     new Promise((resolve, reject) => {
-      reader.connect({ share_mode: reader.SCARD_SHARE_SHARED }, (error, negotiated) => {
+      target.connect({ share_mode: target.SCARD_SHARE_SHARED }, (error, negotiated) => {
         if (error) reject(error);
         else {
           protocol = negotiated;
@@ -169,16 +226,43 @@ export async function createPcscTransport(
       });
     });
 
+  /**
+   * 装置を使う 1 回ぶん。
+   *
+   * 装置が使えなくなったら、抱えているものを捨てる。捨てないと、次も同じ
+   * 死んだ装置を使い、抜き差ししても戻らない。
+   */
+  const using = async <T>(
+    signal: AbortSignal | undefined,
+    work: (target: PcscLiteReader) => Promise<T>,
+  ): Promise<T> => {
+    const target = await require(signal);
+    try {
+      return await work(target);
+    } catch (error) {
+      if (error instanceof ReaderGone) forget();
+      throw error;
+    }
+  };
+
   return {
+    // 名前は最初に見つけた装置のもの。差し替わっても、診断の見た目は変えない。
+    // 変えると、記録を読む側が別の端末だと思う。
     name: reader.name,
 
-    async waitForCard(signal) {
-      await waitForState(reader, true, signal);
-      await connect();
+    waitForCard(signal) {
+      return using(signal, async (target) => {
+        await waitForState(target, true, signal);
+        await connect(target);
+      });
     },
 
     transmit(command) {
       return new Promise((resolve, reject) => {
+        if (reader === null) {
+          reject(new ReaderGone('取り外されています'));
+          return;
+        }
         reader.transmit(Buffer.from(command), RESPONSE_LENGTH, protocol, (error, output) => {
           if (error) reject(error);
           else resolve(Uint8Array.from(output));
@@ -187,19 +271,25 @@ export async function createPcscTransport(
     },
 
     waitForRemoval(signal) {
-      return waitForState(reader, false, signal);
+      return using(signal, (target) => waitForState(target, false, signal));
     },
 
     async reconnect() {
+      // 抜けているなら、開き直す相手が居ない。次の確保で新しいものを待つ。
+      if (reader === null) return;
       // 切り離してから開き直す。開いたまま重ねると、装置が掴まれたままになる。
+      const target = reader;
       await new Promise<void>((resolve) => {
-        reader.disconnect(reader.SCARD_LEAVE_CARD, () => resolve());
+        target.disconnect(target.SCARD_LEAVE_CARD, () => resolve());
       });
-      await connect();
+      await connect(target).catch(() => {
+        // 開き直せない装置は捨てる。次の確保で新しいものを待つ。
+        forget();
+      });
     },
 
     async close() {
-      reader.close();
+      reader?.close();
       pcsc.close();
     },
   };
