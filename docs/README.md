@@ -35,8 +35,7 @@
 
 | 文書 | 内容 |
 | --- | --- |
-| [policy.md](development/policy.md) | 迷ったときに優先する決めごと |
-| [architecture.md](development/architecture.md) | パッケージの構成と、依存してよい向き |
+| [architecture.md](development/architecture.md) | 前提、パッケージの構成、依存してよい向き |
 | [glossary.md](development/glossary.md) | 日本語と英語の対応表。名前を付けるときに引く |
 | [testing.md](development/testing.md) | 検証コマンドと、テストの書き方 |
 | [performance.md](development/performance.md) | 問い合わせの回数を増やさないための決めごと |
