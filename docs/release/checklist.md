@@ -43,13 +43,13 @@ GitHub の Issue で決めます。外部の確認は数週間かかるため、
 上の表のすべてを、コンテナのビルドと構成一覧の生成まで含めて通します。
 
 `pnpm verify` は毎日の作業向けで、コンテナのビルドと構成一覧を含みません。
-配れる状態かの判定には使えません。
+リリースできる状態かの判定には使えません。
 
 どちらも `psql` と `pg_dump`（PostgreSQL クライアント）が要ります。
 
 ## 2. 成果物と、元にしたソースの対応
 
-配るものと、それが何から出来ているかを結び付けます。
+リリース成果物と、それが何から出来ているかを結び付けます。
 結び付いていないと、受け取った側は中身を自分で確かめられません。
 
 | 出すもの | どうやって出すか | 元をどう辿るか |
@@ -57,7 +57,7 @@ GitHub の Issue で決めます。外部の確認は数週間かかるため、
 | コンテナ画像 | `docker build -f docker/api.Dockerfile` | 画像の digest |
 | 構成一覧（workspace） | `pnpm sbom:generate` | `metadata.component.properties` の `staffweave:source-sha` |
 | 構成一覧（コンテナ） | 同上 | 同上と、`metadata.component.version` の画像 digest |
-| チェックサム | 同上（`.sha256`） | 並べて配る |
+| チェックサム | 同上（`.sha256`） | 並べて配布する |
 | 打刻端末の配布物 | `./scripts/package-agent.sh` | 作った commit を記録欄へ書く |
 
 対応は `pnpm release:manifest` でまとめて出せます。
@@ -66,7 +66,7 @@ GitHub の Issue で決めます。外部の確認は数週間かかるため、
 作業中の変更、branch の上に居ないこと、Docker が無いこと、構成一覧の欠落、
 チェックサムの不一致、書いてある commit の不一致が対象です。
 
-文章で「配れません」と書きながら 0 で終えると、判定へ組み込んだときに
+文章で「リリースできません」と書きながら 0 で終えると、判定へ組み込んだときに
 条件を満たさない commit がそのまま通ります。
 
 ## 3. 署名とタグ
@@ -143,17 +143,17 @@ GitHub の Issue で決めます。外部の確認は数週間かかるため、
 実機の打刻端末（IC カードと Windows での常駐）、第三者によるセキュリティ確認、
 試行運用です。実施者が証拠を記録する場所として、それぞれ Issue を立ててあります。
 
-## 6. 正式版を配る
+## 6. 正式版をリリースする
 
-4 章がすべて済み、重大・高リスクの Issue が 0 になったら配れます。
+4 章がすべて済み、重大・高リスクの Issue が 0 になったらリリースできます。
 
 版は `package.json` の `version` が正本です。ここを直してから tag を付けます。
 2 か所で決めると、必ずどちらかが古くなります。
 
 ```sh
 pnpm verify:release-candidate     # 機械で確かめられる範囲
-pnpm release:assets               # 配るものを組む
-pnpm release:verify               # 配るものと元の対応を確かめる
+pnpm release:assets               # リリース成果物を組む
+pnpm release:verify               # 成果物と元の対応を確かめる
 ```
 
 `pnpm release:assets` が出すもの:
@@ -174,7 +174,7 @@ tag を作らずに確かめたいときは、同じワークフローを手動�
 「誰が配ったか」を示せません。受け取った側は `SHA256SUMS.txt` と、
 構成一覧に書かれた commit で中身を確かめます。
 
-コンテナは registry へ配りません。配るのはセルフホスト用の一式で、
+コンテナは registry へ配布しません。配布するのはセルフホスト用の一式で、
 受け取った側が `docker/api.Dockerfile` から組みます。組んだ結果の構成は
 `staffweave-container.cdx.json` に載っています。
 
