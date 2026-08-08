@@ -13,6 +13,10 @@ coverage/
 .staffweave-agent.json
 *.staffweave-agent.json
 
+# 手元の作業環境向けの指示。追跡すると、この作業環境を使う人すべてへ効く。
+CLAUDE.local.md
+.claude/
+
 .DS_Store
 *.log
 npm-debug.log*
